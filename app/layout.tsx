@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Cómputo laboral AAC",
-  description: "Calculadora del calendario laboral AAC: cómputo diario, semanal, mensual y anual.",
+  title: "Cómputo laboral AAC · Metro/TMB",
+  description: "Calculadora personal del calendario laboral de Metro/TMB: cómputo diario, semanal, mensual y anual.",
   applicationName: "Cómputo AAC",
   manifest: "/manifest-train-v3.webmanifest",
   icons: {

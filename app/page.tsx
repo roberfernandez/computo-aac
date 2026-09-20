@@ -14,7 +14,7 @@ import {
   CalendarRange,
   CalendarDays,
   Clock3,
-  Globe2,
+  LockKeyhole,
   PencilLine,
   Trash2,
   UserRound,
@@ -2630,7 +2630,7 @@ export default function Home() {
               <span className="hidden sm:inline">Perfil</span>
             </Button>
             <Badge className="border border-[#71d7cc]/35 bg-[#71d7cc]/10 px-3 py-1.5 text-[#8ee9df]">
-              <Globe2 size={13} /> Pública
+              <LockKeyhole size={13} /> Privado
             </Badge>
             <Badge className="border border-white/15 bg-white/5 px-3 py-1.5 text-white/70">
               {annualWorkdays
