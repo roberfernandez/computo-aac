@@ -1,3 +1,4 @@
+import { calendarContext } from "./helpers/calendar-context.mjs";
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
@@ -7,7 +8,7 @@ import ts from 'typescript';
 const source = readFileSync(new URL('../app/page.tsx', import.meta.url), 'utf8');
 const parsed = ts.createSourceFile('page.tsx', source.slice(0, source.indexOf('export default function Home')), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 const body = parsed.statements.filter(n => !ts.isImportDeclaration(n)).map(n => n.getText(parsed)).join('\n');
-const context = vm.createContext({});
+const context = await calendarContext();
 vm.runInContext(ts.transpileModule(body, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText + '\nglobalThis.api = {profileTurn, profileLabel, theoreticalHours, shiftFor, calcDay, balanceLabel, nightLabel};', context);
 const api = context.api;
 const profile = turn => ({ turn, contract: '85.81', fiestaLetter: 'M' });
