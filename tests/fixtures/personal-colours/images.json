@@ -1,0 +1,16 @@
+[
+  {
+    "file": "0.rgba.gz",
+    "source": "2026.jpg",
+    "sha256": "06e5ab2272c4271f1a81ad5d827de686d20753a69e5d3c82e5d1701e8bf715b3",
+    "width": 836,
+    "height": 413
+  },
+  {
+    "file": "1.rgba.gz",
+    "source": "2026 nuevo.jpg",
+    "sha256": "e849b10cf8dbccb9a50b1f5079785adfe5e6bb36396869a4060ac0741a26f832",
+    "width": 2079,
+    "height": 868
+  }
+]

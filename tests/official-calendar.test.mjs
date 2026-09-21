@@ -94,18 +94,10 @@ test('use official autumn change dates with the existing long-Saturday shifts', 
   }
 });
 
-test('personal colour recognition and cycle helpers are unchanged byte for byte', () => {
-  const names=['dominantStatus','annualBlockEvidence','annualCellEvidence','classifyMonthly','loadAnnualCanvas','rectifyAnnual','detectStraightAnnualPanels','inferCyclePhase','auditCycle','applyCycleValidation'];
-  for(const name of names) {
+test('cycle helpers remain unchanged while visual recognition is tested separately', () => {
+  for (const name of ['inferCyclePhase','auditCycle','applyCycleValidation']) {
     const get=a=>a.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name.text===name).getText(a);
     assert.equal(get(ast),get(old.ast),name);
-  }
-  for(const rgb of [[255,255,255],[60,180,180],[230,140,100],[230,160,40],[200,140,190],[80,190,80],[120,150,110],[120,90,50],[40,50,160]]) {
-    const pixels=new Uint8ClampedArray(Array.from({length:100},()=>[...rgb,255]).flat());
-    assert.equal(api.dominantStatus(pixels),old.api.dominantStatus(pixels));
-    assert.equal(JSON.stringify(api.annualBlockEvidence(pixels)),JSON.stringify(old.api.annualBlockEvidence(pixels)));
-    const ctx={getImageData:()=>({data:pixels})};
-    assert.equal(JSON.stringify(api.annualCellEvidence(ctx,100,100,25,25,{width:200,height:200})),JSON.stringify(old.api.annualCellEvidence(ctx,100,100,25,25,{width:200,height:200})));
   }
   assert.doesNotMatch(source,/containsRedDigit|redDigits|BASE_FIXED_GENERAL_HOLIDAYS|FIXED_NON_STOP/);
 });
