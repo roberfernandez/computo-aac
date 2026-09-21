@@ -15,7 +15,6 @@ import {
   CalendarRange,
   CalendarDays,
   Clock3,
-  Globe2,
   PencilLine,
   Trash2,
   UserRound,
@@ -2561,9 +2560,6 @@ export default function Home() {
               <UserRound size={15} />
               <span className="hidden sm:inline">Perfil</span>
             </Button>
-            <Badge className="border border-[#71d7cc]/35 bg-[#71d7cc]/10 px-3 py-1.5 text-[#8ee9df]">
-              <Globe2 size={13} /> Pública
-            </Badge>
             <Badge className="border border-white/15 bg-white/5 px-3 py-1.5 text-white/70">
               {annualWorkdays
                 ? `${annualWorkdays} días · ${year}`
