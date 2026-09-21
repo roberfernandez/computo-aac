@@ -1,3 +1,4 @@
+import { calendarContext } from "./helpers/calendar-context.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
@@ -10,7 +11,7 @@ const helpers = source.slice(0, source.indexOf("export default function Home"));
 const parsed = ts.createSourceFile("page.tsx", helpers, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 const body = parsed.statements.filter((node) => !ts.isImportDeclaration(node)).map((node) => node.getText(parsed)).join("\n");
 const js = ts.transpileModule(body, { compilerOptions: { target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React } }).outputText;
-const context = vm.createContext({});
+const context = await calendarContext();
 vm.runInContext(js + "\nglobalThis.api = { plusConvenioCount, needsReview, decimalHoursFromMinutes, calcDay, ANNUAL_WORKDAYS, ANNUAL_THEORETICAL_HOURS };", context);
 const { plusConvenioCount, needsReview, decimalHoursFromMinutes, calcDay, ANNUAL_WORKDAYS, ANNUAL_THEORETICAL_HOURS } = context.api;
 
