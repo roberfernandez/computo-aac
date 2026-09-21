@@ -214,7 +214,7 @@ const CONFIRMED_SPECIAL_RETRIBUTIVE_DAYS = [
 // Incrementar esta versión cuando cambie la lógica de reconocimiento anual.
 // Los años analizados con una versión anterior se conservan, pero la interfaz
 // avisa de que conviene volver a leer su imagen.
-const ANNUAL_DETECTOR_VERSION = 1;
+const ANNUAL_DETECTOR_VERSION = 2;
 const statusLabel: Record<Status, string> = {
   REVISAR: "Revisar",
   AGCG: "Trabajo · AGCG",
@@ -855,7 +855,7 @@ function dominantStatus(data: Uint8ClampedArray): Status {
     return "ENFERMEDAD";
   if (g > r + 18 && g > b + 18 && r > 85 && b > 85)
     return "REVISION_MEDICA";
-  if (r > 185 && b > 145 && g < 195) return "FORMACION";
+  if (r > 185 && b > 145 && g < 195 && r - g > 30 && b - g > 30) return "FORMACION";
   if (r > 170 && g > 105 && b < 85 && g - b > 55 && r - g > 25)
     return "LAUDO";
   if (r > 170 && g > 75 && g < 205 && b > 45 && b < 175 && r - g > 22)
@@ -888,7 +888,7 @@ function annualBlockEvidence(data: Uint8ClampedArray) {
       disease++;
     else if (g > r + 14 && g > b + 14 && r > 75 && b > 75) medical++;
     else if (r < 150 && g > 125 && b > 125 && g - r > 15) cyan++;
-    else if (r > 180 && b > 135 && g < 205) pink++;
+    else if (r > 180 && b > 135 && g < 205 && r - g > 30 && b - g > 30) pink++;
     else if (r > 170 && g > 105 && b < 85 && g - b > 55 && r - g > 25)
       laudo++;
     else if (r > 165 && g > 70 && g < 210 && b > 40 && b < 180 && r - g > 18)
@@ -919,22 +919,13 @@ function annualCellEvidence(
   cellH: number,
   canvas: HTMLCanvasElement,
 ) {
-  const offsets = [
-      [-0.12, -0.07],
-      [0, -0.07],
-      [0.12, -0.07],
-      [-0.12, 0.04],
-      [0, 0.04],
-      [0.12, 0.04],
-      [-0.12, 0.15],
-      [0, 0.15],
-      [0.12, 0.15],
-    ],
+  // Two interior side strips avoid the central day number and the cell border.
+  const offsets = [[-0.30, 0], [0.30, 0]],
     votes = new Map<Status, number>();
   let total = 0;
   for (const [dx, dy] of offsets) {
-    const sw = Math.max(5, Math.round(cellW * 0.48)),
-      sh = Math.max(4, Math.round(cellH * 0.34)),
+    const sw = Math.max(2, Math.round(cellW * 0.18)),
+      sh = Math.max(3, Math.round(cellH * 0.50)),
       sx = Math.max(0, Math.round(cx + cellW * dx - sw / 2)),
       sy = Math.max(0, Math.round(cy + cellH * dy - sh / 2)),
       evidence = annualBlockEvidence(
@@ -1312,8 +1303,83 @@ async function loadAnnualCanvas(file: File) {
   bitmap.close();
   return canvas;
 }
+function detectModernAnnualPanels(canvas: HTMLCanvasElement, year: number): AnnualPanel[] | null {
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return null;
+  const { width, height } = canvas;
+  const data = ctx.getImageData(0, 0, width, height).data;
+  const mask = new Uint8Array(width * height);
+  // The modern grid has separated, filled rectangles. Ignore white gutters and
+  // dark lettering; neither day-number colour nor calendar categories are used.
+  for (let i = 0; i < mask.length; i++) {
+    const r = data[i * 4], g = data[i * 4 + 1], b = data[i * 4 + 2];
+    mask[i] = Math.max(r, g, b) > 100 && ((r + g + b < 645 && Math.min(r, g, b) < 225) || (r - g > 40 && b - g > 40)) ? 1 : 0;
+  }
+  const originalMask = mask.slice();
+  for (let y = 1; y < height - 1; y++) for (let x = 1; x < width - 1; x++) {
+    const i = y * width + x;
+    mask[i] = originalMask[i] && originalMask[i - 1] && originalMask[i + 1] && originalMask[i - width] && originalMask[i + width] ? 1 : 0;
+  }
+  const stack = new Int32Array(mask.length);
+  const cells: { x: number; y: number; w: number; h: number }[] = [];
+  for (let seed = 0; seed < mask.length; seed++) {
+    if (!mask[seed]) continue;
+    let size = 1, count = 0, left = width, right = 0, top = height, bottom = 0;
+    stack[0] = seed; mask[seed] = 0;
+    while (size) {
+      const i = stack[--size], x = i % width, y = Math.floor(i / width);
+      count++; left = Math.min(left, x); right = Math.max(right, x);
+      top = Math.min(top, y); bottom = Math.max(bottom, y);
+      for (const next of [x > 0 ? i - 1 : -1, x + 1 < width ? i + 1 : -1, i - width, i + width]) {
+        if (next >= 0 && next < mask.length && mask[next]) { mask[next] = 0; stack[size++] = next; }
+      }
+    }
+    const w = right - left + 1, h = bottom - top + 1;
+    if (w > width * .025 && w < width * .04 && h > w * .3 && h < w * .6 && count / (w * h) > .65)
+      cells.push({ x: (left + right) / 2, y: (top + bottom) / 2, w, h });
+  }
+  const middle = (values: number[]) => values.sort((a, b) => a - b)[Math.floor(values.length / 2)];
+  if (cells.length < 350) return null;
+  const cellWidth = middle(cells.map(c => c.w)), cellHeight = middle(cells.map(c => c.h));
+  const cluster = (values: number[], tolerance: number) => {
+    const groups: number[][] = [];
+    for (const value of values.sort((a, b) => a - b)) {
+      const last = groups[groups.length - 1];
+      if (last && value - last[0] < tolerance) last.push(value); else groups.push([value]);
+    }
+    return groups.map(middle);
+  };
+  const xs = cluster(cells.map(c => c.x), cellWidth * .2);
+  const ys = cluster(cells.map(c => c.y), cellHeight * .2);
+  if (xs.length !== 28) return null;
+  const rowGroups: number[][] = [];
+  for (const y of ys) {
+    const last = rowGroups[rowGroups.length - 1];
+    if (last && y - last[last.length - 1] < cellHeight * 1.8) last.push(y); else rowGroups.push([y]);
+  }
+  if (rowGroups.length !== 3) return null;
+  const panels: AnnualPanel[] = [];
+  for (let month = 1; month <= 12; month++) {
+    const column = (month - 1) % 4, rows = rowGroups[Math.floor((month - 1) / 4)];
+    const centers = xs.slice(column * 7, column * 7 + 7);
+    const cellW = (centers[6] - centers[0]) / 6;
+    const cellH = middle(rows.slice(1).map((y, i) => y - rows[i]));
+    const panel = { x: centers[0] - cellW / 2, length: cellW * 7, gridTop: rows[0] - cellH / 2, cellH };
+    // Every actual date must have a rectangle at its expected grid position.
+    // Reject incomplete/misaligned layouts instead of accepting a count alone.
+    for (let day = 1; day <= daysInMonth(year, month); day++) {
+      const index = weekdayMon(year, month, 1) + day - 1;
+      if (!cells.some(c => Math.abs(c.x - centers[index % 7]) < cellW * .15 &&
+        Math.abs(c.y - (rows[0] + Math.floor(index / 7) * cellH)) < cellH * .15)) return null;
+    }
+    panels.push(panel);
+  }
+  return panels;
+}
+
 function detectStraightAnnualPanels(
   canvas: HTMLCanvasElement,
+  year: number,
 ): AnnualPanel[] | null {
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (!ctx) return null;
@@ -1362,9 +1428,9 @@ function detectStraightAnnualPanels(
     (run, i) => Math.abs(run.start - bottom.runs[i].start) < width * 0.025,
   );
   if (!aligned) return null;
-  const makeRow = (anchor: typeof top) => {
+  const makeRow = (anchor: typeof top, monthOffset: number) => {
       const pad = Math.max(1, Math.round(width * 0.002));
-      return anchor.runs.map((run) => {
+      return anchor.runs.map((run, index) => {
         const x = Math.max(0, run.start - pad),
           length = Math.min(width - x, run.end - run.start + 1 + pad * 2),
           cellW = length / 7;
@@ -1383,10 +1449,14 @@ function detectStraightAnnualPanels(
           }
           if (total && header / total > 0.46) lastHeader = y;
         }
-        return { x, length, gridTop: lastHeader + 1, cellH: cellW * 1.04 };
+        const month = monthOffset + index + 1;
+        const weeks = Math.ceil((weekdayMon(year, month, 1) + daysInMonth(year, month)) / 7);
+        const gridTop = lastHeader + 1;
+        const bottom = findPanelBottom(ctx, x, gridTop + cellW * weeks, length, cellW * .8, canvas);
+        return { x, length, gridTop, cellH: (bottom - gridTop) / weeks };
       });
     },
-    panels = [...makeRow(top), ...makeRow(bottom)];
+    panels = [...makeRow(top, 0), ...makeRow(bottom, 6)];
   return panels.length === 12 ? panels : null;
 }
 async function rectifyAnnual(file: File) {
@@ -1639,71 +1709,23 @@ function auditCycle(
 }
 
 async function classifyAnnual(file: File, year: number) {
-  const direct = await loadAnnualCanvas(file),
-    straightPanels = direct && detectStraightAnnualPanels(direct);
-  const canvas = straightPanels ? direct : await rectifyAnnual(file),
-    ctx = canvas?.getContext("2d", { willReadFrequently: true });
-  if (!canvas || !ctx) return null;
-  const raw: Record<number, DayData[]> = {},
-    scaleX = canvas.width / 807,
-    scaleY = canvas.height / 367;
+  let canvas = await loadAnnualCanvas(file);
+  if (!canvas) return null;
+  let panels = detectModernAnnualPanels(canvas, year) || detectStraightAnnualPanels(canvas, year);
+  if (!panels) {
+    canvas = await rectifyAnnual(file);
+    if (!canvas) return null;
+    panels = detectStraightAnnualPanels(canvas, year);
+  }
+  // Never silently apply a six-column coordinate template to an unknown layout.
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx || !panels) return null;
+  const raw: Record<number, DayData[]> = {};
   for (let month = 1; month <= 12; month++) {
-    const column = (month - 1) % 6,
-      nominalX = (4 + column * 134) * scaleX,
-      nominalLength = 129 * scaleX,
-      nominalTop = (month <= 6 ? 32 : 187) * scaleY,
-      panelHeight = 151 * scaleY,
-      edges = straightPanels
-        ? null
-        : findPanelEdges(
-            ctx,
-            nominalX,
-            nominalLength,
-            nominalTop,
-            panelHeight,
-            canvas,
-          ),
-      fallbackPanel = {
-        x: edges?.left ?? nominalX,
-        length: edges ? edges.right - edges.left : nominalLength,
-      },
-      panelTop = straightPanels
-        ? 0
-        : findHorizontalBorder(
-            ctx,
-            fallbackPanel.x,
-            nominalTop,
-            fallbackPanel.length,
-            5 * scaleY,
-            canvas,
-          ),
-      cellW = (straightPanels?.[month - 1].length ?? fallbackPanel.length) / 7,
-      weeks = Math.ceil(
-        (weekdayMon(year, month, 1) + daysInMonth(year, month)) / 7,
-      ),
-      expectedBottom = panelTop + cellW * (2.2 + weeks * 1.065),
-      panelBottom = straightPanels
-        ? 0
-        : findPanelBottom(
-            ctx,
-            fallbackPanel.x,
-            expectedBottom,
-            fallbackPanel.length,
-            cellW * 0.48,
-            canvas,
-          ),
-      panel = straightPanels
-        ? {
-            x: straightPanels[month - 1].x,
-            length: straightPanels[month - 1].length,
-          }
-        : fallbackPanel,
-      cellH = straightPanels
-        ? straightPanels[month - 1].cellH
-        : (panelBottom - (panelTop + cellW * 2.2)) / weeks,
-      y0 = straightPanels
-        ? straightPanels[month - 1].gridTop + cellH * 0.5
-        : panelBottom - (weeks - 0.5) * cellH,
+    const panel = panels[month - 1],
+      cellW = panel.length / 7,
+      cellH = panel.cellH,
+      y0 = panel.gridTop + cellH * .5,
       statuses: { status: Status; confidence: number }[] = [];
     for (let day = 1; day <= daysInMonth(year, month); day++) {
       const index = weekdayMon(year, month, 1) + day - 1,
