@@ -638,19 +638,49 @@ function calcDay(
       reason: statusLabel[d.status],
     };
   const code = officialCategory(year, month, d.day);
-  if (!code) return {
-    scheduleReview: true, compensationPending: true,
-    value: NaN, shift: "Pendiente", hours: "Pendiente", night: "Pendiente",
-    workedMinutes: NaN, nightMinutes: NaN, nightHours: NaN,
-    ordinaryHours: NaN, horaNona: NaN, creditedMinutes: NaN,
-    reason: "Categoría oficial no disponible · cómputo pendiente",
-  };
+  if (!code) {
+    // Unknown official category is not an unknown personal situation. Preserve
+    // every result independent of that category, including cross-year zeros.
+    const fullTime = isFullTime(profile);
+    const fixed = fullTime && ["T4", "T5"].includes(profileTurn(profile));
+    const custom = d.special === "MODIFICACION" &&
+      d.modificationPlacement === "PERSONALIZADO" && d.customStart && d.customEnd;
+    let start = "", end = "", minutes = NaN;
+    if (fixed) {
+      const shift = shiftFor(profile, "NORMAL", 1);
+      start = shift.start; end = shift.end; minutes = shift.minutes;
+      if (d.special === "MODIFICACION" && !custom) {
+        minutes = Math.max(0, minutes + Math.round(d.extraHours * 60));
+        if (d.modificationPlacement === "INICIO") start = clockLabel(clockMinutes(start) - Math.round(d.extraHours * 60));
+        else end = clockLabel(clockMinutes(end) + Math.round(d.extraHours * 60));
+      }
+    }
+    if (custom) {
+      start = d.customStart!; end = d.customEnd!;
+      minutes = elapsedMinutes(start, end);
+    }
+    const night = fullTime ? 0 : Number.isFinite(minutes) ? nightMinutesForShift(start, end, minutes) : NaN;
+    return {
+      scheduleReview: !Number.isFinite(minutes), compensationPending: fullTime,
+      value: fullTime || toPreviousYear ? 0 : toCurrentYear ? decimalHoursFromMinutes(minutes) : NaN,
+      shift: Number.isFinite(minutes) ? `${start}–${end}` : "Pendiente",
+      hours: Number.isFinite(minutes) ? `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, "0")}` : "Pendiente",
+      night: toPreviousYear ? "—" : iso(decimalHoursFromMinutes(night)),
+      workedMinutes: toPreviousYear ? 0 : minutes,
+      nightMinutes: toPreviousYear ? 0 : night,
+      nightHours: toPreviousYear ? 0 : decimalHoursFromMinutes(night),
+      ordinaryHours: decimalHoursFromMinutes(minutes),
+      horaNona: fullTime ? 0 : Number.isFinite(minutes) ? Math.max(0, Math.ceil((minutes - 480) / 15) * 0.25) : NaN,
+      creditedMinutes: fullTime || (!toPreviousYear && !toCurrentYear) ? 0 : minutes,
+      reason: "Categoría oficial no disponible · solo los cálculos dependientes quedan pendientes",
+    };
+  }
   const rule = CATEGORY_RULES[code], wd = rule.weekday;
   let kind: ShiftKind = rule.kind, reason: string = code.replaceAll("_", " ");
-  // Preserve the existing 75% autumn Saturday schedule. The clock-change marker
-  // comes from the official calendar, not from a guessed last Sunday/holiday.
-  if (kind === "SATURDAY" && profile.contract === "75" && month === 10 &&
-      officialCategory(year, month, d.day + 1) === "DIUMENGE_CANVI_HORA") {
+  // The event is the current date's official code. October only selects the
+  // existing autumn tariff; spring keeps its previous schedule. No event date
+  // is reconstructed from tomorrow or a last-Saturday formula.
+  if (code === "DISSABTE_CANVI_HORA" && profile.contract === "75" && month === 10) {
     kind = "LONG_SATURDAY";
     reason = "Sábado largo · cambio de hora";
   }
@@ -1822,7 +1852,7 @@ export default function Home() {
       if (cancelled) return;
       const missing = calendars.flatMap(c => [...c].filter(([, code]) => code === null).map(([date]) => date));
       setCalendarStatus(missing.length
-        ? `Calendario oficial cargado. Categoría no disponible: ${missing.join(", ")}. Sus jornadas y totales afectados quedan pendientes.`
+        ? `Calendario oficial cargado. Categoría no disponible: ${missing.join(", ")}. Solo quedan pendientes los cálculos que necesiten esas categorías.`
         : `Calendario oficial ${year} cargado y disponible en esta sesión.`);
       setOfficialRevision(v => v + 1);
     }).catch(() => {

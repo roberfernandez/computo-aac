@@ -67,8 +67,9 @@ test('no reconstruction from red digits, fixed Non Stop dates or tomorrow holida
 test('NULL and unavailable years propagate pending instead of zero into hours and balances', () => {
   for(const [y,m,d] of [[2025,3,31],[2025,6,30],[2027,1,2]]) {
     const x=day(d), c=api.calcDay(x,[x],y,m,profile);
-    for(const field of ['value','workedMinutes','ordinaryHours','nightHours','horaNona','creditedMinutes']) assert.ok(Number.isNaN(c[field]),field);
+    for(const field of ['value','workedMinutes','ordinaryHours','nightHours','horaNona']) assert.ok(Number.isNaN(c[field]),field);
     assert.match(c.reason,/no disponible/);
+    assert.equal(c.creditedMinutes,0); // ordinary work does not generate a cross-year credit
     assert.ok(Number.isNaN(api.totalFor([x],y,m,profile)));
     assert.ok(Number.isNaN(api.ordinaryHoursFor([x],y,m,profile)));
     assert.ok(Number.isNaN(api.nightHoursFor([x],y,m,profile)));
@@ -128,4 +129,61 @@ test('network errors and malformed responses never populate cache and can be ret
   fail=false;await client.load(2024);assert.equal(calls,2);
   for(const input of [[],year.slice(1),[...year.slice(1),year[1]],year.map((r,i)=>i===0?{...r,categoria_codigo:'INVENTADO'}:r),year.map((r,i)=>i===0?{...r,fecha:'2024-02-30'}:r)]) assert.throws(()=>mod.validateOfficialYear(2024,input));
   const denied=mod.createOfficialCalendarClient(async()=>({ok:false,status:403}));await assert.rejects(denied.load(2024),/403/);
+});
+
+
+test('NULL on personal rest or absence does not invalidate monthly or annual balances', () => {
+  for(const status of ['DCOM','FEST','VACACIONES','VAC_ANTERIOR','MINI','LAUDO','RJ','ENFERMEDAD','PERMISO','HUELGA_LEGAL']) {
+    const unknown={...day(31),status}, known=day(28);
+    const total=api.totalFor([known,unknown],2025,3,profile);
+    assert.equal(total,api.totalFor([known],2025,3,profile),status);
+    assert.ok(Number.isFinite(total + api.totalFor([day(2)],2025,4,profile)));
+  }
+});
+
+test('NULL credit to previous year leaves current balance and night totals independent', () => {
+  const unknown={...day(31),status:'COMPUTO_ANTERIOR'}, known=day(28);
+  const c=api.calcDay(unknown,[unknown],2025,3,profile);
+  for(const field of ['value','workedMinutes','nightMinutes','nightHours']) assert.equal(c[field],0,field);
+  assert.ok(Number.isNaN(c.ordinaryHours));
+  assert.ok(Number.isNaN(c.creditedMinutes));
+  assert.equal(api.totalFor([known,unknown],2025,3,profile),api.totalFor([known],2025,3,profile));
+  assert.ok(Number.isNaN(api.previousYearCreditMinutes({3:{days:[unknown]}},2025,profile)));
+  assert.equal(api.previousYearCreditMinutes({3:{days:[day(31)]}},2025,profile),0);
+});
+
+test('NULL preserves fixed T4/T5 hours and complete personal schedules', () => {
+  for(const turn of ['T4','T5']) {
+    const p={...profile,turn}; const c=calc('2025-03-31',p);
+    assert.equal(c.workedMinutes,469);assert.equal(c.ordinaryHours,7.82);
+    assert.equal(c.value,0);assert.equal(c.compensationPending,true);
+    assert.equal(c.creditedMinutes,0);
+    const modified=calc('2025-03-31',p,{special:'MODIFICACION',extraHours:1});
+    assert.equal(modified.workedMinutes,529);
+  }
+  const custom={special:'MODIFICACION',modificationPlacement:'PERSONALIZADO',customStart:'20:30',customEnd:'05:00'};
+  const c=calc('2025-03-31',profile,custom);
+  assert.equal(c.workedMinutes,510);assert.equal(c.ordinaryHours,8.5);
+  assert.equal(c.nightHours,8.5);assert.equal(c.horaNona,0.5);
+  assert.ok(Number.isNaN(c.value)); // compensation needs the unavailable reference shift
+  assert.equal(c.creditedMinutes,0);
+  const prev=calc('2025-03-31',profile,{...custom,status:'COMPUTO_ANTERIOR'});
+  assert.equal(prev.value,0);assert.equal(prev.creditedMinutes,510);assert.equal(prev.workedMinutes,0);
+  const current=calc('2025-03-31',profile,{...custom,status:'COMPUTO_ACTUAL'});
+  assert.equal(current.value,8.5);assert.equal(current.creditedMinutes,510);
+});
+
+test('clock-change event reads only the current Saturday code, never the next date', () => {
+  const p={...profile,contract:'75',subturn:'T8.1'};
+  const local=vm.createContext({...context, officialCategory:(y,m,d)=>{
+    assert.equal(d,24,'must not inspect Sunday');return 'DISSABTE_CANVI_HORA';
+  }});
+  const current=helpers(source,local).api;
+  assert.equal(current.calcDay(day(24),[day(24)],2026,10,p).shift,'21:10–04:00');
+  local.officialCategory=()=> 'DISSABTE';
+  assert.equal(current.calcDay(day(24),[day(24)],2026,10,p).shift,'20:30–03:00');
+  assert.equal(current.calcDay(day(31),[day(31)],2026,10,p).shift,'20:30–03:00');
+  local.officialCategory=()=> 'DISSABTE_CANVI_HORA';
+  assert.equal(current.calcDay(day(28),[day(28)],2026,3,p).shift,'20:30–03:00');
+  assert.doesNotMatch(source,/lastSaturdayOfOctober|officialCategory\(year, month, d.day \+ 1\)/);
 });
