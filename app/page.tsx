@@ -2,6 +2,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { CATEGORY_RULES, officialCalendar, officialCategory, officialHolidayFor } from "@/lib/official-calendar";
 import {
   UploadCloud,
   TrainFront,
@@ -203,16 +204,6 @@ const ANNUAL_WORKDAYS: Record<number, number> = {
   2026: 209,
   2027: 207,
 };
-const BASE_FIXED_GENERAL_HOLIDAYS: Record<number, number[]> = {
-  1: [1, 6],
-  5: [1],
-  6: [24],
-  8: [15],
-  9: [11],
-  10: [12],
-  12: [8, 25, 26],
-};
-const FIXED_NON_STOP: Record<number, number> = { 6: 23, 9: 23, 12: 31 };
 const CONFIRMED_SPECIAL_RETRIBUTIVE_DAYS = [
   { from: 2023, month: 12, day: 25 },
   { from: 2024, month: 1, day: 1 },
@@ -299,12 +290,6 @@ function daysInMonth(year: number, month: number) {
 function weekdayMon(year: number, month: number, day: number) {
   return (new Date(year, month - 1, day).getDay() + 6) % 7;
 }
-function isKnownHoliday(year: number, month: number, day: number) {
-  return (BASE_FIXED_GENERAL_HOLIDAYS[month] || []).includes(day);
-}
-function isFixedNonStop(month: number, day: number) {
-  return FIXED_NON_STOP[month] === day;
-}
 function isConfirmedSpecialRetributiveDay(
   year: number,
   month: number,
@@ -315,6 +300,7 @@ function isConfirmedSpecialRetributiveDay(
   );
 }
 function iso(n: number) {
+  if (!Number.isFinite(n)) return "Pendiente";
   return n.toFixed(2).replace("-", "−").replace(".", ",");
 }
 function signed(n: number) {
@@ -324,7 +310,7 @@ function decimalHoursFromMinutes(minutes: number) {
   return Number((minutes / 60).toFixed(2));
 }
 function formatHours(hours: number) {
-  return `${iso(hours)} h`;
+  return Number.isFinite(hours) ? `${iso(hours)} h` : "Pendiente";
 }
 function clockMinutes(value: string) {
   const [h, m] = value.split(":").map(Number);
@@ -338,10 +324,6 @@ function elapsedMinutes(start: string, end: string) {
   const a = clockMinutes(start),
     b = clockMinutes(end);
   return b >= a ? b - a : b + 1440 - a;
-}
-function lastSaturdayOfOctober(year: number, month: number, day: number) {
-  if (month !== 10 || weekdayMon(year, month, day) !== 5) return false;
-  return day + 7 > daysInMonth(year, month);
 }
 function isWorking(s: Status) {
   return (
@@ -401,7 +383,7 @@ function makeDays(year: number, month: number, reviewing = true): DayData[] {
     day: i + 1,
     baseStatus: reviewing ? "REVISAR" : "AGCG",
     status: reviewing ? "REVISAR" : "AGCG",
-    officialHoliday: isKnownHoliday(year, month, i + 1),
+    officialHoliday: false,
     special: "NINGUNA",
     extraHours: 0,
     modificationPlacement: "FINAL",
@@ -417,7 +399,7 @@ function normalizeDays(raw: DayData[], year: number, month: number) {
       status: legacyEve ? "AGCG" : d.status,
       baseStatus: d.baseStatus || baseOf(d.status),
       officialHoliday:
-        !!d.officialHoliday || isKnownHoliday(year, month, d.day),
+        false, // Legacy red-digit flags are no longer a source of operational truth.
       special: legacyEve ? "VISPERA_MANUAL" : legacySpecial || "NINGUNA",
       extraHours: Number(d.extraHours) || 0,
       modificationPlacement: d.modificationPlacement || "FINAL",
@@ -655,53 +637,65 @@ function calcDay(
       creditedMinutes: 0,
       reason: statusLabel[d.status],
     };
-  const wd = weekdayMon(year, month, d.day),
-    nextYear = month === 12 ? year + 1 : year,
-    nextMonth = month === 12 ? 1 : month + 1,
-    tomorrow =
-      d.day < daysInMonth(year, month)
-        ? all.find((x) => x.day === d.day + 1)?.officialHoliday
-        : isKnownHoliday(nextYear, nextMonth, 1),
-    forcedEve =
-      d.status === "VISPERA_FESTIVO" || d.special === "VISPERA_MANUAL";
-  let kind: ShiftKind = "NORMAL",
-    reason = "Jornada normal";
-  if (
-    d.special === "NON_STOP_PACTADO" ||
-    d.special === "NON_STOP_EXTRA" ||
-    isFixedNonStop(month, d.day)
-  ) {
-    kind = "NON_STOP";
-    reason =
-      d.special === "NON_STOP_EXTRA"
-        ? "Non stop extraordinario"
-        : "Non stop pactado";
-  } else if (d.special === "FESTIVO_ESPECIAL") {
-    kind = "FRIDAY_EVE";
-    reason = "Festivo especial operativo";
-  } else if (tomorrow || forcedEve) {
-    kind = "FRIDAY_EVE";
-    reason =
-      forcedEve && !tomorrow
-        ? "Víspera de festivo · manual"
-        : "Víspera de festivo";
-  } else if (wd === 5) {
-    kind =
-      profile.contract === "75" && lastSaturdayOfOctober(year, month, d.day)
-        ? "LONG_SATURDAY"
-        : "SATURDAY";
-    reason =
-      kind === "LONG_SATURDAY" ? "Sábado largo · cambio de hora" : "Sábado";
-  } else if (wd === 4) {
-    kind = "FRIDAY_EVE";
-    reason = "Viernes";
+  const code = officialCategory(year, month, d.day);
+  if (!code) {
+    // Unknown official category is not an unknown personal situation. Preserve
+    // every result independent of that category, including cross-year zeros.
+    const fullTime = isFullTime(profile);
+    const fixed = fullTime && ["T4", "T5"].includes(profileTurn(profile));
+    const custom = d.special === "MODIFICACION" &&
+      d.modificationPlacement === "PERSONALIZADO" && d.customStart && d.customEnd;
+    let start = "", end = "", minutes = NaN;
+    if (fixed) {
+      const shift = shiftFor(profile, "NORMAL", 1);
+      start = shift.start; end = shift.end; minutes = shift.minutes;
+      if (d.special === "MODIFICACION" && !custom) {
+        minutes = Math.max(0, minutes + Math.round(d.extraHours * 60));
+        if (d.modificationPlacement === "INICIO") start = clockLabel(clockMinutes(start) - Math.round(d.extraHours * 60));
+        else end = clockLabel(clockMinutes(end) + Math.round(d.extraHours * 60));
+      }
+    }
+    if (custom) {
+      start = d.customStart!; end = d.customEnd!;
+      minutes = elapsedMinutes(start, end);
+    }
+    const night = fullTime ? 0 : Number.isFinite(minutes) ? nightMinutesForShift(start, end, minutes) : NaN;
+    return {
+      scheduleReview: !Number.isFinite(minutes), compensationPending: fullTime,
+      value: fullTime || toPreviousYear ? 0 : toCurrentYear ? decimalHoursFromMinutes(minutes) : NaN,
+      shift: Number.isFinite(minutes) ? `${start}–${end}` : "Pendiente",
+      hours: Number.isFinite(minutes) ? `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, "0")}` : "Pendiente",
+      night: toPreviousYear ? "—" : iso(decimalHoursFromMinutes(night)),
+      workedMinutes: toPreviousYear ? 0 : minutes,
+      nightMinutes: toPreviousYear ? 0 : night,
+      nightHours: toPreviousYear ? 0 : decimalHoursFromMinutes(night),
+      ordinaryHours: decimalHoursFromMinutes(minutes),
+      horaNona: fullTime ? 0 : Number.isFinite(minutes) ? Math.max(0, Math.ceil((minutes - 480) / 15) * 0.25) : NaN,
+      creditedMinutes: fullTime || (!toPreviousYear && !toCurrentYear) ? 0 : minutes,
+      reason: "Categoría oficial no disponible · solo los cálculos dependientes quedan pendientes",
+    };
+  }
+  const rule = CATEGORY_RULES[code], wd = rule.weekday;
+  let kind: ShiftKind = rule.kind, reason: string = code.replaceAll("_", " ");
+  // The event is the current date's official code. October only selects the
+  // existing autumn tariff; spring keeps its previous schedule. No event date
+  // is reconstructed from tomorrow or a last-Saturday formula.
+  if (code === "DISSABTE_CANVI_HORA" && profile.contract === "75" && month === 10) {
+    kind = "LONG_SATURDAY";
+    reason = "Sábado largo · cambio de hora";
+  }
+  // Explicit personal overrides remain visible and are not inferred from colours.
+  if (d.special === "NON_STOP_PACTADO" || d.special === "NON_STOP_EXTRA") {
+    kind = "NON_STOP"; reason = specialLabel[d.special] + " · manual";
+  } else if (d.special === "FESTIVO_ESPECIAL" || d.special === "VISPERA_MANUAL" || d.status === "VISPERA_FESTIVO") {
+    kind = "FRIDAY_EVE"; reason = "Jornada especial · manual";
   }
   let definition = shiftFor(profile, kind, wd),
     start = definition.start,
     end = definition.end,
     workedMinutes = definition.minutes,
     value = definition.value;
-  if (!isFullTime(profile) && month === 12 && d.day === 24) {
+  if (!isFullTime(profile) && code.endsWith("_FINS_23H")) {
     const normal = shiftFor(profile, "NORMAL", wd);
     definition = normal;
     start = normal.start;
@@ -972,103 +966,6 @@ function annualCellEvidence(
     confidence: Math.max(0, Math.min(1, share + margin * 0.35)),
   };
 }
-function containsRedDigit(
-  data: Uint8ClampedArray,
-  backgroundStatus: Status,
-) {
-  let strongRed = 0,
-    blendedRed = 0,
-    turquoiseBlendRed = 0,
-    brownCoreRed = 0,
-    orangeCoreRed = 0;
-  for (let p = 0; p < data.length; p += 4) {
-    const r = data[p],
-      g = data[p + 1],
-      b = data[p + 2];
-    if (
-      r > 90 &&
-      r < 245 &&
-      g < 135 &&
-      b < 140 &&
-      r - g > 40 &&
-      r - b > 34
-    )
-      strongRed++;
-    // Al fotografiar o comprimir el calendario, los bordes del número rojo
-    // se mezclan con el fondo. Sobre el turquesa de DCOM el resultado puede ser
-    // un granate apagado, no el rojo intenso que aparece sobre fondo blanco.
-    if (
-      r > 88 &&
-      r < 248 &&
-      g < 185 &&
-      b < 195 &&
-      r - g > 23 &&
-      r - b > 14
-    )
-      blendedRed++;
-    // En algunas capturas el canal azul del fondo DCOM atraviesa casi por
-    // completo la tinta roja. El número conserva dominio sobre el verde, pero
-    // apenas sobre el azul; esta pasada reconoce ese granate oscuro.
-    if (
-      r > 70 &&
-      r < 190 &&
-      g < 140 &&
-      b < 155 &&
-      r - g > 20 &&
-      r - b > 4
-    )
-      turquoiseBlendRed++;
-    // Sobre vacaciones el texto normal es claro y sus bordes heredan el tono
-    // marrón. Un festivo real, en cambio, conserva un núcleo rojo muy saturado.
-    if (
-      r > 100 &&
-      g < 130 &&
-      b < 130 &&
-      r - g > 80 &&
-      r - b > 70
-    )
-      brownCoreRed++;
-    // El fondo naranja de FEST ya contiene mucho rojo. Solo la tinta del
-    // número festivo conserva una diferencia extrema frente a verde y azul.
-    if (
-      r > 100 &&
-      g < 145 &&
-      b < 135 &&
-      r - g > 100 &&
-      r - b > 80
-    )
-      orangeCoreRed++;
-  }
-  const pixels = data.length / 4,
-    strongRatio = pixels ? strongRed / pixels : 0,
-    blendedRatio = pixels ? blendedRed / pixels : 0,
-    turquoiseBlendRatio = pixels ? turquoiseBlendRed / pixels : 0,
-    brownCoreRatio = pixels ? brownCoreRed / pixels : 0,
-    orangeCoreRatio = pixels ? orangeCoreRed / pixels : 0;
-  // Un dígito rojo ocupa una parte pequeña del recorte. Si el rojo llena una
-  // zona amplia, es el fondo marrón/naranja de la casilla y no tinta roja.
-  if (backgroundStatus === "VACACIONES_PENDIENTES")
-    return (
-      brownCoreRed >= Math.max(2, Math.round(pixels * 0.006)) &&
-      brownCoreRatio < 0.18
-    );
-  if (baseOf(backgroundStatus) === "FEST")
-    return (
-      orangeCoreRed >= Math.max(2, Math.round(pixels * 0.006)) &&
-      orangeCoreRatio < 0.72
-    );
-  return (
-    (strongRed >= Math.max(2, Math.round(pixels * 0.006)) &&
-      strongRatio < 0.18) ||
-    (strongRed >= 1 &&
-      blendedRed >= Math.max(3, Math.round(pixels * 0.01)) &&
-      blendedRatio < 0.16) ||
-    (baseOf(backgroundStatus) === "DCOM" &&
-      turquoiseBlendRed >= Math.max(3, Math.round(pixels * 0.012)) &&
-      turquoiseBlendRatio < 0.14)
-  );
-}
-
 async function classifyMonthly(file: File, year: number, month: number) {
   const bitmap = await createImageBitmap(file),
     canvas = document.createElement("canvas");
@@ -1807,39 +1704,21 @@ async function classifyAnnual(file: File, year: number) {
       y0 = straightPanels
         ? straightPanels[month - 1].gridTop + cellH * 0.5
         : panelBottom - (weeks - 0.5) * cellH,
-      statuses: { status: Status; confidence: number }[] = [],
-      redDigits: boolean[] = [];
+      statuses: { status: Status; confidence: number }[] = [];
     for (let day = 1; day <= daysInMonth(year, month); day++) {
       const index = weekdayMon(year, month, 1) + day - 1,
         col = index % 7,
         week = Math.floor(index / 7),
         cx = panel.x + cellW * (col + 0.5),
         cy = y0 + week * cellH,
-        evidence = annualCellEvidence(ctx, cx, cy, cellW, cellH, canvas),
-        digitX = Math.max(0, Math.round(cx - cellW * 0.46)),
-        digitY = Math.max(0, Math.round(cy - cellH * 0.45)),
-        // El recorte incluye completo un número de dos cifras. La clasificación
-        // posterior descarta fondos rojizos por superficie, así que ampliar esta
-        // zona aporta tinta útil sin confundir FEST, vacaciones o laudo.
-        digitW = Math.max(5, Math.round(cellW * 0.88)),
-        digitH = Math.max(5, Math.round(cellH * 0.56)),
-        digitSample = ctx.getImageData(
-          digitX,
-          digitY,
-          Math.min(digitW, canvas.width - digitX),
-          Math.min(digitH, canvas.height - digitY),
-        ).data;
+        evidence = annualCellEvidence(ctx, cx, cy, cellW, cellH, canvas);
       statuses.push(evidence);
-      redDigits.push(
-        containsRedDigit(digitSample, evidence.status),
-      );
     }
     raw[month] = makeDays(year, month).map((d, i) => ({
       ...d,
       status: statuses[i].status,
       baseStatus: baseOf(statuses[i].status),
       confidence: statuses[i].confidence,
-      officialHoliday: d.officialHoliday || redDigits[i],
     }));
   }
   const phase = inferCyclePhase(year, raw),
@@ -1884,7 +1763,7 @@ function repairStoredPlan(
           : {
               ...d,
               baseStatus: corrected.baseStatus,
-              officialHoliday: d.officialHoliday || corrected.officialHoliday,
+              officialHoliday: false,
             };
       });
     repaired[month] = { ...saved, original: correctedOriginal, days: current };
@@ -1957,6 +1836,32 @@ export default function Home() {
     [month, setMonth] = useState(1),
     [plan, setPlan] = useState<YearPlan>({}),
     [days, setDays] = useState<DayData[]>(() => makeDays(INITIAL_YEAR, 1));
+  const [officialRevision, setOfficialRevision] = useState(0);
+  const [calendarStatus, setCalendarStatus] = useState("Cargando calendario oficial…");
+  const [calendarRetry, setCalendarRetry] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    setCalendarStatus(`Cargando calendario oficial ${year}…`);
+    const sourceYears = [year];
+    // Only load an adjacent year if saved credited work actually needs its rules.
+    try {
+      const following = JSON.parse(localStorage.getItem(`metro-year-${year + 1}`) || "{}");
+      if (Object.values(following).some((p: any) => p.days?.some((d: DayData) => d.status === "COMPUTO_ANTERIOR"))) sourceYears.push(year + 1);
+    } catch { /* Invalid personal storage is handled by the existing plan loader. */ }
+    Promise.all(sourceYears.map(y => officialCalendar.load(y))).then(calendars => {
+      if (cancelled) return;
+      const missing = calendars.flatMap(c => [...c].filter(([, code]) => code === null).map(([date]) => date));
+      setCalendarStatus(missing.length
+        ? `Calendario oficial cargado. Categoría no disponible: ${missing.join(", ")}. Solo quedan pendientes los cálculos que necesiten esas categorías.`
+        : `Calendario oficial ${year} cargado y disponible en esta sesión.`);
+      setOfficialRevision(v => v + 1);
+    }).catch(() => {
+      if (cancelled) return;
+      setOfficialRevision(v => v + 1);
+      setCalendarStatus("No se ha podido cargar el calendario oficial. El reconocimiento de colores sigue disponible; las jornadas sin categoría y sus totales quedan pendientes. Reintenta la carga.");
+    });
+    return () => { cancelled = true; };
+  }, [year, calendarRetry]);
   const [screen, setScreen] = useState<"year" | "month">("year"),
     [uploadMode, setUploadMode] = useState<"annual" | "monthly">("annual");
   const [annualFile, setAnnualFile] = useState<File | null>(null),
@@ -2168,8 +2073,11 @@ export default function Home() {
     setProgress(12);
     setMessage("Leyendo los doce meses…");
     try {
+      // The annual request is shared with the screen loader, never per cell.
+      await officialCalendar.load(year).catch(() => undefined);
       const found = await classifyAnnual(annualFile, year);
       if (!found) throw new Error();
+      setCalendarRetry(v => v + 1);
       setProgress(100);
       persist(found.plan);
       persistPeriods([]);
@@ -2210,6 +2118,7 @@ export default function Home() {
     setProgress(15);
     setMessage("Comprobando el mes…");
     try {
+      await officialCalendar.load(year).catch(() => undefined);
       const found = await classifyMonthly(monthlyFile, year, month);
       if (!found) throw new Error();
       const read = makeDays(year, month).map((d) => {
@@ -2237,6 +2146,7 @@ export default function Home() {
         },
       });
       setDays(next);
+      setCalendarRetry(v => v + 1);
       setProgress(100);
       setMessage(
         `${next.length} días reconocidos. ${next.filter((d) => needsReview(d.status)).length} pendientes.`,
@@ -2445,7 +2355,7 @@ export default function Home() {
 
   const calculations = useMemo(
       () => days.map((d) => ({ d, c: calcDay(d, days, year, month, profile) })),
-      [days, year, month, profile],
+      [days, year, month, profile, officialRevision],
     ),
     monthTotal = totalFor(days, year, month, profile),
     currentMonthOrdinaryHours = ordinaryHoursFor(
@@ -2463,7 +2373,7 @@ export default function Home() {
     currentMonthPlusFestiu = plusFestiuCount(days, year, month),
     currentMonthPlusConvenio = plusConvenioCount(days),
     first = weekdayMon(year, month, 1),
-    review = days.filter((d) => needsReview(d.status)).length,
+    review = days.filter((d) => needsReview(d.status) || (isWorking(d.status) && !officialCategory(year, month, d.day))).length,
     worked = days.filter((d) => isWorking(d.status)).length;
   const monthTotals = useMemo(
     () =>
@@ -2473,7 +2383,7 @@ export default function Home() {
           return [m, plan[m] ? totalFor(plan[m].days, year, m, profile) : 0];
         }),
       ),
-    [plan, year, profile],
+    [plan, year, profile, officialRevision],
   );
   const monthOrdinaryHoursByMonth = useMemo(
       () =>
@@ -2487,7 +2397,7 @@ export default function Home() {
             ];
           }),
         ),
-      [plan, year, profile],
+      [plan, year, profile, officialRevision],
     ),
     monthNightHoursByMonth = useMemo(
       () =>
@@ -2501,7 +2411,7 @@ export default function Home() {
             ];
           }),
         ),
-      [plan, year, profile],
+      [plan, year, profile, officialRevision],
     ),
     monthPlusFestiuByMonth = useMemo(
       () =>
@@ -2545,7 +2455,7 @@ export default function Home() {
     ),
     incomingPreviousCreditMinutes = useMemo(
       () => storedPreviousYearCreditMinutes(year + 1, profile),
-      [year, plan, profile],
+      [year, plan, profile, officialRevision],
     ),
     incomingPreviousCredit = Number(
       (incomingPreviousCreditMinutes / 60).toFixed(2),
@@ -2584,7 +2494,7 @@ export default function Home() {
       out.push({
         label: `${Math.min(...nums)}–${Math.max(...nums)} ${MONTHS[month - 1].slice(0, 3).toLowerCase()}.`,
         total: nums.reduce(
-          (a, n) => a + (calculations.find((x) => x.d.day === n)?.c.value || 0),
+          (a, n) => a + (calculations.find((x) => x.d.day === n)?.c.value ?? 0),
           0,
         ),
       });
@@ -2649,6 +2559,10 @@ export default function Home() {
           </div>
         </div>
       </header>
+      <div role="status" className="mx-auto max-w-[1500px] px-4 pt-4 text-sm text-amber-200 md:px-8">
+        {calendarStatus}
+        <Button variant="ghost" onClick={() => setCalendarRetry(v => v + 1)}>Reintentar calendario oficial</Button>
+      </div>
       {isFullTime(profile) && <p className="mx-auto max-w-[1500px] px-4 pt-4 text-sm text-amber-200 md:px-8">Tiempo completo · previsión de horarios. Cómputo y conceptos retributivos pendientes de validar.{["T1", "T2"].includes(profileTurn(profile)) && " Sábados y non stop: horario histórico por confirmar."}</p>}
       <div className="mx-auto max-w-[1500px] px-4 pt-5 md:px-8">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -3344,23 +3258,10 @@ export default function Home() {
                     </b>
                   </div>
                 )}
-                <label className="mt-2 flex items-center gap-3 rounded-xl border border-[#eeb64b]/25 bg-[#eeb64b]/7 p-3">
-                  <Checkbox
-                    checked={selected.officialHoliday}
-                    onCheckedChange={(v) =>
-                      setSelected({ ...selected, officialHoliday: !!v })
-                    }
-                  />
-                  <span>
-                    <b className="block text-sm text-[#ffd173]">
-                      Día festivo oficial
-                    </b>
-                    <small className="text-white/50">
-                      Mantiene DCOM, FEST o AGCG y convierte el día anterior
-                      trabajado en víspera.
-                    </small>
-                  </span>
-                </label>
+                <p className="mt-2 rounded-xl border border-[#eeb64b]/25 p-3 text-sm">
+                  Categoría oficial TMB: {officialCategory(year, month, selected.day)?.replaceAll("_", " ") || "No disponible · cómputo pendiente"}.
+                  Se consulta por fecha y no se modifica desde el calendario personal.
+                </p>
               </div>
               {selected.status === "COMPUTO_ANTERIOR" && (
                 <div className="rounded-xl border border-[#eeb64b]/25 bg-[#eeb64b]/8 p-3 text-xs leading-5 text-white/65">
@@ -3774,7 +3675,7 @@ function MonthView({
             </span>
             <strong>{nightLabel(profile, monthNightHours)}</strong>
           </div>
-          {(isFullTime(profile) || monthHoraNona > 0) && (
+          {(isFullTime(profile) || !Number.isFinite(monthHoraNona) || monthHoraNona > 0) && (
             <div className="month-kpi payroll">
               <span>
                 <Clock3 size={13} />
@@ -3844,7 +3745,7 @@ function MonthView({
             {calculations.map(({ d, c }) => (
               <button
                 key={d.day}
-                className={`day ${d.status.toLowerCase()} ${d.officialHoliday ? "official" : ""} ${d.status !== d.baseStatus ? "modified" : ""}`}
+                className={`day ${d.status.toLowerCase()} ${officialHolidayFor(year, month, d.day) ? "official" : ""} ${d.status !== d.baseStatus ? "modified" : ""}`}
                 onClick={() => onSelect(d)}
               >
                 <div className="day-top">
@@ -3864,7 +3765,7 @@ function MonthView({
                 <div className="day-marks">
                   {d.special !== "NINGUNA" ? (
                     <i>{specialMark(d.special)}</i>
-                  ) : isFixedNonStop(month, d.day) && isWorking(d.status) ? (
+                  ) : (officialCategory(year, month, d.day) === "VIGILIA_NON_STOP") && isWorking(d.status) ? (
                     <i>NS</i>
                   ) : null}
                   {isConfirmedSpecialRetributiveDay(year, month, d.day) && (
@@ -3875,9 +3776,8 @@ function MonthView({
             ))}
           </div>
           <p className="mt-4 text-xs text-white/38">
-            El número rojo identifica un festivo oficial detectado en la imagen
-            o incorporado entre los diez festivos fijos generales. NS identifica
-            los non stop pactados del 23/6, 23/9 y 31/12. El punto dorado
+            La marca de festivo y NS proceden del calendario oficial TMB.
+            Los colores personales siguen identificando trabajo, descanso y ausencias. El punto dorado
             identifica días modificados. D.ESP marca un día especial
             retributivo confirmado; es informativo y no altera el cómputo.
           </p>
@@ -3908,7 +3808,7 @@ function MonthView({
                   <TableCell>{d.baseStatus}</TableCell>
                   <TableCell>
                     <Badge variant="outline">{situationLabel(d)}</Badge>
-                    {isFixedNonStop(month, d.day) && isWorking(d.status) && (
+                    {(officialCategory(year, month, d.day) === "VIGILIA_NON_STOP") && isWorking(d.status) && (
                       <small className="ml-2 text-[#eeb64b]">
                         Non stop pactado
                       </small>
@@ -3978,7 +3878,7 @@ function Rules({ profile }: { profile: UserProfile }) {
       <Rule
         n="02"
         title="Festivos oficiales"
-        text="Se incorporan los festivos generales del año y los números rojos detectados en la imagen; no se presuponen festivos municipales."
+        text="La categoría operativa procede del calendario oficial TMB. Sin categoría disponible, el cómputo queda pendiente; no se deduce del número rojo ni del día siguiente."
       />
       <Rule
         n="03"
