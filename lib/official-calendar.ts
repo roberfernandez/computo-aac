@@ -83,7 +83,79 @@ export const officialCalendar = createOfficialCalendarClient();
 export function officialCategory(year: number, month: number, day: number) {
   return officialCalendar.get(year, month, day);
 }
+const BARCELONA_HOLIDAYS: Record<number, Set<string>> = {
+  2024: new Set([
+    "01-01",
+    "01-06",
+    "03-29",
+    "04-01",
+    "05-01",
+    "05-20",
+    "06-24",
+    "08-15",
+    "09-11",
+    "09-24",
+    "10-12",
+    "11-01",
+    "12-06",
+    "12-25",
+    "12-26",
+  ]),
+  2025: new Set([
+    "01-01",
+    "01-06",
+    "04-18",
+    "04-21",
+    "05-01",
+    "06-09",
+    "06-24",
+    "08-15",
+    "09-11",
+    "09-24",
+    "11-01",
+    "12-06",
+    "12-08",
+    "12-25",
+    "12-26",
+  ]),
+  2026: new Set([
+    "01-01",
+    "01-06",
+    "04-03",
+    "04-06",
+    "05-01",
+    "05-25",
+    "06-24",
+    "08-15",
+    "09-11",
+    "09-24",
+    "10-12",
+    "12-08",
+    "12-25",
+    "12-26",
+  ]),
+  2027: new Set([
+    "01-01",
+    "01-06",
+    "03-26",
+    "03-29",
+    "05-01",
+    "05-17",
+    "06-24",
+    "09-11",
+    "09-24",
+    "10-12",
+    "11-01",
+    "12-06",
+    "12-08",
+    "12-25",
+  ]),
+};
+
 export function officialHolidayFor(year: number, month: number, day: number) {
-  const code = officialCategory(year, month, day);
-  return code === "FESTIU" || code === "FESTIU_ESPECIAL";
+  const holidays = BARCELONA_HOLIDAYS[year];
+  if (!holidays) return false;
+
+  const key = `${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  return holidays.has(key);
 }
