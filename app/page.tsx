@@ -2996,6 +2996,7 @@ export default function Home() {
           }}
         >
           <DialogHeader>
+            <a href="https://roberfernandez.github.io/tmb-agent/" className="inline-flex min-h-11 items-center self-start text-sm text-white/80 hover:text-white">← TMB Agent</a>
             <div className="profile-dialog-icon">
               <TrainFront size={28} />
             </div>
