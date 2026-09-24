@@ -2127,11 +2127,14 @@ async function classifyAnnual(file: File, year: number) {
     }));
   }
   const phase = inferCyclePhase(year, raw),
-    result: YearPlan = {};
+    result: YearPlan = {},
+    mismatchByMonth: string[] = [];
   let mismatches = 0;
   for (let month = 1; month <= 12; month++) {
-    const audited = auditCycle(raw[month], year, month, phase);
-    mismatches += audited.filter((d) => d.note).length;
+    const audited = auditCycle(raw[month], year, month, phase),
+      monthMismatches = audited.filter((d) => d.note).length;
+    mismatches += monthMismatches;
+    mismatchByMonth.push(`${month}:${monthMismatches}`);
     const recognized = copyRecognizedDays(audited);
     result[month] = {
       original: recognized.map((d) => ({ ...d })),
@@ -2139,7 +2142,7 @@ async function classifyAnnual(file: File, year: number) {
       confirmed: false,
     };
   }
-  return { plan: result, phase, mismatches };
+  return { plan: result, phase, mismatches, mismatchByMonth };
 }
 
 function repairStoredPlan(
