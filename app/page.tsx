@@ -213,7 +213,7 @@ const CONFIRMED_SPECIAL_RETRIBUTIVE_DAYS = [
 // Incrementar esta versión cuando cambie la lógica de reconocimiento anual.
 // Los años analizados con una versión anterior se conservan, pero la interfaz
 // avisa de que conviene volver a leer su imagen.
-const ANNUAL_DETECTOR_VERSION = 8;
+const ANNUAL_DETECTOR_VERSION = 9;
 const statusLabel: Record<Status, string> = {
   REVISAR: "Revisar",
   AGCG: "Trabajo · AGCG",
@@ -2103,7 +2103,20 @@ async function classifyAnnual(file: File, year: number) {
         week = Math.floor(index / 7),
         cx = panel.x + cellW * (col + 0.5),
         cy = y0 + week * cellH,
-        evidence = annualCellEvidence(ctx, cx, cy, cellW, cellH, canvas);
+        // Las celdas de la vista anual son muy bajas. Muestreamos tres alturas
+        // interiores y elegimos la lectura con mayor confianza para evitar que
+        // una pequeña desviación vertical caiga sobre el borde de la celda.
+        samples = [-0.22, 0, 0.22].map((dy) =>
+          annualCellEvidence(
+            ctx,
+            cx,
+            cy + cellH * dy,
+            cellW,
+            cellH * 0.78,
+            canvas,
+          ),
+        ),
+        evidence = samples.sort((a, b) => b.confidence - a.confidence)[0];
       statuses.push(evidence);
     }
     raw[month] = makeDays(year, month).map((d, i) => ({
