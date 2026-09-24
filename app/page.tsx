@@ -3089,7 +3089,13 @@ export default function Home() {
         <div className="mx-auto flex max-w-[1500px] flex-wrap items-center justify-between gap-4">
           <div className="flex min-w-0 items-center gap-3">
             <div className="logo-mark shrink-0">
-              <CalendarDays size={23} />
+              <img
+                src="/computo-aac/computo-192.png?v=2"
+                alt=""
+                width={46}
+                height={46}
+                className="h-full w-full rounded-[inherit] object-cover"
+              />
             </div>
             <div className="min-w-0">
               <p className="text-xs font-semibold uppercase tracking-[.22em] text-[#71d7cc]">
