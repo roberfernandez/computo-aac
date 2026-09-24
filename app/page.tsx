@@ -2506,7 +2506,7 @@ export default function Home() {
       );
       setMessage(
         found.mismatches
-          ? `Detector v${ANNUAL_DETECTOR_VERSION} · Previsión de ${year} creada: ${total} días reconocidos y ${found.mismatches} diferencias visibles respecto al ciclo de 28 días.`
+          ? `Detector v${ANNUAL_DETECTOR_VERSION} · Previsión de ${year} creada: ${total} días reconocidos y ${found.mismatches} diferencias visibles respecto al ciclo de 28 días. Por mes: ${found.mismatchByMonth.join(" · ")}.`
           : `Detector v${ANNUAL_DETECTOR_VERSION} · Previsión de ${year} creada: ${total} días reconocidos y ciclo de 28 días verificado sin diferencias.`,
       );
     } catch (error) {
