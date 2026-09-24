@@ -213,7 +213,7 @@ const CONFIRMED_SPECIAL_RETRIBUTIVE_DAYS = [
 // Incrementar esta versión cuando cambie la lógica de reconocimiento anual.
 // Los años analizados con una versión anterior se conservan, pero la interfaz
 // avisa de que conviene volver a leer su imagen.
-const ANNUAL_DETECTOR_VERSION = 12;
+const ANNUAL_DETECTOR_VERSION = 13;
 const statusLabel: Record<Status, string> = {
   REVISAR: "Revisar",
   AGCG: "Trabajo · AGCG",
@@ -2139,13 +2139,20 @@ async function classifyAnnual(file: File, year: number) {
   }
   const phase = inferCyclePhase(year, raw),
     result: YearPlan = {},
-    mismatchByMonth: string[] = [];
-  let mismatches = 0;
+    cycleDifferenceByMonth: string[] = [],
+    uncertainByMonth: string[] = [];
+  let cycleDifferences = 0,
+    uncertain = 0;
   for (let month = 1; month <= 12; month++) {
     const audited = auditCycle(raw[month], year, month, phase),
-      monthMismatches = audited.filter((d) => d.note).length;
-    mismatches += monthMismatches;
-    mismatchByMonth.push(`${month}:${monthMismatches}`);
+      monthCycleDifferences = audited.filter(
+        (d) => d.status !== "REVISAR" && Boolean(d.note),
+      ).length,
+      monthUncertain = raw[month].filter((d) => d.status === "REVISAR").length;
+    cycleDifferences += monthCycleDifferences;
+    uncertain += monthUncertain;
+    cycleDifferenceByMonth.push(`${month}:${monthCycleDifferences}`);
+    uncertainByMonth.push(`${month}:${monthUncertain}`);
     const recognized = copyRecognizedDays(audited);
     result[month] = {
       original: recognized.map((d) => ({ ...d })),
@@ -2153,7 +2160,14 @@ async function classifyAnnual(file: File, year: number) {
       confirmed: false,
     };
   }
-  return { plan: result, phase, mismatches, mismatchByMonth };
+  return {
+    plan: result,
+    phase,
+    cycleDifferences,
+    cycleDifferenceByMonth,
+    uncertain,
+    uncertainByMonth,
+  };
 }
 
 function repairStoredPlan(
@@ -2516,9 +2530,7 @@ export default function Home() {
         0,
       );
       setMessage(
-        found.mismatches
-          ? `Detector v${ANNUAL_DETECTOR_VERSION} · Previsión de ${year} creada: ${total} días reconocidos y ${found.mismatches} diferencias visibles respecto al ciclo de 28 días. Por mes: ${found.mismatchByMonth.join(" · ")}.`
-          : `Detector v${ANNUAL_DETECTOR_VERSION} · Previsión de ${year} creada: ${total} días reconocidos y ciclo de 28 días verificado sin diferencias.`,
+        `Detector v${ANNUAL_DETECTOR_VERSION} · Previsión de ${year} creada: ${total} días. Lecturas dudosas: ${found.uncertain} (por mes: ${found.uncertainByMonth.join(" · ")}). Diferencias visibles respecto al ciclo base: ${found.cycleDifferences} (informativas; pueden ser vacaciones, permisos, festivos u otras excepciones reales).`,
       );
     } catch (error) {
       const detail =
