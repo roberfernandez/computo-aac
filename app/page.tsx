@@ -5,7 +5,6 @@ import { useEffect, useMemo, useState } from "react";
 import { CATEGORY_RULES, officialCalendar, officialCategory, officialHolidayFor } from "@/lib/official-calendar";
 import {
   UploadCloud,
-  TrainFront,
   CheckCircle2,
   AlertTriangle,
   RotateCcw,
@@ -3061,7 +3060,7 @@ export default function Home() {
         <div className="mx-auto flex max-w-[1500px] flex-wrap items-center justify-between gap-4">
           <div className="flex min-w-0 items-center gap-3">
             <div className="logo-mark shrink-0">
-              <TrainFront size={23} />
+              <CalendarDays size={23} />
             </div>
             <div className="min-w-0">
               <p className="text-xs font-semibold uppercase tracking-[.22em] text-[#71d7cc]">
@@ -3537,7 +3536,7 @@ export default function Home() {
           <DialogHeader>
             <a href="https://roberfernandez.github.io/tmb-agent/" className="inline-flex min-h-11 items-center self-start text-sm text-white/80 hover:text-white">← TMB Agent</a>
             <div className="profile-dialog-icon">
-              <TrainFront size={28} />
+              <CalendarDays size={28} />
             </div>
             <DialogTitle className="text-2xl">
               Configura tu perfil AAC
