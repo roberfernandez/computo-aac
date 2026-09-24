@@ -2573,6 +2573,27 @@ export default function Home() {
     persist(next);
     if (m === month) setDays(next[m].days);
   }
+  function clearAnnualImage() {
+    if (annualPreview) URL.revokeObjectURL(annualPreview);
+    setAnnualFile(null);
+    setAnnualPreview("");
+  }
+  function clearMonthlyImage() {
+    if (monthlyPreview) URL.revokeObjectURL(monthlyPreview);
+    setMonthlyFile(null);
+    setMonthlyPreview("");
+  }
+  function resetMonth() {
+    const next = { ...plan };
+    delete next[month];
+    persist(next);
+    setDays(makeDays(year, month));
+    setSelected(null);
+    clearMonthlyImage();
+    setMessage(
+      `${MONTHS[month - 1]} vaciado. Puedes volver a importar la captura mensual.`,
+    );
+  }
   function resetYear() {
     setPlan({});
     setPeriods([]);
@@ -2581,6 +2602,8 @@ export default function Home() {
     setPeriodStart("");
     setPeriodEnd("");
     setDays(makeDays(year, month));
+    clearAnnualImage();
+    clearMonthlyImage();
     localStorage.removeItem(`metro-year-${year}`);
     localStorage.removeItem(`metro-periods-${year}`);
     localStorage.removeItem(`metro-prior-${year}`);
@@ -2591,7 +2614,7 @@ export default function Home() {
     );
     setDetectorVersion(0);
     setMessage(
-      "Previsión anual vaciada. Puedes volver a importar el calendario.",
+      "Previsión anual e imágenes cargadas vaciadas. Puedes volver a importar el calendario.",
     );
   }
 
@@ -2913,6 +2936,15 @@ export default function Home() {
                     Analizar mes
                   </Button>
                 </div>
+                <Button
+                  variant="outline"
+                  onClick={resetMonth}
+                  disabled={busy}
+                  className="mt-2 w-full"
+                >
+                  <RotateCcw size={16} />
+                  Vaciar mes
+                </Button>
               </TabsContent>
             </Tabs>
             <div
