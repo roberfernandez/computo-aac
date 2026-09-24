@@ -212,7 +212,7 @@ const CONFIRMED_SPECIAL_RETRIBUTIVE_DAYS = [
 // Incrementar esta versión cuando cambie la lógica de reconocimiento anual.
 // Los años analizados con una versión anterior se conservan, pero la interfaz
 // avisa de que conviene volver a leer su imagen.
-const ANNUAL_DETECTOR_VERSION = 16;
+const ANNUAL_DETECTOR_VERSION = 17;
 const statusLabel: Record<Status, string> = {
   REVISAR: "Revisar",
   AGCG: "Trabajo · AGCG",
@@ -963,20 +963,20 @@ function retryUncertainAnnualCell(
   cellH: number,
   canvas: HTMLCanvasElement,
 ) {
-  // Segunda pasada exclusivamente para celdas REVISAR. En v16 combinamos
-  // pequeños puntos interiores con franjas laterales más amplias del fondo.
-  // El número del día y los bordes quedan fuera de las zonas de muestreo.
+  // v17: lectura adaptativa SOLO para celdas que la primera pasada dejó
+  // en REVISAR. Muestreamos zonas pequeñas e independientes del fondo,
+  // evitando el número central y los bordes. Nunca usamos el ciclo para
+  // decidir el color: si no hay consenso suficiente, permanece REVISAR.
   const regions = [
-      [-0.31, -0.22, 0.14, 0.22],
-      [0.31, -0.22, 0.14, 0.22],
-      [-0.31, 0.22, 0.14, 0.22],
-      [0.31, 0.22, 0.14, 0.22],
-      [-0.36, 0, 0.12, 0.30],
-      [0.36, 0, 0.12, 0.30],
-      [-0.27, 0, 0.20, 0.58],
-      [0.27, 0, 0.20, 0.58],
+      [-0.34, -0.27, 0.12, 0.16], [0.34, -0.27, 0.12, 0.16],
+      [-0.34,  0.27, 0.12, 0.16], [0.34,  0.27, 0.12, 0.16],
+      [-0.38,  0.00, 0.10, 0.22], [0.38,  0.00, 0.10, 0.22],
+      [-0.23, -0.30, 0.16, 0.13], [0.23, -0.30, 0.16, 0.13],
+      [-0.23,  0.30, 0.16, 0.13], [0.23,  0.30, 0.16, 0.13],
+      [-0.29,  0.00, 0.14, 0.42], [0.29,  0.00, 0.14, 0.42],
     ],
-    votes = new Map<Status, { count: number; weight: number }>();
+    votes = new Map<Status, { count: number; weight: number; strong: number }>();
+
   for (const [dx, dy, rw, rh] of regions) {
     const sw = Math.max(2, Math.round(cellW * rw)),
       sh = Math.max(2, Math.round(cellH * rh)),
@@ -990,30 +990,41 @@ function retryUncertainAnnualCell(
           Math.min(sh, canvas.height - sy),
         ).data,
       );
-    if (evidence.status === "REVISAR" || evidence.confidence < 0.38) continue;
-    const current = votes.get(evidence.status) || { count: 0, weight: 0 };
+    if (evidence.status === "REVISAR" || evidence.confidence < 0.34) continue;
+    const current = votes.get(evidence.status) || { count: 0, weight: 0, strong: 0 };
     current.count++;
     current.weight += evidence.confidence;
+    if (evidence.confidence >= 0.58) current.strong++;
     votes.set(evidence.status, current);
   }
+
   const ranked = [...votes.entries()].sort(
-    (a, b) => b[1].count - a[1].count || b[1].weight - a[1].weight,
-  );
-  const best = ranked[0],
-    second = ranked[1],
-    voteLead = best && second ? best[1].count - second[1].count : best?.[1].count || 0,
-    weightLead = best && second ? best[1].weight - second[1].weight : best?.[1].weight || 0;
-  // Seguimos siendo conservadores: hacen falta varias regiones coincidentes
-  // y una ventaja real sobre la segunda opción. Si no, la celda sigue REVISAR.
-  if (
-    !best ||
-    best[1].count < 3 ||
-    (second && voteLead < 2 && weightLead < 0.75)
-  )
-    return null;
+      (x, y) =>
+        y[1].count - x[1].count ||
+        y[1].strong - x[1].strong ||
+        y[1].weight - x[1].weight,
+    ),
+    best = ranked[0],
+    second = ranked[1];
+  if (!best) return null;
+
+  const totalVotes = ranked.reduce((n, [, v]) => n + v.count, 0),
+    share = totalVotes ? best[1].count / totalVotes : 0,
+    voteLead = second ? best[1].count - second[1].count : best[1].count,
+    weightLead = second ? best[1].weight - second[1].weight : best[1].weight,
+    consensus =
+      best[1].count >= 4 &&
+      share >= 0.60 &&
+      (!second || voteLead >= 2 || weightLead >= 1.10) &&
+      (best[1].strong >= 2 || best[1].weight / best[1].count >= 0.52);
+
+  if (!consensus) return null;
   return {
     status: best[0],
-    confidence: Math.min(1, best[1].weight / best[1].count),
+    confidence: Math.min(
+      1,
+      0.45 * share + 0.55 * (best[1].weight / best[1].count),
+    ),
   };
 }
 
