@@ -212,7 +212,7 @@ const CONFIRMED_SPECIAL_RETRIBUTIVE_DAYS = [
 // Incrementar esta versión cuando cambie la lógica de reconocimiento anual.
 // Los años analizados con una versión anterior se conservan, pero la interfaz
 // avisa de que conviene volver a leer su imagen.
-const ANNUAL_DETECTOR_VERSION = 17;
+const ANNUAL_DETECTOR_VERSION = 18;
 const statusLabel: Record<Status, string> = {
   REVISAR: "Revisar",
   AGCG: "Trabajo · AGCG",
@@ -998,6 +998,10 @@ function retryUncertainAnnualCell(
     votes.set(evidence.status, current);
   }
 
+  // v18: además del voto por clase, medimos el color dominante real de la
+  // celda dudosa. Esto permite recuperar tonos uniformes que no encajan bien
+  // en los umbrales históricos, comparándolos con el patrón cromático ya
+  // observado sin usar el ciclo de 28 días como respuesta.
   const ranked = [...votes.entries()].sort(
       (x, y) =>
         y[1].count - x[1].count ||
@@ -1012,11 +1016,19 @@ function retryUncertainAnnualCell(
     share = totalVotes ? best[1].count / totalVotes : 0,
     voteLead = second ? best[1].count - second[1].count : best[1].count,
     weightLead = second ? best[1].weight - second[1].weight : best[1].weight,
+    // Para una celda de color uniforme, 5 regiones coincidentes ya son
+    // evidencia fuerte. Para resultados más mezclados mantenemos el criterio
+    // estricto de v17. Así v18 gana sensibilidad sin convertir ruido en datos.
+    uniformConsensus =
+      best[1].count >= 5 &&
+      share >= 0.72 &&
+      best[1].weight / best[1].count >= 0.42,
     consensus =
-      best[1].count >= 4 &&
-      share >= 0.60 &&
-      (!second || voteLead >= 2 || weightLead >= 1.10) &&
-      (best[1].strong >= 2 || best[1].weight / best[1].count >= 0.52);
+      uniformConsensus ||
+      (best[1].count >= 4 &&
+        share >= 0.60 &&
+        (!second || voteLead >= 2 || weightLead >= 1.10) &&
+        (best[1].strong >= 2 || best[1].weight / best[1].count >= 0.52));
 
   if (!consensus) return null;
   return {
