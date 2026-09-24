@@ -2346,9 +2346,11 @@ export default function Home() {
       const detail =
         error instanceof Error && error.message
           ? error.message
-          : "error desconocido";
+          : typeof error === "string" && error
+            ? error
+            : "error desconocido";
       console.error("[Còmput AAC] Error al analizar captura mensual:", error);
-      setMessage(`No he podido analizar la captura mensual. ${detail}`);
+      setMessage(`DIAG-MES-2 · ${detail}`);
     } finally {
       setBusy(false);
     }
