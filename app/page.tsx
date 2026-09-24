@@ -213,7 +213,7 @@ const CONFIRMED_SPECIAL_RETRIBUTIVE_DAYS = [
 // Incrementar esta versión cuando cambie la lógica de reconocimiento anual.
 // Los años analizados con una versión anterior se conservan, pero la interfaz
 // avisa de que conviene volver a leer su imagen.
-const ANNUAL_DETECTOR_VERSION = 11;
+const ANNUAL_DETECTOR_VERSION = 12;
 const statusLabel: Record<Status, string> = {
   REVISAR: "Revisar",
   AGCG: "Trabajo · AGCG",
@@ -2110,31 +2110,26 @@ async function classifyAnnual(file: File, year: number) {
       cellW = panel.length / 7,
       cellH = panel.cellH,
       y0 = panel.gridTop + cellH * .5,
-      candidates = [-0.34, -0.17, 0, 0.17, 0.34].map((offset) => {
-        const statuses: { status: Status; confidence: number }[] = [];
-        for (let day = 1; day <= daysInMonth(year, month); day++) {
-          const index = weekdayMon(year, month, 1) + day - 1,
-            col = index % 7,
-            week = Math.floor(index / 7),
-            cx = panel.x + cellW * (col + 0.5),
-            cy = y0 + week * cellH + cellH * offset;
-          statuses.push(
-            annualCellEvidence(ctx, cx, cy, cellW, cellH * 0.72, canvas),
-          );
-        }
-        return statuses;
-      }),
-      score = (statuses: { status: Status; confidence: number }[]) =>
-        statuses.reduce(
-          (sum, entry) =>
-            sum +
-            entry.confidence -
-            (entry.status === "REVISAR" ? 1.5 : 0),
-          0,
+      statuses: { status: Status; confidence: number }[] = [];
+    for (let day = 1; day <= daysInMonth(year, month); day++) {
+      const index = weekdayMon(year, month, 1) + day - 1,
+        col = index % 7,
+        week = Math.floor(index / 7),
+        cx = panel.x + cellW * (col + 0.5),
+        cy = y0 + week * cellH,
+        samples = [-0.22, 0, 0.22].map((dy) =>
+          annualCellEvidence(
+            ctx,
+            cx,
+            cy + cellH * dy,
+            cellW,
+            cellH * 0.78,
+            canvas,
+          ),
         ),
-      statuses = candidates
-        .map((entries) => ({ entries, score: score(entries) }))
-        .sort((a, b) => b.score - a.score)[0].entries;
+        evidence = samples.sort((a, b) => b.confidence - a.confidence)[0];
+      statuses.push(evidence);
+    }
     raw[month] = makeDays(year, month).map((d, i) => ({
       ...d,
       status: statuses[i].status,
