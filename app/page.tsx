@@ -982,15 +982,15 @@ async function classifyMonthly(file: File, year: number, month: number) {
   const full = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
   let border: { y: number; x: number; length: number } | null = null;
   for (
-    let y = Math.floor(canvas.height * 0.18);
-    y < Math.floor(canvas.height * 0.85) && !border;
+    let y = Math.floor(canvas.height * 0.12);
+    y < Math.floor(canvas.height * 0.88) && !border;
     y++
   ) {
     let start = 0,
       run = 0,
       bestStart = 0,
       bestLength = 0;
-    for (let x = 0; x < Math.floor(canvas.width * 0.54); x++) {
+    for (let x = 0; x < canvas.width; x++) {
       const p = (y * canvas.width + x) * 4,
         dark = full[p] + full[p + 1] + full[p + 2] < 180;
       if (dark) {
@@ -1006,32 +1006,63 @@ async function classifyMonthly(file: File, year: number, month: number) {
       border = { y, x: bestStart, length: bestLength };
   }
   if (!border) return null;
-  const scale = border.length / 384,
-    cellW = border.length / 7,
-    cellH = 38 * scale,
-    y0 = border.y + 68 * scale,
-    result = new Map<number, Status>();
+
+  const cellW = border.length / 7,
+    weeks = Math.ceil(
+      (weekdayMon(year, month, 1) + daysInMonth(year, month)) / 7,
+    );
+
+  // En lugar de las antiguas constantes 68 y 38 px, buscamos dónde termina
+  // realmente la cabecera y dónde está el borde inferior de la cuadrícula.
+  let lastHeader = border.y;
+  for (
+    let y = border.y;
+    y < Math.min(canvas.height, border.y + cellW * 2.8);
+    y++
+  ) {
+    let header = 0,
+      total = 0;
+    for (
+      let x = Math.round(border.x);
+      x < Math.round(border.x + border.length);
+      x += 2
+    ) {
+      const p = (y * canvas.width + Math.min(canvas.width - 1, x)) * 4;
+      if (isHeaderColor(full[p], full[p + 1], full[p + 2])) header++;
+      total++;
+    }
+    if (total && header / total > 0.42) lastHeader = y;
+  }
+
+  const gridTop = lastHeader + 1,
+    expectedBottom = gridTop + cellW * weeks,
+    bottom = findPanelBottom(
+      ctx,
+      border.x,
+      expectedBottom,
+      border.length,
+      Math.max(cellW, canvas.height * 0.08),
+      canvas,
+    ),
+    cellH = (bottom - gridTop) / weeks;
+
+  // Si la geometría encontrada no es coherente, no inventamos lecturas.
+  if (
+    !Number.isFinite(cellH) ||
+    cellH < cellW * 0.35 ||
+    cellH > cellW * 1.8
+  )
+    return null;
+
+  const result = new Map<number, Status>();
   for (let day = 1; day <= daysInMonth(year, month); day++) {
     const index = weekdayMon(year, month, 1) + day - 1,
       col = index % 7,
       row = Math.floor(index / 7),
       cx = border.x + cellW * (col + 0.5),
-      cy = y0 + row * cellH,
-      sx = Math.max(0, Math.round(cx - cellW * 0.42)),
-      sy = Math.max(0, Math.round(cy - cellH * 0.34)),
-      sw = Math.max(4, Math.round(cellW * 0.84)),
-      sh = Math.max(4, Math.round(cellH * 0.68));
-    result.set(
-      day,
-      dominantStatus(
-        ctx.getImageData(
-          sx,
-          sy,
-          Math.min(sw, canvas.width - sx),
-          Math.min(sh, canvas.height - sy),
-        ).data,
-      ),
-    );
+      cy = gridTop + cellH * (row + 0.5),
+      evidence = annualCellEvidence(ctx, cx, cy, cellW, cellH, canvas);
+    result.set(day, evidence.status);
   }
   return result;
 }
