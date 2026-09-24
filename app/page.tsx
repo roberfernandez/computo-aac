@@ -212,7 +212,7 @@ const CONFIRMED_SPECIAL_RETRIBUTIVE_DAYS = [
 // Incrementar esta versión cuando cambie la lógica de reconocimiento anual.
 // Los años analizados con una versión anterior se conservan, pero la interfaz
 // avisa de que conviene volver a leer su imagen.
-const ANNUAL_DETECTOR_VERSION = 18;
+const ANNUAL_DETECTOR_VERSION = 19;
 const statusLabel: Record<Status, string> = {
   REVISAR: "Revisar",
   AGCG: "Trabajo · AGCG",
@@ -1475,7 +1475,7 @@ async function loadAnnualCanvas(file: File) {
   bitmap.close();
   return canvas;
 }
-function detectModernAnnualPanels(canvas: HTMLCanvasElement, year: number): AnnualPanel[] | null {
+function detectModernAnnualPanels(canvas: HTMLCanvasElement, year: number, allowJoinedCells = false): AnnualPanel[] | null {
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (!ctx) return null;
   const { width, height } = canvas;
@@ -1511,7 +1511,7 @@ function detectModernAnnualPanels(canvas: HTMLCanvasElement, year: number): Annu
       cells.push({ x: (left + right) / 2, y: (top + bottom) / 2, w, h });
   }
   const middle = (values: number[]) => values.sort((a, b) => a - b)[Math.floor(values.length / 2)];
-  if (cells.length < 350) return null;
+  if (cells.length < (allowJoinedCells ? 280 : 350)) return null;
   const cellWidth = middle(cells.map(c => c.w)), cellHeight = middle(cells.map(c => c.h));
   const cluster = (values: number[], tolerance: number) => {
     const groups: number[][] = [];
@@ -1530,6 +1530,17 @@ function detectModernAnnualPanels(canvas: HTMLCanvasElement, year: number): Annu
     if (last && y - last[last.length - 1] < cellHeight * 1.8) last.push(y); else rowGroups.push([y]);
   }
   if (rowGroups.length !== 3) return null;
+  if (allowJoinedCells) {
+    // Joined JPEG cell backgrounds may lose individual components. Require
+    // three separately observed regular lattices; never split one band.
+    for (const rows of rowGroups) {
+      if (rows.length < 5 || rows.length > 6) return null;
+      const step = middle(rows.slice(1).map((y, i) => y - rows[i]));
+      if (rows.slice(1).some((y, i) => Math.abs(y - rows[i] - step) > step * .12)) return null;
+    }
+    for (let r = 1; r < 3; r++)
+      if (rowGroups[r][0] - rowGroups[r - 1].at(-1)! < cellHeight * 2) return null;
+  }
   const panels: AnnualPanel[] = [];
   for (let month = 1; month <= 12; month++) {
     const column = (month - 1) % 4, rows = rowGroups[Math.floor((month - 1) / 4)];
@@ -1537,12 +1548,29 @@ function detectModernAnnualPanels(canvas: HTMLCanvasElement, year: number): Annu
     const cellW = (centers[6] - centers[0]) / 6;
     const cellH = middle(rows.slice(1).map((y, i) => y - rows[i]));
     const panel = { x: centers[0] - cellW / 2, length: cellW * 7, gridTop: rows[0] - cellH / 2, cellH };
+    if (allowJoinedCells) {
+      if (centers.some((x, i) => Math.abs(x - centers[0] - i * cellW) > cellW * .08)) return null;
+      // Validate filled dates AND empty leading/trailing slots from pixels.
+      // Date placement is calendar geometry, not the worker's 28-day cycle.
+      const first = weekdayMon(year, month, 1), count = daysInMonth(year, month);
+      for (let index = 0; index < rows.length * 7; index++) {
+        const cx = centers[index % 7], cy = rows[0] + Math.floor(index / 7) * cellH;
+        let filled = 0, total = 0;
+        for (let y = Math.ceil(cy - cellH * .28); y <= Math.floor(cy + cellH * .28); y++)
+          for (let x = Math.ceil(cx - cellW * .30); x <= Math.floor(cx + cellW * .30); x++) {
+            if (x < 0 || y < 0 || x >= width || y >= height) return null;
+            total++; filled += originalMask[y * width + x];
+          }
+        const expectedDate = index >= first && index < first + count;
+        if (!total || (expectedDate ? filled / total < .70 : filled / total > .15)) return null;
+      }
+    }
     // Every actual date must have a rectangle at its expected grid position.
     // Reject incomplete/misaligned layouts instead of accepting a count alone.
     for (let day = 1; day <= daysInMonth(year, month); day++) {
       const index = weekdayMon(year, month, 1) + day - 1;
       if (!cells.some(c => Math.abs(c.x - centers[index % 7]) < cellW * .15 &&
-        Math.abs(c.y - (rows[0] + Math.floor(index / 7) * cellH)) < cellH * .15)) return null;
+        Math.abs(c.y - (rows[0] + Math.floor(index / 7) * cellH)) < cellH * .15)) { if (!allowJoinedCells) return null; }
     }
     panels.push(panel);
   }
@@ -1589,29 +1617,7 @@ function detectAnnualPanelsByBands(
     }
   }
   if (bands.length !== 3) {
-    // Algunas capturas unen visualmente las tres filas por colores/leyenda.
-    // En ese caso estimamos las tres bandas desde la zona anual completa,
-    // manteniendo después la validación independiente de 4 paneles por fila.
-    if (bands.length === 1) {
-      const whole = bands[0],
-        span = whole.bottom - whole.top + 1,
-        rowSpan = span / 3;
-      bands.splice(
-        0,
-        1,
-        { top: whole.top, bottom: whole.top + rowSpan * 0.78 },
-        {
-          top: whole.top + rowSpan,
-          bottom: whole.top + rowSpan * 1.78,
-        },
-        {
-          top: whole.top + rowSpan * 2,
-          bottom: whole.top + rowSpan * 2.78,
-        },
-      );
-    } else {
-      return fail(`bandas grandes: ${bands.length} (esperadas 3)`);
-    }
+    return fail(`bandas grandes: ${bands.length} (esperadas 3); no se subdivide una banda aislada`);
   }
 
   function panelRunsAt(y: number) {
@@ -2177,7 +2183,7 @@ function auditCycle(
 async function classifyAnnual(file: File, year: number) {
   let canvas = await loadAnnualCanvas(file);
   if (!canvas) return null;
-  let panels = detectModernAnnualPanels(canvas, year);
+  let panels = detectModernAnnualPanels(canvas, year) || detectModernAnnualPanels(canvas, year, true);
   if (!panels) panels = detectAnnualPanelsByBands(canvas, year);
   if (!panels) panels = detectStraightAnnualPanels(canvas, year);
   if (!panels) {
