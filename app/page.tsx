@@ -3090,7 +3090,7 @@ export default function Home() {
           <div className="flex min-w-0 items-center gap-3">
             <div className="logo-mark shrink-0">
               <img
-                src="/computo-aac/computo-192.png?v=2"
+                src="/computo-aac/computo-aac-v3-192.png"
                 alt=""
                 width={46}
                 height={46}

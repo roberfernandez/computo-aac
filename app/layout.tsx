@@ -7,9 +7,9 @@ export const metadata: Metadata = {
   applicationName: "Cómputo AAC",
   manifest: "/computo-aac/manifest.webmanifest",
   icons: {
-    icon: [{ url: "/computo-aac/computo-192.png?v=2", sizes: "192x192", type: "image/png" }],
-    shortcut: "/computo-aac/computo-192.png?v=2",
-    apple: [{ url: "/computo-aac/computo-192.png?v=2", sizes: "192x192", type: "image/png" }],
+    icon: [{ url: "/computo-aac/computo-aac-v3-192.png", sizes: "192x192", type: "image/png" }],
+    shortcut: "/computo-aac/computo-aac-v3-192.png",
+    apple: [{ url: "/computo-aac/computo-aac-v3-192.png", sizes: "192x192", type: "image/png" }],
   },
 };
 
