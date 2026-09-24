@@ -213,7 +213,7 @@ const CONFIRMED_SPECIAL_RETRIBUTIVE_DAYS = [
 // Incrementar esta versión cuando cambie la lógica de reconocimiento anual.
 // Los años analizados con una versión anterior se conservan, pero la interfaz
 // avisa de que conviene volver a leer su imagen.
-const ANNUAL_DETECTOR_VERSION = 7;
+const ANNUAL_DETECTOR_VERSION = 8;
 const statusLabel: Record<Status, string> = {
   REVISAR: "Revisar",
   AGCG: "Trabajo · AGCG",
@@ -1583,22 +1583,26 @@ function detectAnnualPanelsByBands(
 
     // En una semana central los cuatro meses tienen siete celdas completas.
     // Buscamos esa línea real para obtener los cuatro anchos y márgenes.
-    let runs: ReturnType<typeof panelRunsAt> = [];
-    const candidates = [
-      gridTop + cellH * 2.5,
-      gridTop + cellH * 3.5,
-      gridTop + cellH * 1.5,
-    ];
-    for (const cy of candidates) {
-      const found = panelRunsAt(
-        Math.max(0, Math.min(height - 1, Math.round(cy))),
-      );
+    let runs: ReturnType<typeof panelRunsAt> = [],
+      bestCount = 0;
+    // La tercera fila puede quedar muy cerca de la leyenda. Recorremos toda
+    // la altura útil de la banda y nos quedamos con una línea que separe
+    // claramente los cuatro meses, en vez de probar solo tres alturas fijas.
+    const scanTop = Math.max(0, Math.floor(band.top + cellH * 0.15)),
+      scanBottom = Math.min(height - 1, Math.ceil(band.bottom - cellH * 0.15)),
+      scanStep = Math.max(1, Math.floor(cellH * 0.18));
+    for (let y = scanTop; y <= scanBottom; y += scanStep) {
+      const found = panelRunsAt(y);
+      bestCount = Math.max(bestCount, found.length);
       if (found.length === 4) {
         runs = found;
         break;
       }
     }
-    if (runs.length !== 4) return fail(`fila ${row + 1}: ${runs.length} paneles (esperados 4)`);
+    if (runs.length !== 4)
+      return fail(
+        `fila ${row + 1}: ${bestCount} paneles máximo (esperados 4)`,
+      );
 
     for (const run of runs) {
       const pad = Math.max(1, Math.round(width * 0.0015)),
