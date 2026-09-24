@@ -14,12 +14,12 @@ export default function manifest(): MetadataRoute.Manifest {
     lang: "es",
     icons: [
       {
-        src: "/computo-aac/computo-192.png",
+        src: "/computo-aac/computo-192.png?v=2",
         sizes: "192x192",
         type: "image/png",
       },
       {
-        src: "/computo-aac/computo-192.png",
+        src: "/computo-aac/computo-192.png?v=2",
         sizes: "192x192",
         type: "image/png",
         purpose: "any maskable",
