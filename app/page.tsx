@@ -213,7 +213,7 @@ const CONFIRMED_SPECIAL_RETRIBUTIVE_DAYS = [
 // Incrementar esta versión cuando cambie la lógica de reconocimiento anual.
 // Los años analizados con una versión anterior se conservan, pero la interfaz
 // avisa de que conviene volver a leer su imagen.
-const ANNUAL_DETECTOR_VERSION = 14;
+const ANNUAL_DETECTOR_VERSION = 15;
 const statusLabel: Record<Status, string> = {
   REVISAR: "Revisar",
   AGCG: "Trabajo · AGCG",
@@ -956,6 +956,62 @@ function annualCellEvidence(
     confidence: Math.max(0, Math.min(1, share + margin * 0.35)),
   };
 }
+function retryUncertainAnnualCell(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  cellW: number,
+  cellH: number,
+  canvas: HTMLCanvasElement,
+) {
+  // Segunda pasada exclusivamente para celdas REVISAR. Probamos puntos
+  // interiores pequeños para evitar texto y bordes, y solo aceptamos una
+  // recuperación cuando varias muestras independientes coinciden.
+  const points = [
+      [-0.30, -0.20],
+      [0.30, -0.20],
+      [-0.30, 0.20],
+      [0.30, 0.20],
+      [-0.36, 0],
+      [0.36, 0],
+    ],
+    votes = new Map<Status, { count: number; weight: number }>();
+  for (const [dx, dy] of points) {
+    const sw = Math.max(2, Math.round(cellW * 0.14)),
+      sh = Math.max(2, Math.round(cellH * 0.24)),
+      sx = Math.max(0, Math.round(cx + cellW * dx - sw / 2)),
+      sy = Math.max(0, Math.round(cy + cellH * dy - sh / 2)),
+      evidence = annualBlockEvidence(
+        ctx.getImageData(
+          sx,
+          sy,
+          Math.min(sw, canvas.width - sx),
+          Math.min(sh, canvas.height - sy),
+        ).data,
+      );
+    if (evidence.status === "REVISAR" || evidence.confidence < 0.42) continue;
+    const current = votes.get(evidence.status) || { count: 0, weight: 0 };
+    current.count++;
+    current.weight += evidence.confidence;
+    votes.set(evidence.status, current);
+  }
+  const ranked = [...votes.entries()].sort(
+    (a, b) => b[1].count - a[1].count || b[1].weight - a[1].weight,
+  );
+  const best = ranked[0],
+    second = ranked[1];
+  if (
+    !best ||
+    best[1].count < 3 ||
+    (second && best[1].count <= second[1].count)
+  )
+    return null;
+  return {
+    status: best[0],
+    confidence: Math.min(1, best[1].weight / best[1].count),
+  };
+}
+
 function monthlyColorMask(r: number, g: number, b: number) {
   const max = Math.max(r, g, b),
     min = Math.min(r, g, b);
@@ -2127,8 +2183,19 @@ async function classifyAnnual(file: File, year: number) {
             canvas,
           ),
         ),
-        evidence = samples.sort((a, b) => b.confidence - a.confidence)[0];
-      statuses.push(evidence);
+        evidence = samples.sort((a, b) => b.confidence - a.confidence)[0],
+        recovered =
+          evidence.status === "REVISAR"
+            ? retryUncertainAnnualCell(
+                ctx,
+                cx,
+                cy,
+                cellW,
+                cellH,
+                canvas,
+              )
+            : null;
+      statuses.push(recovered || evidence);
     }
     raw[month] = makeDays(year, month).map((d, i) => ({
       ...d,
