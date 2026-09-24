@@ -213,7 +213,7 @@ const CONFIRMED_SPECIAL_RETRIBUTIVE_DAYS = [
 // Incrementar esta versión cuando cambie la lógica de reconocimiento anual.
 // Los años analizados con una versión anterior se conservan, pero la interfaz
 // avisa de que conviene volver a leer su imagen.
-const ANNUAL_DETECTOR_VERSION = 15;
+const ANNUAL_DETECTOR_VERSION = 16;
 const statusLabel: Record<Status, string> = {
   REVISAR: "Revisar",
   AGCG: "Trabajo · AGCG",
@@ -964,21 +964,23 @@ function retryUncertainAnnualCell(
   cellH: number,
   canvas: HTMLCanvasElement,
 ) {
-  // Segunda pasada exclusivamente para celdas REVISAR. Probamos puntos
-  // interiores pequeños para evitar texto y bordes, y solo aceptamos una
-  // recuperación cuando varias muestras independientes coinciden.
-  const points = [
-      [-0.30, -0.20],
-      [0.30, -0.20],
-      [-0.30, 0.20],
-      [0.30, 0.20],
-      [-0.36, 0],
-      [0.36, 0],
+  // Segunda pasada exclusivamente para celdas REVISAR. En v16 combinamos
+  // pequeños puntos interiores con franjas laterales más amplias del fondo.
+  // El número del día y los bordes quedan fuera de las zonas de muestreo.
+  const regions = [
+      [-0.31, -0.22, 0.14, 0.22],
+      [0.31, -0.22, 0.14, 0.22],
+      [-0.31, 0.22, 0.14, 0.22],
+      [0.31, 0.22, 0.14, 0.22],
+      [-0.36, 0, 0.12, 0.30],
+      [0.36, 0, 0.12, 0.30],
+      [-0.27, 0, 0.20, 0.58],
+      [0.27, 0, 0.20, 0.58],
     ],
     votes = new Map<Status, { count: number; weight: number }>();
-  for (const [dx, dy] of points) {
-    const sw = Math.max(2, Math.round(cellW * 0.14)),
-      sh = Math.max(2, Math.round(cellH * 0.24)),
+  for (const [dx, dy, rw, rh] of regions) {
+    const sw = Math.max(2, Math.round(cellW * rw)),
+      sh = Math.max(2, Math.round(cellH * rh)),
       sx = Math.max(0, Math.round(cx + cellW * dx - sw / 2)),
       sy = Math.max(0, Math.round(cy + cellH * dy - sh / 2)),
       evidence = annualBlockEvidence(
@@ -989,7 +991,7 @@ function retryUncertainAnnualCell(
           Math.min(sh, canvas.height - sy),
         ).data,
       );
-    if (evidence.status === "REVISAR" || evidence.confidence < 0.42) continue;
+    if (evidence.status === "REVISAR" || evidence.confidence < 0.38) continue;
     const current = votes.get(evidence.status) || { count: 0, weight: 0 };
     current.count++;
     current.weight += evidence.confidence;
@@ -999,11 +1001,15 @@ function retryUncertainAnnualCell(
     (a, b) => b[1].count - a[1].count || b[1].weight - a[1].weight,
   );
   const best = ranked[0],
-    second = ranked[1];
+    second = ranked[1],
+    voteLead = best && second ? best[1].count - second[1].count : best?.[1].count || 0,
+    weightLead = best && second ? best[1].weight - second[1].weight : best?.[1].weight || 0;
+  // Seguimos siendo conservadores: hacen falta varias regiones coincidentes
+  // y una ventaja real sobre la segunda opción. Si no, la celda sigue REVISAR.
   if (
     !best ||
     best[1].count < 3 ||
-    (second && best[1].count <= second[1].count)
+    (second && voteLead < 2 && weightLead < 0.75)
   )
     return null;
   return {
