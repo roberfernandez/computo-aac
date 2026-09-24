@@ -213,7 +213,7 @@ const CONFIRMED_SPECIAL_RETRIBUTIVE_DAYS = [
 // Incrementar esta versión cuando cambie la lógica de reconocimiento anual.
 // Los años analizados con una versión anterior se conservan, pero la interfaz
 // avisa de que conviene volver a leer su imagen.
-const ANNUAL_DETECTOR_VERSION = 2;
+const ANNUAL_DETECTOR_VERSION = 3;
 const statusLabel: Record<Status, string> = {
   REVISAR: "Revisar",
   AGCG: "Trabajo · AGCG",
@@ -1465,6 +1465,118 @@ function detectModernAnnualPanels(canvas: HTMLCanvasElement, year: number): Annu
   return panels;
 }
 
+function detectAnnualPanelsByBands(
+  canvas: HTMLCanvasElement,
+  year: number,
+): AnnualPanel[] | null {
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return null;
+  const { width, height } = canvas,
+    data = ctx.getImageData(0, 0, width, height).data,
+    rowHits = new Int32Array(height);
+
+  // El calendario anual moderno está formado por 4 meses x 3 filas. En vez
+  // de exigir componentes perfectos, medimos las bandas horizontales ocupadas
+  // por celdas rellenas (grises o de color), tolerando JPEG y antialiasing.
+  for (let y = Math.floor(height * 0.08); y < Math.floor(height * 0.84); y++) {
+    let hits = 0;
+    for (let x = 0; x < width; x += 2) {
+      const p = (y * width + x) * 4,
+        r = data[p],
+        g = data[p + 1],
+        b = data[p + 2],
+        max = Math.max(r, g, b),
+        min = Math.min(r, g, b),
+        filled =
+          max > 90 &&
+          ((r + g + b < 690 && min < 235) || max - min > 28);
+      if (filled) hits += 2;
+    }
+    rowHits[y] = hits;
+  }
+
+  const active: { top: number; bottom: number; center: number }[] = [];
+  let top = -1;
+  for (let y = 0; y < height; y++) {
+    const on = rowHits[y] > width * 0.42;
+    if (on && top < 0) top = y;
+    if (top >= 0 && (!on || y === height - 1)) {
+      const bottom = on && y === height - 1 ? y : y - 1;
+      if (bottom - top >= Math.max(4, height * 0.012))
+        active.push({ top, bottom, center: (top + bottom) / 2 });
+      top = -1;
+    }
+  }
+  if (active.length < 12) return null;
+
+  const heights = active.map((b) => b.bottom - b.top + 1).sort((a, b) => a - b),
+    bandH = heights[Math.floor(heights.length / 2)],
+    groups: typeof active[] = [];
+  for (const band of active) {
+    const last = groups[groups.length - 1];
+    if (
+      last &&
+      band.top - last[last.length - 1].bottom < bandH * 3.2
+    )
+      last.push(band);
+    else groups.push([band]);
+  }
+  const calendarGroups = groups.filter((g) => g.length >= 4 && g.length <= 6);
+  if (calendarGroups.length !== 3) return null;
+
+  const panels: AnnualPanel[] = [];
+  for (let row = 0; row < 3; row++) {
+    const bands = calendarGroups[row],
+      centers = bands.map((b) => b.center),
+      diffs = centers.slice(1).map((v, i) => v - centers[i]).sort((a, b) => a - b),
+      cellH = diffs.length
+        ? diffs[Math.floor(diffs.length / 2)]
+        : bandH * 1.08,
+      gridTop = centers[0] - cellH / 2,
+      yStart = Math.max(0, Math.floor(gridTop)),
+      yEnd = Math.min(
+        height - 1,
+        Math.ceil(gridTop + cellH * 6),
+      );
+
+    for (let col = 0; col < 4; col++) {
+      const q0 = Math.floor((width * col) / 4),
+        q1 = Math.floor((width * (col + 1)) / 4);
+      let left = q1,
+        right = q0;
+      for (let x = q0; x < q1; x++) {
+        let hits = 0;
+        for (let y = yStart; y <= yEnd; y += 3) {
+          const p = (y * width + x) * 4,
+            r = data[p],
+            g = data[p + 1],
+            b = data[p + 2],
+            max = Math.max(r, g, b),
+            min = Math.min(r, g, b);
+          if (
+            max > 90 &&
+            ((r + g + b < 690 && min < 235) || max - min > 28)
+          )
+            hits++;
+        }
+        if (hits >= 2) {
+          left = Math.min(left, x);
+          right = Math.max(right, x);
+        }
+      }
+      if (right <= left || right - left < width * 0.18) return null;
+      const length = right - left + 1,
+        month = row * 4 + col + 1,
+        weeks = Math.ceil(
+          (weekdayMon(year, month, 1) + daysInMonth(year, month)) / 7,
+        );
+      if (weeks < 4 || weeks > 6) return null;
+      panels.push({ x: left, length, gridTop, cellH });
+    }
+  }
+  return panels.length === 12 ? panels : null;
+}
+
 function detectStraightAnnualPanels(
   canvas: HTMLCanvasElement,
   year: number,
@@ -1921,7 +2033,10 @@ function auditCycle(
 async function classifyAnnual(file: File, year: number) {
   let canvas = await loadAnnualCanvas(file);
   if (!canvas) return null;
-  let panels = detectModernAnnualPanels(canvas, year) || detectStraightAnnualPanels(canvas, year);
+  let panels =
+    detectModernAnnualPanels(canvas, year) ||
+    detectAnnualPanelsByBands(canvas, year) ||
+    detectStraightAnnualPanels(canvas, year);
   if (!panels) {
     canvas = await rectifyAnnual(file);
     if (!canvas) return null;
