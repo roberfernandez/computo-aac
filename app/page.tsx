@@ -213,7 +213,7 @@ const CONFIRMED_SPECIAL_RETRIBUTIVE_DAYS = [
 // Incrementar esta versión cuando cambie la lógica de reconocimiento anual.
 // Los años analizados con una versión anterior se conservan, pero la interfaz
 // avisa de que conviene volver a leer su imagen.
-const ANNUAL_DETECTOR_VERSION = 4;
+const ANNUAL_DETECTOR_VERSION = 5;
 const statusLabel: Record<Status, string> = {
   REVISAR: "Revisar",
   AGCG: "Trabajo · AGCG",
@@ -1469,8 +1469,9 @@ function detectAnnualPanelsByBands(
   canvas: HTMLCanvasElement,
   year: number,
 ): AnnualPanel[] | null {
+  const fail = (reason: string) => { throw new Error(`ANUAL-V5 · ${reason}`); };
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  if (!ctx) return null;
+  if (!ctx) return fail("sin contexto canvas");
   const { width, height } = canvas,
     data = ctx.getImageData(0, 0, width, height).data,
     filledAt = (x: number, y: number) => {
@@ -1503,7 +1504,7 @@ function detectAnnualPanelsByBands(
       top = -1;
     }
   }
-  if (bands.length !== 3) return null;
+  if (bands.length !== 3) return fail(`bandas grandes: ${bands.length} (esperadas 3)`);
 
   function panelRunsAt(y: number) {
     const runs: { start: number; end: number }[] = [];
@@ -1549,7 +1550,7 @@ function detectAnnualPanelsByBands(
         .map((value, week) => ({ value, week }))
         .filter(({ value }) => value > 0.42)
         .map(({ week }) => week);
-    if (!activeWeeks.length) return null;
+    if (!activeWeeks.length) return fail(`fila ${row + 1}: sin semanas activas`);
     const firstActiveWeek = activeWeeks[0],
       lastActiveWeek = activeWeeks[activeWeeks.length - 1],
       activeSpan = lastActiveWeek - firstActiveWeek + 1,
@@ -1573,18 +1574,19 @@ function detectAnnualPanelsByBands(
         break;
       }
     }
-    if (runs.length !== 4) return null;
+    if (runs.length !== 4) return fail(`fila ${row + 1}: ${runs.length} paneles (esperados 4)`);
 
     for (const run of runs) {
       const pad = Math.max(1, Math.round(width * 0.0015)),
         x = Math.max(0, run.start - pad),
         length = Math.min(width - x, run.end - run.start + 1 + pad * 2),
         cellW = length / 7;
-      if (cellH < cellW * 0.28 || cellH > cellW * 0.75) return null;
+      if (cellH < cellW * 0.28 || cellH > cellW * 0.75) return fail(`fila ${row + 1}: proporción celda ${cellH.toFixed(1)}/${cellW.toFixed(1)}`);
       panels.push({ x, length, gridTop, cellH });
     }
   }
-  return panels.length === 12 ? panels : null;
+  if (panels.length !== 12) return fail(`paneles finales: ${panels.length}`);
+  return panels;
 }
 
 function detectStraightAnnualPanels(
@@ -2043,10 +2045,9 @@ function auditCycle(
 async function classifyAnnual(file: File, year: number) {
   let canvas = await loadAnnualCanvas(file);
   if (!canvas) return null;
-  let panels =
-    detectModernAnnualPanels(canvas, year) ||
-    detectAnnualPanelsByBands(canvas, year) ||
-    detectStraightAnnualPanels(canvas, year);
+  let panels = detectModernAnnualPanels(canvas, year);
+  if (!panels) panels = detectAnnualPanelsByBands(canvas, year);
+  if (!panels) panels = detectStraightAnnualPanels(canvas, year);
   if (!panels) {
     canvas = await rectifyAnnual(file);
     if (!canvas) return null;
@@ -2458,10 +2459,14 @@ export default function Home() {
           ? `Detector v${ANNUAL_DETECTOR_VERSION} · Previsión de ${year} creada: ${total} días reconocidos y ${found.mismatches} diferencias visibles respecto al ciclo de 28 días.`
           : `Detector v${ANNUAL_DETECTOR_VERSION} · Previsión de ${year} creada: ${total} días reconocidos y ciclo de 28 días verificado sin diferencias.`,
       );
-    } catch {
-      setMessage(
-        "No he podido localizar con seguridad los doce calendarios. Comprueba que sea la captura anual completa de TMB.",
-      );
+    } catch (error) {
+      const detail =
+        error instanceof Error && error.message
+          ? error.message
+          : "error anual desconocido";
+      console.error("[Còmput AAC] Error al analizar calendario anual:", error);
+      setMessage(`No he podido localizar con seguridad los doce calendarios. ${detail}`);
+
     } finally {
       setBusy(false);
     }
