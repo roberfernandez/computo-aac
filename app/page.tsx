@@ -213,7 +213,7 @@ const CONFIRMED_SPECIAL_RETRIBUTIVE_DAYS = [
 // Incrementar esta versión cuando cambie la lógica de reconocimiento anual.
 // Los años analizados con una versión anterior se conservan, pero la interfaz
 // avisa de que conviene volver a leer su imagen.
-const ANNUAL_DETECTOR_VERSION = 9;
+const ANNUAL_DETECTOR_VERSION = 10;
 const statusLabel: Record<Status, string> = {
   REVISAR: "Revisar",
   AGCG: "Trabajo · AGCG",
@@ -1608,15 +1608,29 @@ function detectAnnualPanelsByBands(
       const pad = Math.max(1, Math.round(width * 0.0015)),
         x = Math.max(0, run.start - pad),
         length = Math.min(width - x, run.end - run.start + 1 + pad * 2),
-        cellW = length / 7;
-      // En la vista anual de TMB las celdas son deliberadamente muy bajas
-      // respecto a su anchura (en la captura real ~0,12). Rechazamos solo
-      // geometrías claramente imposibles, no el formato panorámico legítimo.
-      if (cellH < cellW * 0.08 || cellH > cellW * 0.75)
+        cellW = length / 7,
+        // La banda de color detectada no representa la altura completa de las
+        // celdas: en fotos comprimidas suele ser solo su núcleo coloreado.
+        // Recuperamos la altura de la cuadrícula a partir del ancho real de
+        // siete columnas, cuya proporción en el calendario TMB es estable.
+        correctedCellH =
+          cellH < cellW * 0.28 ? cellW * 0.42 : cellH,
+        bandCenter = (band.top + band.bottom) / 2,
+        activeCenter = (firstActiveWeek + lastActiveWeek + 1) / 2,
+        correctedGridTop = bandCenter - activeCenter * correctedCellH;
+      if (
+        correctedCellH < cellW * 0.28 ||
+        correctedCellH > cellW * 0.75
+      )
         return fail(
-          `fila ${row + 1}: proporción celda ${cellH.toFixed(1)}/${cellW.toFixed(1)}`,
+          `fila ${row + 1}: proporción celda ${correctedCellH.toFixed(1)}/${cellW.toFixed(1)}`,
         );
-      panels.push({ x, length, gridTop, cellH });
+      panels.push({
+        x,
+        length,
+        gridTop: correctedGridTop,
+        cellH: correctedCellH,
+      });
     }
   }
   if (panels.length !== 12) return fail(`paneles finales: ${panels.length}`);
