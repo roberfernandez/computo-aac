@@ -956,6 +956,42 @@ function annualCellEvidence(
     confidence: Math.max(0, Math.min(1, share + margin * 0.35)),
   };
 }
+function monthlyColorMask(r: number, g: number, b: number) {
+  const max = Math.max(r, g, b),
+    min = Math.min(r, g, b);
+  return max - min > 34 && max > 105 && min < 235;
+}
+
+function detectMonthlyColorBand(
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
+) {
+  const step = Math.max(1, Math.round(Math.max(width, height) / 900));
+  let minX = width,
+    maxX = -1,
+    minY = height,
+    maxY = -1,
+    count = 0;
+  for (let y = Math.floor(height * 0.12); y < Math.floor(height * 0.88); y += step) {
+    for (let x = Math.floor(width * 0.02); x < Math.floor(width * 0.98); x += step) {
+      const p = (y * width + x) * 4;
+      if (!monthlyColorMask(data[p], data[p + 1], data[p + 2])) continue;
+      minX = Math.min(minX, x);
+      maxX = Math.max(maxX, x);
+      minY = Math.min(minY, y);
+      maxY = Math.max(maxY, y);
+      count++;
+    }
+  }
+  if (count < 80 || maxX <= minX || maxY <= minY) return null;
+  const bandW = maxX - minX,
+    bandH = maxY - minY;
+  if (bandW < width * 0.28 || bandW > width * 0.96 || bandH < height * 0.025)
+    return null;
+  return { x: minX, y: minY, width: bandW, height: bandH };
+}
+
 async function classifyMonthly(file: File, year: number, month: number) {
   // Primero intentamos trabajar sobre una copia enderezada de la foto.
   // Si no podemos localizar el panel mensual con suficiente seguridad,
@@ -1005,7 +1041,15 @@ async function classifyMonthly(file: File, year: number, month: number) {
     if (bestLength > canvas.width * 0.3)
       border = { y, x: bestStart, length: bestLength };
   }
-  if (!border) return null;
+  if (!border) {
+    const colorBand = detectMonthlyColorBand(full, canvas.width, canvas.height);
+    if (!colorBand) return null;
+    border = {
+      y: Math.max(0, colorBand.y - Math.max(2, colorBand.height * 0.12)),
+      x: colorBand.x,
+      length: colorBand.width,
+    };
+  }
 
   const cellW = border.length / 7,
     weeks = Math.ceil(
