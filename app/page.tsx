@@ -957,14 +957,28 @@ function annualCellEvidence(
   };
 }
 async function classifyMonthly(file: File, year: number, month: number) {
-  const bitmap = await createImageBitmap(file),
+  // Primero intentamos trabajar sobre una copia enderezada de la foto.
+  // Si no podemos localizar el panel mensual con suficiente seguridad,
+  // conservamos exactamente el detector anterior como respaldo.
+  const rectified = await rectifyMonthly(file);
+  let canvas: HTMLCanvasElement;
+  if (rectified) {
+    canvas = rectified;
+  } else {
+    const bitmap = await createImageBitmap(file);
     canvas = document.createElement("canvas");
-  canvas.width = bitmap.width;
-  canvas.height = bitmap.height;
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const sourceCtx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!sourceCtx) {
+      bitmap.close();
+      return null;
+    }
+    sourceCtx.drawImage(bitmap, 0, 0);
+    bitmap.close();
+  }
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (!ctx) return null;
-  ctx.drawImage(bitmap, 0, 0);
-  bitmap.close();
   const full = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
   let border: { y: number; x: number; length: number } | null = null;
   for (
