@@ -213,7 +213,7 @@ const CONFIRMED_SPECIAL_RETRIBUTIVE_DAYS = [
 // Incrementar esta versión cuando cambie la lógica de reconocimiento anual.
 // Los años analizados con una versión anterior se conservan, pero la interfaz
 // avisa de que conviene volver a leer su imagen.
-const ANNUAL_DETECTOR_VERSION = 5;
+const ANNUAL_DETECTOR_VERSION = 6;
 const statusLabel: Record<Status, string> = {
   REVISAR: "Revisar",
   AGCG: "Trabajo · AGCG",
@@ -1504,7 +1504,31 @@ function detectAnnualPanelsByBands(
       top = -1;
     }
   }
-  if (bands.length !== 3) return fail(`bandas grandes: ${bands.length} (esperadas 3)`);
+  if (bands.length !== 3) {
+    // Algunas capturas unen visualmente las tres filas por colores/leyenda.
+    // En ese caso estimamos las tres bandas desde la zona anual completa,
+    // manteniendo después la validación independiente de 4 paneles por fila.
+    if (bands.length === 1) {
+      const whole = bands[0],
+        span = whole.bottom - whole.top + 1,
+        rowSpan = span / 3;
+      bands.splice(
+        0,
+        1,
+        { top: whole.top, bottom: whole.top + rowSpan * 0.78 },
+        {
+          top: whole.top + rowSpan,
+          bottom: whole.top + rowSpan * 1.78,
+        },
+        {
+          top: whole.top + rowSpan * 2,
+          bottom: whole.top + rowSpan * 2.78,
+        },
+      );
+    } else {
+      return fail(`bandas grandes: ${bands.length} (esperadas 3)`);
+    }
+  }
 
   function panelRunsAt(y: number) {
     const runs: { start: number; end: number }[] = [];
