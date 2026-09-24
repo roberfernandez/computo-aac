@@ -213,7 +213,7 @@ const CONFIRMED_SPECIAL_RETRIBUTIVE_DAYS = [
 // Incrementar esta versión cuando cambie la lógica de reconocimiento anual.
 // Los años analizados con una versión anterior se conservan, pero la interfaz
 // avisa de que conviene volver a leer su imagen.
-const ANNUAL_DETECTOR_VERSION = 13;
+const ANNUAL_DETECTOR_VERSION = 14;
 const statusLabel: Record<Status, string> = {
   REVISAR: "Revisar",
   AGCG: "Trabajo · AGCG",
@@ -2140,7 +2140,8 @@ async function classifyAnnual(file: File, year: number) {
   const phase = inferCyclePhase(year, raw),
     result: YearPlan = {},
     cycleDifferenceByMonth: string[] = [],
-    uncertainByMonth: string[] = [];
+    uncertainByMonth: string[] = [],
+    uncertainDaysByMonth: string[] = [];
   let cycleDifferences = 0,
     uncertain = 0;
   for (let month = 1; month <= 12; month++) {
@@ -2153,6 +2154,14 @@ async function classifyAnnual(file: File, year: number) {
     uncertain += monthUncertain;
     cycleDifferenceByMonth.push(`${month}:${monthCycleDifferences}`);
     uncertainByMonth.push(`${month}:${monthUncertain}`);
+    if (monthUncertain) {
+      uncertainDaysByMonth.push(
+        `${MONTHS[month - 1].slice(0, 3)}: ${raw[month]
+          .filter((d) => d.status === "REVISAR")
+          .map((d) => d.day)
+          .join(", ")}`,
+      );
+    }
     const recognized = copyRecognizedDays(audited);
     result[month] = {
       original: recognized.map((d) => ({ ...d })),
@@ -2167,6 +2176,7 @@ async function classifyAnnual(file: File, year: number) {
     cycleDifferenceByMonth,
     uncertain,
     uncertainByMonth,
+    uncertainDaysByMonth,
   };
 }
 
@@ -2530,7 +2540,7 @@ export default function Home() {
         0,
       );
       setMessage(
-        `Detector v${ANNUAL_DETECTOR_VERSION} · Previsión de ${year} creada: ${total} días. Lecturas dudosas: ${found.uncertain} (por mes: ${found.uncertainByMonth.join(" · ")}). Diferencias visibles respecto al ciclo base: ${found.cycleDifferences} (informativas; pueden ser vacaciones, permisos, festivos u otras excepciones reales).`,
+        `Detector v${ANNUAL_DETECTOR_VERSION} · Previsión de ${year} creada: ${total} días. Lecturas dudosas: ${found.uncertain} (por mes: ${found.uncertainByMonth.join(" · ")}).${found.uncertain ? ` Días dudosos: ${found.uncertainDaysByMonth.join(" · ")}.` : ""} Diferencias visibles respecto al ciclo base: ${found.cycleDifferences} (informativas; pueden ser vacaciones, permisos, festivos u otras excepciones reales).`,
       );
     } catch (error) {
       const detail =
