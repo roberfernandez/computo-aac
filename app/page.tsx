@@ -2308,7 +2308,10 @@ export default function Home() {
     try {
       await officialCalendar.load(year).catch(() => undefined);
       const found = await classifyMonthly(monthlyFile, year, month);
-      if (!found) throw new Error();
+      if (!found)
+        throw new Error(
+          "DIAGNÓSTICO: no se ha podido localizar una cuadrícula mensual válida.",
+        );
       const read = makeDays(year, month).map((d) => {
           const status = found.get(d.day) || "REVISAR";
           return { ...d, status, baseStatus: baseOf(status) };
@@ -2339,8 +2342,13 @@ export default function Home() {
       setMessage(
         `${next.length} días reconocidos. ${next.filter((d) => needsReview(d.status)).length} pendientes.`,
       );
-    } catch {
-      setMessage("No he podido analizar la captura mensual.");
+    } catch (error) {
+      const detail =
+        error instanceof Error && error.message
+          ? error.message
+          : "error desconocido";
+      console.error("[Còmput AAC] Error al analizar captura mensual:", error);
+      setMessage(`No he podido analizar la captura mensual. ${detail}`);
     } finally {
       setBusy(false);
     }
