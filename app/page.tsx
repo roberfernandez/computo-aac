@@ -213,7 +213,7 @@ const CONFIRMED_SPECIAL_RETRIBUTIVE_DAYS = [
 // Incrementar esta versión cuando cambie la lógica de reconocimiento anual.
 // Los años analizados con una versión anterior se conservan, pero la interfaz
 // avisa de que conviene volver a leer su imagen.
-const ANNUAL_DETECTOR_VERSION = 3;
+const ANNUAL_DETECTOR_VERSION = 4;
 const statusLabel: Record<Status, string> = {
   REVISAR: "Revisar",
   AGCG: "Trabajo · AGCG",
@@ -1473,105 +1473,115 @@ function detectAnnualPanelsByBands(
   if (!ctx) return null;
   const { width, height } = canvas,
     data = ctx.getImageData(0, 0, width, height).data,
-    rowHits = new Int32Array(height);
-
-  // El calendario anual moderno está formado por 4 meses x 3 filas. En vez
-  // de exigir componentes perfectos, medimos las bandas horizontales ocupadas
-  // por celdas rellenas (grises o de color), tolerando JPEG y antialiasing.
-  for (let y = Math.floor(height * 0.08); y < Math.floor(height * 0.84); y++) {
-    let hits = 0;
-    for (let x = 0; x < width; x += 2) {
+    filledAt = (x: number, y: number) => {
       const p = (y * width + x) * 4,
         r = data[p],
         g = data[p + 1],
         b = data[p + 2],
         max = Math.max(r, g, b),
-        min = Math.min(r, g, b),
-        filled =
-          max > 90 &&
-          ((r + g + b < 690 && min < 235) || max - min > 28);
-      if (filled) hits += 2;
-    }
+        min = Math.min(r, g, b);
+      return max > 90 && ((r + g + b < 690 && min < 235) || max - min > 28);
+    },
+    rowHits = new Int32Array(height);
+
+  for (let y = Math.floor(height * 0.08); y < Math.floor(height * 0.84); y++) {
+    let hits = 0;
+    for (let x = 0; x < width; x += 2) if (filledAt(x, y)) hits += 2;
     rowHits[y] = hits;
   }
 
-  const active: { top: number; bottom: number; center: number }[] = [];
+  // En la captura real las filas de celdas quedan unidas visualmente. Por eso
+  // buscamos las tres bandas grandes del calendario, no doce filas aisladas.
+  const bands: { top: number; bottom: number }[] = [];
   let top = -1;
-  for (let y = 0; y < height; y++) {
+  for (let y = Math.floor(height * 0.08); y < Math.floor(height * 0.84); y++) {
     const on = rowHits[y] > width * 0.42;
     if (on && top < 0) top = y;
-    if (top >= 0 && (!on || y === height - 1)) {
-      const bottom = on && y === height - 1 ? y : y - 1;
-      if (bottom - top >= Math.max(4, height * 0.012))
-        active.push({ top, bottom, center: (top + bottom) / 2 });
+    if (top >= 0 && (!on || y === Math.floor(height * 0.84) - 1)) {
+      const bottom = on ? y : y - 1;
+      if (bottom - top > height * 0.07) bands.push({ top, bottom });
       top = -1;
     }
   }
-  if (active.length < 12) return null;
+  if (bands.length !== 3) return null;
 
-  const heights = active.map((b) => b.bottom - b.top + 1).sort((a, b) => a - b),
-    bandH = heights[Math.floor(heights.length / 2)],
-    groups: typeof active[] = [];
-  for (const band of active) {
-    const last = groups[groups.length - 1];
-    if (
-      last &&
-      band.top - last[last.length - 1].bottom < bandH * 3.2
-    )
-      last.push(band);
-    else groups.push([band]);
+  function panelRunsAt(y: number) {
+    const runs: { start: number; end: number }[] = [];
+    let start = -1,
+      last = -1,
+      gap = 0;
+    const close = () => {
+      if (start >= 0) {
+        const length = last - start + 1;
+        if (length > width * 0.18 && length < width * 0.27)
+          runs.push({ start, end: last });
+      }
+      start = -1;
+      last = -1;
+      gap = 0;
+    };
+    for (let x = 0; x < width; x++) {
+      if (filledAt(x, y)) {
+        if (start < 0) start = x;
+        last = x;
+        gap = 0;
+      } else if (start >= 0 && ++gap > Math.max(3, width * 0.003)) close();
+    }
+    close();
+    return runs;
   }
-  const calendarGroups = groups.filter((g) => g.length >= 4 && g.length <= 6);
-  if (calendarGroups.length !== 3) return null;
 
   const panels: AnnualPanel[] = [];
   for (let row = 0; row < 3; row++) {
-    const bands = calendarGroups[row],
-      centers = bands.map((b) => b.center),
-      diffs = centers.slice(1).map((v, i) => v - centers[i]).sort((a, b) => a - b),
-      cellH = diffs.length
-        ? diffs[Math.floor(diffs.length / 2)]
-        : bandH * 1.08,
-      gridTop = centers[0] - cellH / 2,
-      yStart = Math.max(0, Math.floor(gridTop)),
-      yEnd = Math.min(
-        height - 1,
-        Math.ceil(gridTop + cellH * 6),
-      );
+    const band = bands[row],
+      months = [row * 4 + 1, row * 4 + 2, row * 4 + 3, row * 4 + 4],
+      occupancies = Array.from({ length: 6 }, (_, week) => {
+        let dates = 0;
+        for (const month of months)
+          for (let day = 1; day <= daysInMonth(year, month); day++)
+            if (
+              Math.floor((weekdayMon(year, month, 1) + day - 1) / 7) === week
+            )
+              dates++;
+        return dates / 28;
+      }),
+      activeWeeks = occupancies
+        .map((value, week) => ({ value, week }))
+        .filter(({ value }) => value > 0.42)
+        .map(({ week }) => week);
+    if (!activeWeeks.length) return null;
+    const firstActiveWeek = activeWeeks[0],
+      lastActiveWeek = activeWeeks[activeWeeks.length - 1],
+      activeSpan = lastActiveWeek - firstActiveWeek + 1,
+      cellH = (band.bottom - band.top + 1) / activeSpan,
+      gridTop = band.top - firstActiveWeek * cellH;
 
-    for (let col = 0; col < 4; col++) {
-      const q0 = Math.floor((width * col) / 4),
-        q1 = Math.floor((width * (col + 1)) / 4);
-      let left = q1,
-        right = q0;
-      for (let x = q0; x < q1; x++) {
-        let hits = 0;
-        for (let y = yStart; y <= yEnd; y += 3) {
-          const p = (y * width + x) * 4,
-            r = data[p],
-            g = data[p + 1],
-            b = data[p + 2],
-            max = Math.max(r, g, b),
-            min = Math.min(r, g, b);
-          if (
-            max > 90 &&
-            ((r + g + b < 690 && min < 235) || max - min > 28)
-          )
-            hits++;
-        }
-        if (hits >= 2) {
-          left = Math.min(left, x);
-          right = Math.max(right, x);
-        }
+    // En una semana central los cuatro meses tienen siete celdas completas.
+    // Buscamos esa línea real para obtener los cuatro anchos y márgenes.
+    let runs: ReturnType<typeof panelRunsAt> = [];
+    const candidates = [
+      gridTop + cellH * 2.5,
+      gridTop + cellH * 3.5,
+      gridTop + cellH * 1.5,
+    ];
+    for (const cy of candidates) {
+      const found = panelRunsAt(
+        Math.max(0, Math.min(height - 1, Math.round(cy))),
+      );
+      if (found.length === 4) {
+        runs = found;
+        break;
       }
-      if (right <= left || right - left < width * 0.18) return null;
-      const length = right - left + 1,
-        month = row * 4 + col + 1,
-        weeks = Math.ceil(
-          (weekdayMon(year, month, 1) + daysInMonth(year, month)) / 7,
-        );
-      if (weeks < 4 || weeks > 6) return null;
-      panels.push({ x: left, length, gridTop, cellH });
+    }
+    if (runs.length !== 4) return null;
+
+    for (const run of runs) {
+      const pad = Math.max(1, Math.round(width * 0.0015)),
+        x = Math.max(0, run.start - pad),
+        length = Math.min(width - x, run.end - run.start + 1 + pad * 2),
+        cellW = length / 7;
+      if (cellH < cellW * 0.28 || cellH > cellW * 0.75) return null;
+      panels.push({ x, length, gridTop, cellH });
     }
   }
   return panels.length === 12 ? panels : null;
