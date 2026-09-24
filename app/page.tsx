@@ -1656,6 +1656,128 @@ async function rectifyAnnual(file: File) {
   return output;
 }
 
+/**
+ * Endereza una foto de un calendario mensual sin imponer la proporción del
+ * calendario anual. La función queda separada del detector actual para poder
+ * probar la rectificación antes de cambiar classifyMonthly().
+ *
+ * Busca dos bordes horizontales largos del panel y usa sus extremos como un
+ * cuadrilátero. El remuestreo bilineal elimina la perspectiva típica de una
+ * foto de móvil hecha a una pantalla.
+ */
+async function rectifyMonthly(file: File) {
+  const bitmap = await createImageBitmap(file),
+    ratio = Math.min(1, 2200 / bitmap.width, 1800 / bitmap.height),
+    width = Math.max(1, Math.round(bitmap.width * ratio)),
+    height = Math.max(1, Math.round(bitmap.height * ratio)),
+    source = document.createElement("canvas");
+  source.width = width;
+  source.height = height;
+  const ctx = source.getContext("2d", { willReadFrequently: true });
+  if (!ctx) {
+    bitmap.close();
+    return null;
+  }
+  ctx.drawImage(bitmap, 0, 0, width, height);
+  bitmap.close();
+
+  const pixels = ctx.getImageData(0, 0, width, height).data,
+    borders: { y: number; start: number; length: number }[] = [];
+  for (let y = Math.floor(height * 0.04); y < Math.ceil(height * 0.96); y++) {
+    const run = longestDarkRun(pixels, width, y);
+    if (run.length >= width * 0.34)
+      borders.push({ y, start: run.start, length: run.length });
+  }
+  if (borders.length < 2) return null;
+
+  let best:
+    | {
+        top: (typeof borders)[number];
+        bottom: (typeof borders)[number];
+        score: number;
+      }
+    | undefined;
+  for (let a = 0; a < borders.length; a++) {
+    for (let b = a + 1; b < borders.length; b++) {
+      const top = borders[a],
+        bottom = borders[b],
+        separation = bottom.y - top.y;
+      if (separation < height * 0.2) continue;
+      const widthSimilarity =
+          Math.min(top.length, bottom.length) /
+          Math.max(top.length, bottom.length),
+        centreTop = top.start + top.length / 2,
+        centreBottom = bottom.start + bottom.length / 2,
+        centreShift = Math.abs(centreTop - centreBottom) / width;
+      if (widthSimilarity < 0.58 || centreShift > 0.22) continue;
+      const score =
+        separation / height +
+        widthSimilarity * 0.7 -
+        centreShift * 1.5 +
+        Math.min(top.length, bottom.length) / width;
+      if (!best || score > best.score) best = { top, bottom, score };
+    }
+  }
+  if (!best) return null;
+
+  const tl: Point = { x: best.top.start, y: best.top.y },
+    tr: Point = {
+      x: best.top.start + best.top.length - 1,
+      y: best.top.y,
+    },
+    bl: Point = { x: best.bottom.start, y: best.bottom.y },
+    br: Point = {
+      x: best.bottom.start + best.bottom.length - 1,
+      y: best.bottom.y,
+    },
+    topWidth = Math.hypot(tr.x - tl.x, tr.y - tl.y),
+    bottomWidth = Math.hypot(br.x - bl.x, br.y - bl.y),
+    leftHeight = Math.hypot(bl.x - tl.x, bl.y - tl.y),
+    rightHeight = Math.hypot(br.x - tr.x, br.y - tr.y),
+    naturalWidth = (topWidth + bottomWidth) / 2,
+    naturalHeight = (leftHeight + rightHeight) / 2;
+
+  if (naturalWidth < 280 || naturalHeight < 180) return null;
+
+  const output = document.createElement("canvas"),
+    outputWidth = Math.max(700, Math.min(1800, Math.round(naturalWidth)));
+  output.width = outputWidth;
+  output.height = Math.max(
+    360,
+    Math.min(
+      1500,
+      Math.round(outputWidth * (naturalHeight / naturalWidth)),
+    ),
+  );
+  const out = output.getContext("2d", { willReadFrequently: true });
+  if (!out) return null;
+
+  const sourceData = ctx.getImageData(0, 0, width, height),
+    dest = out.createImageData(output.width, output.height);
+  for (let y = 0; y < output.height; y++) {
+    const v = output.height === 1 ? 0 : y / (output.height - 1);
+    for (let x = 0; x < output.width; x++) {
+      const u = output.width === 1 ? 0 : x / (output.width - 1),
+        sx =
+          (1 - v) * ((1 - u) * tl.x + u * tr.x) +
+          v * ((1 - u) * bl.x + u * br.x),
+        sy =
+          (1 - v) * ((1 - u) * tl.y + u * tr.y) +
+          v * ((1 - u) * bl.y + u * br.y),
+        ix = Math.max(0, Math.min(width - 1, Math.round(sx))),
+        iy = Math.max(0, Math.min(height - 1, Math.round(sy))),
+        sp = (iy * width + ix) * 4,
+        dp = (y * output.width + x) * 4;
+      dest.data[dp] = sourceData.data[sp];
+      dest.data[dp + 1] = sourceData.data[sp + 1];
+      dest.data[dp + 2] = sourceData.data[sp + 2];
+      dest.data[dp + 3] = 255;
+    }
+  }
+  out.putImageData(dest, 0, 0);
+  return output;
+}
+
 function phaseStatus(year: number, month: number, day: number, phase: number) {
   const first = Date.UTC(year, 0, 1),
     current = Date.UTC(year, month - 1, day),
