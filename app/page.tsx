@@ -212,7 +212,7 @@ const CONFIRMED_SPECIAL_RETRIBUTIVE_DAYS = [
 // Incrementar esta versión cuando cambie la lógica de reconocimiento anual.
 // Los años analizados con una versión anterior se conservan, pero la interfaz
 // avisa de que conviene volver a leer su imagen.
-const ANNUAL_DETECTOR_VERSION = 19;
+const ANNUAL_DETECTOR_VERSION = 20;
 const statusLabel: Record<Status, string> = {
   REVISAR: "Revisar",
   AGCG: "Trabajo · AGCG",
@@ -2180,17 +2180,198 @@ function auditCycle(
   });
 }
 
+// Geometry-only fallback for photographed annual calendars. Classification is
+// deliberately separate: no labour-cycle or colour-to-status rule is used here.
+function detectPhotographedAnnual(canvas: HTMLCanvasElement, year: number) {
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return null;
+  // Bound geometry-search cost independently of camera resolution. The final
+  // sampling uses the original loaded canvas, not the small search image.
+  const originalWidth = canvas.width, originalHeight = canvas.height;
+  const originalPixels = ctx.getImageData(0, 0, originalWidth, originalHeight).data;
+  const searchScale = Math.min(1, 1600 / originalWidth, 1600 / originalHeight);
+  let search = canvas;
+  if (searchScale < 1) {
+    search = document.createElement("canvas");
+    search.width = Math.round(originalWidth * searchScale);
+    search.height = Math.round(originalHeight * searchScale);
+    const searchContext = search.getContext("2d");
+    if (!searchContext) return null;
+    searchContext.drawImage(canvas, 0, 0, search.width, search.height);
+  }
+  const W = search.width, H = search.height;
+  const pixels = search.getContext("2d")!.getImageData(0, 0, W, H).data;
+  const gray = new Float32Array(W * H);
+  for (let i = 0; i < gray.length; i++) gray[i] = pixels[i * 4] * .299 + pixels[i * 4 + 1] * .587 + pixels[i * 4 + 2] * .114;
+  const median = (v: number[]) => [...v].sort((a,b)=>a-b)[Math.floor(v.length / 2)];
+  const quantile = (v: number[], q: number) => { const s=[...v].sort((a,b)=>a-b), k=(s.length-1)*q, i=Math.floor(k); return s[i]+(s[Math.min(i+1,s.length-1)]-s[i])*(k-i); };
+  // Separable running maximum estimates nearby screen background illumination.
+  const localMaximum = (radius: number) => {
+    const tmp = new Float32Array(W*H), out = new Float32Array(W*H);
+    for (const vertical of [false,true]) {
+      const length=vertical?H:W, lines=vertical?W:H, src=vertical?tmp:gray, dst=vertical?out:tmp;
+      const deque=new Int32Array(length);
+      for(let line=0;line<lines;line++) {
+        let head=0,tail=0,next=0; const index=(v:number)=>vertical?v*W+line:line*W+v;
+        for(let v=0;v<length;v++) {
+          const end=Math.min(length-1,v+radius);
+          while(next<=end){while(tail>head&&src[index(deque[tail-1])]<=src[index(next)])tail--;deque[tail++]=next++;}
+          while(head<tail&&deque[head]<v-radius)head++;
+          dst[index(v)]=src[index(deque[head])];
+        }
+      }
+    }
+    return out;
+  };
+  type Cell={x:number;y:number;w:number;h:number};
+  const solve = (A:number[][], B:number[][]) => {
+    const n=A[0].length, aug=Array.from({length:n},()=>Array(n+2).fill(0));
+    for(let k=0;k<A.length;k++) for(let i=0;i<n;i++) {
+      for(let j=0;j<n;j++)aug[i][j]+=A[k][i]*A[k][j];
+      for(let j=0;j<2;j++)aug[i][n+j]+=A[k][i]*B[k][j];
+    }
+    for(let i=0;i<n;i++) {
+      let pivot=i;for(let j=i+1;j<n;j++)if(Math.abs(aug[j][i])>Math.abs(aug[pivot][i]))pivot=j;
+      if(Math.abs(aug[pivot][i])<1e-8)return null;
+      [aug[i],aug[pivot]]=[aug[pivot],aug[i]];const d=aug[i][i];for(let j=i;j<n+2;j++)aug[i][j]/=d;
+      for(let k=0;k<n;k++)if(k!==i){const f=aug[k][i];for(let j=i;j<n+2;j++)aug[k][j]-=f*aug[i][j];}
+    }
+    return aug.map(r=>r.slice(n));
+  };
+  const candidates: {models:number[][][];offsets:number[];columns:number;angle:number;score:number}[]=[];
+  for(const scale of [.012,.024,.048]) {
+    const background=localMaximum(Math.max(3,Math.round(W*scale/2)));
+    const mask=new Uint8Array(W*H), seen=new Uint8Array(W*H), stack=new Int32Array(W*H);
+    for(let i=0;i<mask.length;i++)mask[i]=gray[i]>25&&gray[i]<background[i]*.83?1:0;
+    for(let y=1;y<H-1;y++)for(let x=1;x<W-1;x++){
+      const i=y*W+x;let full=1;
+      for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++)full&=mask[i+dy*W+dx];
+      seen[i]=full;
+    }
+    const cells:Cell[]=[];
+    for(let seed=0;seed<seen.length;seed++){
+      if(!seen[seed])continue;let size=1,count=0,sx=0,sy=0,left=W,right=0,top=H,bottom=0;stack[0]=seed;seen[seed]=0;
+      while(size){const i=stack[--size],x=i%W,y=Math.floor(i/W);count++;sx+=x;sy+=y;left=Math.min(left,x);right=Math.max(right,x);top=Math.min(top,y);bottom=Math.max(bottom,y);
+        for(const next of [x?i-1:-1,x+1<W?i+1:-1,i-W,i+W])if(next>=0&&next<seen.length&&seen[next]){seen[next]=0;stack[size++]=next;}}
+      const w=right-left+1,h=bottom-top+1;
+      if(w>=10&&h>=4&&w<W*.12&&w/h>1.5&&w/h<4.5&&count/(w*h)>.5)cells.push({x:sx/count,y:sy/count,w,h});
+    }
+    if(cells.length<100)continue;
+    const mw=median(cells.map(c=>c.w)),mh=median(cells.map(c=>c.h));
+    const usable=cells.filter(c=>c.w>mw*.7&&c.w<mw*1.4&&c.h>mh*.65&&c.h<mh*1.7);
+    const angles:number[]=[];
+    for(let i=0;i<usable.length;i++)for(let j=i+1;j<usable.length;j++){
+      let dx=usable[j].x-usable[i].x,dy=usable[j].y-usable[i].y;if(dx<0){dx=-dx;dy=-dy;}
+      if(dx>mw*.8&&dx<mw*1.5&&Math.abs(dy)<mw*.35)angles.push(Math.atan2(dy,dx));
+    }
+    if(angles.length<30)continue;
+    const bins=new Map<number,number[]>();for(const a of angles){const k=Math.round(a/(Math.PI/90));bins.set(k,[...(bins.get(k)||[]),a]);}
+    const angle=median([...bins.values()].sort((a,b)=>b.length-a.length)[0]),cos=Math.cos(angle),sin=Math.sin(angle);
+    const points=usable.map(c=>({x:c.x*cos+c.y*sin,y:-c.x*sin+c.y*cos})).sort((a,b)=>a.y-b.y);
+    const groups:{x:number;y:number}[][]=[];
+    for(const p of points){const g=groups[groups.length-1];if(g&&p.y-g[g.length-1].y<mh*2.5)g.push(p);else groups.push([p]);}
+    const rows=groups.filter(g=>g.length>=30);
+    // Candidate layouts follow the observed row count, not image coordinates.
+    if(rows.length!==2&&rows.length!==3)continue;
+    const columns=12/rows.length, ncols=columns*7, models:number[][][]=[], offsets:number[]=[];
+    let failed=false,totalError=0;
+    for(let row=0;row<rows.length;row++){
+      const g=rows[row],lo=quantile(g.map(p=>p.x),.01),hi=quantile(g.map(p=>p.x),.99);
+      let bestX={score:Infinity,step:0,indices:[] as number[]};
+      for(let gi=0;gi<=12;gi++){
+        const gap=mw*.6*gi/12,step=(hi-lo-(columns-1)*gap)/(ncols-1);
+        if(step<mw*.8||step>mw*1.6)continue;
+        for(let oi=-4;oi<=4;oi++){
+          const x0=lo+step*.05*oi,indices:number[]=[];let score=0;
+          for(const p of g){let distance=Infinity,index=0;for(let k=0;k<ncols;k++){const d=Math.abs(p.x-x0-k*step-Math.floor(k/7)*gap);if(d<distance){distance=d;index=k;}}indices.push(index);score+=Math.min(distance/step,.3);}
+          if(score/g.length<bestX.score)bestX={score:score/g.length,step,indices};
+        }
+      }
+      if(bestX.score>.13){failed=true;break;}
+      const center=g.reduce((s,p)=>s+p.x,0)/g.length;
+      let bestY={score:Infinity,step:0,weeks:[] as number[]};
+      for(let hi=0;hi<=24;hi++)for(let si=-10;si<=10;si++){
+        const step=mh*(1.05+.6*hi/24),slope=si*.0025,ys=g.map(p=>p.y-slope*(p.x-center)),min=Math.min(...ys);
+        for(let oi=0;oi<=24;oi++){
+          const y0=min-step+step*1.2*oi/24,weeks=ys.map(y=>Math.round((y-y0)/step));let score=0;
+          for(let i=0;i<ys.length;i++)score+=Math.min(Math.abs(ys[i]-y0-weeks[i]*step)/step,.3)+(weeks[i]<0||weeks[i]>5?1:0);
+          if(score/g.length<bestY.score)bestY={score:score/g.length,step,weeks};
+        }
+      }
+      if(bestY.score>.13){failed=true;break;}
+      const A=g.map((_,i)=>[1,bestX.indices[i],Math.floor(bestX.indices[i]/7),bestY.weeks[i]]),B=g.map(p=>[p.x,p.y]);
+      let keep=g.map(()=>true),coef:number[][]|null=null;
+      for(let iter=0;iter<4;iter++){
+        coef=solve(A.filter((_,i)=>keep[i]),B.filter((_,i)=>keep[i]));if(!coef)break;
+        const model=coef;keep=A.map((a,i)=>{const px=a.reduce((s,v,k)=>s+v*model[k][0],0),py=a.reduce((s,v,k)=>s+v*model[k][1],0);return Math.hypot((g[i].x-px)/bestX.step,(g[i].y-py)/bestY.step)<.22;});
+      }
+      if(!coef||keep.filter(Boolean).length<g.length*.75){failed=true;break;}
+      for(let m=0;m<columns;m++)if(keep.filter((v,i)=>v&&Math.floor(bestX.indices[i]/7)===m).length<8)failed=true;
+      if(failed)break;
+      // Affine models per observed row handle skew, shear and changing scale.
+      // Accept only if every actual date and every empty slot is supported.
+      let chosen:number|null=null,bestError=Infinity;
+      for(const offset of [-1,0,1]){
+        let errors=0,error=0;
+        for(let m=0;m<columns;m++){
+          const month=row*columns+m+1,first=weekdayMon(year,month,1),days=daysInMonth(year,month);
+          for(let slot=0;slot<42;slot++){
+            const a=[1,m*7+slot%7,m,Math.floor(slot/7)+offset],cx=a.reduce((s,v,k)=>s+v*coef![k][0],0),cy=a.reduce((s,v,k)=>s+v*coef![k][1],0);
+            let filled=0,total=0,outside=false;
+            for(const fy of [-.22,-.11,0,.11,.22])for(const fx of [-.25,-.125,0,.125,.25]){
+              const xx=cx+fx*coef[1][0]+fy*coef[3][0],yy=cy+fx*coef[1][1]+fy*coef[3][1];const x=Math.round(xx*cos-yy*sin),y=Math.round(xx*sin+yy*cos);
+              if(x<0||y<0||x>=W||y>=H){outside=true;continue;}const i=y*W+x;filled+=gray[i]>25&&gray[i]<background[i]*.93?1:0;total++;
+            }
+            const occupied=slot>=first&&slot<first+days,ratio=total?filled/total:0;
+            if(outside||!total||(occupied?ratio<.7:ratio>.2))errors++;
+            error+=occupied?1-ratio:ratio;
+          }
+        }
+        if(!errors&&error<bestError){chosen=offset;bestError=error;}
+      }
+      if(chosen===null){failed=true;break;}
+      models.push(coef);offsets.push(chosen);totalError+=bestError;
+    }
+    if(!failed)candidates.push({models,offsets,columns,angle,score:totalError});
+  }
+  if(!candidates.length)return null;
+  candidates.sort((a,b)=>a.score-b.score);const best=candidates[0];
+  const point=(candidate:typeof best,month:number,x:number,y:number)=>{
+    const row=Math.floor(month/candidate.columns),col=month%candidate.columns,c=candidate.models[row],a=[1,col*7+x,col,y+candidate.offsets[row]];
+    const px=a.reduce((s,v,k)=>s+v*c[k][0],0),py=a.reduce((s,v,k)=>s+v*c[k][1],0),co=Math.cos(candidate.angle),si=Math.sin(candidate.angle);
+    return {x:px*co-py*si,y:px*si+py*co};
+  };
+  // Conflicting independently valid layouts are not silently selected.
+  for(const candidate of candidates.slice(1))for(let m=0;m<12;m++){
+    const a=point(best,m,3,2),b=point(candidate,m,3,2);
+    if(Math.hypot(a.x-b.x,a.y-b.y)>Math.hypot(best.models[0][1][0],best.models[0][1][1])*.2)return null;
+  }
+  const output=document.createElement("canvas"),cw=48,ch=24,gap=24;
+  output.width=best.columns*(7*cw+gap);output.height=(12/best.columns)*(6*ch+gap);
+  const out=output.getContext("2d");if(!out)return null;
+  const image=out.createImageData(output.width,output.height);image.data.fill(255);
+  const panels:AnnualPanel[]=[];
+  for(let m=0;m<12;m++){
+    const left=(m%best.columns)*(7*cw+gap),top=Math.floor(m/best.columns)*(6*ch+gap);
+    panels.push({x:left,length:7*cw,gridTop:top,cellH:ch});
+    for(let y=0;y<6*ch;y++)for(let x=0;x<7*cw;x++){
+      const p=point(best,m,(x+.5)/cw-.5,(y+.5)/ch-.5),sx=Math.round(p.x*originalWidth/W),sy=Math.round(p.y*originalHeight/H);
+      if(sx<0||sy<0||sx>=originalWidth||sy>=originalHeight)return null;
+      const from=(sy*originalWidth+sx)*4,to=((top+y)*output.width+left+x)*4;
+      for(let k=0;k<4;k++)image.data[to+k]=originalPixels[from+k];
+    }
+  }
+  out.putImageData(image,0,0);
+  return {canvas:output,panels};
+}
+
+
 async function classifyAnnual(file: File, year: number) {
   let canvas = await loadAnnualCanvas(file);
   if (!canvas) return null;
   let panels = detectModernAnnualPanels(canvas, year) || detectModernAnnualPanels(canvas, year, true);
-  if (!panels) panels = detectAnnualPanelsByBands(canvas, year);
-  if (!panels) panels = detectStraightAnnualPanels(canvas, year);
-  if (!panels) {
-    canvas = await rectifyAnnual(file);
-    if (!canvas) return null;
-    panels = detectStraightAnnualPanels(canvas, year);
-  }
+  if (!panels) { const photo = detectPhotographedAnnual(canvas, year); if (photo) { canvas = photo.canvas; panels = photo.panels; } }
+  if (!panels) throw new Error("No se han podido validar las 12 cuadrículas (7 columnas, fechas y huecos). Acerca el calendario y evita reflejos o una perspectiva pronunciada.");
   // Never silently apply a six-column coordinate template to an unknown layout.
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (!ctx || !panels) return null;
