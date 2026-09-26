@@ -843,9 +843,9 @@ function plusFestiuCount(days: DayData[], year: number, month: number) {
 function plusConvenioCount(days: DayData[]) {
   return days.filter((d) => d.status !== "FEST").length;
 }
-function specialRetributiveDaysCount(year: number, month: number) {
-  return Array.from({ length: daysInMonth(year, month) }, (_, i) => i + 1).filter(
-    (day) => isConfirmedSpecialRetributiveDay(year, month, day),
+function specialRetributiveDaysCount(days: DayData[], year: number, month: number) {
+  return days.filter(
+    (d) => isWorking(d.status) && isConfirmedSpecialRetributiveDay(year, month, d.day),
   ).length;
 }
 
@@ -3144,6 +3144,7 @@ export default function Home() {
     currentMonthNightHours = nightHoursFor(days, year, month, profile),
     currentMonthHoraNona = primaHoraNonaFor(days, year, month, profile),
     currentMonthSpecialRetributiveDays = specialRetributiveDaysCount(
+      days,
       year,
       month,
     ),
@@ -4315,13 +4316,13 @@ function AnnualView({
                       </span>
                       <b>{p ? nightLabel(profile, monthNightHours[m]) : "—"}</b>
                     </div>}
-                    {!!p && specialRetributiveDaysCount(year, m) > 0 && (
+                    {!!p && specialRetributiveDaysCount(p.days, year, m) > 0 && (
                       <div className="annual-night">
                         <span>
                           <CalendarDays size={12} />
                           Días especiales:
                         </span>
-                        <b>{specialRetributiveDaysCount(year, m)}</b>
+                        <b>{specialRetributiveDaysCount(p.days, year, m)}</b>
                       </div>
                     )}
                   </button>

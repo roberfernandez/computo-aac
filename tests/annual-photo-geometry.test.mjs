@@ -35,10 +35,10 @@ test('blank images and a full rectangular matrix cannot impersonate a calendar',
  }
  assert.equal(c.detectPhotographedAnnual(canvasFor(image),2026),null);
 });
-test('all existing helpers except annual orchestration remain unchanged from v19',()=>{
+test('detector and calculation helpers remain unchanged from v19 except approved orchestration and special-day counter',()=>{
  const base=execFileSync('git',['show','cc64617fccff43aaf9e4569ad28c3a98984c5f36:app/page.tsx'],{encoding:'utf8'});
  const previous=ts.createSourceFile('page.tsx',base.slice(0,base.indexOf('export default function Home')),ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
- for(const fn of previous.statements.filter(ts.isFunctionDeclaration))if(fn.name.text!=='classifyAnnual'){
+ for(const fn of previous.statements.filter(ts.isFunctionDeclaration))if(!['classifyAnnual','specialRetributiveDaysCount'].includes(fn.name.text)){
   const actual=ast.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name.text===fn.name.text);assert.equal(actual.getText(ast),fn.getText(previous),fn.name.text);
  }
 });

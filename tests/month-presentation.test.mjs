@@ -16,7 +16,7 @@ vm.runInContext(ts.transpileModule(selected.map(n=>n.getText(ast)).join('\n'),{c
 test('recognition, calculation and storage helpers remain byte-for-byte unchanged',()=>{
  const old=execFileSync('git',['show','babce34cc41512c5b33cdac58a8531f3e4843d8b:app/page.tsx'],{encoding:'utf8',cwd:new URL('../',import.meta.url)});
  const a=ts.createSourceFile('page.tsx',old,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
- for(const n of a.statements.filter(n=>n.end<old.indexOf('export default function Home')&&ts.isFunctionDeclaration(n))){
+ for(const n of a.statements.filter(n=>n.end<old.indexOf('export default function Home')&&ts.isFunctionDeclaration(n)&&n.name.text!=='specialRetributiveDaysCount')){
   assert.equal(ast.statements.find(x=>ts.isFunctionDeclaration(x)&&x.name.text===n.name.text).getText(ast),n.getText(a),n.name.text);
  }
 });
@@ -33,11 +33,11 @@ test('numeric zero is hidden, negative and tiny nonzero values remain visible',(
 });
 test('rendered month cards retain balance, omit Plus Festiu, use existing special-day count',()=>{
  const props={year:2026,profile:{turn:'T8',contract:'85.81',fiestaLetter:'M'},plan:{},monthTotals:{},monthNightHours:{},monthPlusFestiu:{},annualOrdinaryHours:0,annualNightHours:0,annualPlusFestiu:0,onOpen(){},onConfirm(){}};
- for(let m=1;m<=12;m++){props.plan[m]={confirmed:false,days:[]};props.monthTotals[m]=0;props.monthNightHours[m]=m===2?1.5:0;props.monthPlusFestiu[m]=4;}
+ for(let m=1;m<=12;m++){props.plan[m]={confirmed:false,days:Array.from({length:c.daysInMonth(2026,m)},(_,i)=>({day:i+1,status:"AGCG"}))};props.monthTotals[m]=0;props.monthNightHours[m]=m===2?1.5:0;props.monthPlusFestiu[m]=4;}
  const html=renderToStaticMarkup(React.createElement(c.AnnualView,props));
  const cards=[...html.matchAll(/<article.*?<\/article>/g)].map(m=>m[0]);assert.equal(cards.length,12);
  cards.forEach((card,i)=>{assert.match(card,/<strong>/);assert.equal(card.includes('Nocturnidad variable'),i===1);assert.equal(card.includes('Días especiales:'),[0,5,8,11].includes(i));assert.equal(card.includes('Plus Festiu'),false);});
- assert.equal(c.specialRetributiveDaysCount(2026,1),2);assert.equal(c.specialRetributiveDaysCount(2026,2),0);
+ assert.equal(c.specialRetributiveDaysCount(props.plan[1].days,2026,1),2);assert.equal(c.specialRetributiveDaysCount(props.plan[2].days,2026,2),0);
 });
 test('all coloured backgrounds provide at least 4.5:1 white text contrast',()=>{
  const css=readFileSync(new URL('../app/globals.css',import.meta.url),'utf8');
@@ -47,3 +47,30 @@ test('all coloured backgrounds provide at least 4.5:1 white text contrast',()=>{
  }
 });
 
+
+test('special days count final worked states only: zero, one and two in January',()=>{
+ for(const [statuses,expected] of [[['DCOM','VACACIONES'],0],[['AGCG','RJ'],1],[['AGCG','AGCG'],2]]){
+  const days=statuses.map((status,i)=>({day:i===0?1:6,status,baseStatus:'AGCG'}));
+  assert.equal(c.specialRetributiveDaysCount(days,2026,1),expected);
+  const props={year:2026,profile:{turn:'T8',contract:'85.81'},plan:{1:{days,confirmed:false}},monthTotals:{1:0},monthNightHours:{1:0},annualOrdinaryHours:0,annualNightHours:0,annualPlusFestiu:99,onOpen(){},onConfirm(){}};
+  const card=renderToStaticMarkup(React.createElement(c.AnnualView,props)).match(/<article.*?<\/article>/)[0];
+  assert.equal(card.includes('Días especiales:'),expected>0);
+  if(expected)assert.match(card,new RegExp('<b>'+expected+'</b>'));
+ }
+ assert.equal(c.specialRetributiveDaysCount([],2026,1),0);
+});
+test('all existing worked/absence states and personal modifications use final status',()=>{
+ const excluded=['REVISAR','DCOM','FEST','VACACIONES','VACACIONES_PENDIENTES','VAC_ANTERIOR','MINI','LAUDO','RJ','ENFERMEDAD','PERMISO','HUELGA_LEGAL'];
+ const included=['AGCG','FORMACION','REVISION_MEDICA','VISPERA_FESTIVO','COMPUTO_ANTERIOR','COMPUTO_ACTUAL'];
+ for(const status of [...excluded,...included]){
+  const day={day:24,status,baseStatus:'AGCG',special:'MODIFICACION',extraHours:1};
+  assert.equal(c.specialRetributiveDaysCount([day],2026,9),included.includes(status)?1:0,status);
+ }
+ assert.equal(c.specialRetributiveDaysCount([{day:24,status:'AGCG',baseStatus:'DCOM'}],2026,9),1);
+ assert.equal(c.specialRetributiveDaysCount([{day:23,status:'AGCG'},{day:25,status:'AGCG'}],2026,9),0);
+});
+test('monthly detail and annual cards both call the worked-day counter and hide zero',()=>{
+ assert.match(source,/currentMonthSpecialRetributiveDays = specialRetributiveDaysCount\(\s*days,\s*year,\s*month/);
+ assert.match(source,/monthSpecialRetributiveDays > 0 &&/);
+ assert.match(source,/specialRetributiveDaysCount\(p.days, year, m\) > 0/);
+});
