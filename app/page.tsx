@@ -241,6 +241,23 @@ const specialLabel: Record<Special, string> = {
   NON_STOP_EXTRA: "Non stop extraordinario",
   MODIFICACION: "Modificación de jornada",
 };
+// Presentation only: preserve the colour families recognized by the detector.
+// Ambiguous/manual states have no proven original colour and stay neutral.
+function dayColourClass(d: DayData) {
+  if (d.status === "VAC_ANTERIOR") {
+    return d.priorOrigin === "RJ" ? "tmb-blue" : d.priorOrigin === "COMPUTO" ? "tmb-neutral" : "tmb-brown";
+  }
+  const colours: Partial<Record<Status, string>> = {
+    AGCG: "tmb-grey", DCOM: "tmb-turquoise", FEST: "tmb-salmon",
+    LAUDO: "tmb-orange", VACACIONES: "tmb-brown", VACACIONES_PENDIENTES: "tmb-brown",
+    FORMACION: "tmb-pink", ENFERMEDAD: "tmb-green", REVISION_MEDICA: "tmb-sage",
+    RJ: "tmb-blue",
+  };
+  return colours[d.status] || "tmb-neutral";
+}
+function showMonthlyConcept(value: number) {
+  return Number.isFinite(value) && value !== 0;
+}
 const priorOriginLabel: Record<PriorOrigin, string> = {
   VACACIONES: "Vacaciones pendientes",
   RJ: "RJ pendiente",
@@ -4236,7 +4253,6 @@ function AnnualView({
   plan,
   monthTotals,
   monthNightHours,
-  monthPlusFestiu,
   annualOrdinaryHours,
   annualNightHours,
   annualPlusFestiu,
@@ -4292,20 +4308,20 @@ function AnnualView({
                       )}
                     </div>
                     <strong>{p ? balanceLabel(profile, monthTotals[m]) : "—"}</strong>
-                    <div className="annual-night">
+                    {!!p && showMonthlyConcept(monthNightHours[m]) && <div className="annual-night">
                       <span>
                         <Moon size={12} />
                         Nocturnidad variable
                       </span>
                       <b>{p ? nightLabel(profile, monthNightHours[m]) : "—"}</b>
-                    </div>
-                    {!!p && monthPlusFestiu[m] > 0 && (
+                    </div>}
+                    {!!p && specialRetributiveDaysCount(year, m) > 0 && (
                       <div className="annual-night">
                         <span>
                           <CalendarDays size={12} />
-                          Plus Festiu
+                          Días especiales:
                         </span>
-                        <b>{`${monthPlusFestiu[m]} dom.`}</b>
+                        <b>{specialRetributiveDaysCount(year, m)}</b>
                       </div>
                     )}
                   </button>
@@ -4518,7 +4534,7 @@ function MonthView({
             {calculations.map(({ d, c }) => (
               <button
                 key={d.day}
-                className={`day ${d.status.toLowerCase()} ${officialHolidayFor(year, month, d.day) ? "official" : ""} ${d.status !== d.baseStatus ? "modified" : ""}`}
+                className={`day ${d.status.toLowerCase()} ${dayColourClass(d)} ${officialHolidayFor(year, month, d.day) ? "official" : ""} ${d.status !== d.baseStatus ? "modified" : ""}`}
                 onClick={() => onSelect(d)}
               >
                 <div className="day-top">
