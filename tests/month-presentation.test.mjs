@@ -13,10 +13,12 @@ const selected=ast.statements.filter(n=>!ts.isImportDeclaration(n)&&(n.end<befor
 const stub=({children})=>React.createElement('span',null,children);
 const c=vm.createContext({React,Badge:stub,Checkbox:stub,CheckCircle2:stub,PencilLine:stub,Moon:stub,CalendarDays:stub});
 vm.runInContext(ts.transpileModule(selected.map(n=>n.getText(ast)).join('\n'),{compilerOptions:{target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.React}}).outputText,c);
-test('recognition, calculation and storage helpers remain byte-for-byte unchanged',()=>{
+test('unrelated recognition, calculation and storage helpers remain byte-for-byte unchanged',()=>{
  const old=execFileSync('git',['show','babce34cc41512c5b33cdac58a8531f3e4843d8b:app/page.tsx'],{encoding:'utf8',cwd:new URL('../',import.meta.url)});
  const a=ts.createSourceFile('page.tsx',old,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
- for(const n of a.statements.filter(n=>n.end<old.indexOf('export default function Home')&&ts.isFunctionDeclaration(n)&&n.name.text!=='specialRetributiveDaysCount')){
+ // I-83 intentionally changes nightMinutesForShift and its calcDay consumer.
+ // night-variable.test.mjs checks all non-night calcDay results against the baseline.
+ for(const n of a.statements.filter(n=>n.end<old.indexOf('export default function Home')&&ts.isFunctionDeclaration(n)&&!['specialRetributiveDaysCount','nightMinutesForShift','calcDay'].includes(n.name.text))){
   assert.equal(ast.statements.find(x=>ts.isFunctionDeclaration(x)&&x.name.text===n.name.text).getText(ast),n.getText(a),n.name.text);
  }
 });
@@ -73,4 +75,11 @@ test('monthly detail and annual cards both call the worked-day counter and hide 
  assert.match(source,/currentMonthSpecialRetributiveDays = specialRetributiveDaysCount\(\s*days,\s*year,\s*month/);
  assert.match(source,/monthSpecialRetributiveDays > 0 &&/);
  assert.match(source,/specialRetributiveDaysCount\(p.days, year, m\) > 0/);
+});
+
+test('a pending night total stays visible on the annual month card',()=>{
+ const props={year:2026,profile:{turn:'T8',contract:'85.81'},plan:{12:{days:[],confirmed:false}},monthTotals:{12:0},monthNightHours:{12:NaN},annualOrdinaryHours:0,annualNightHours:NaN,annualPlusFestiu:0,onOpen(){},onConfirm(){}};
+ const html=renderToStaticMarkup(React.createElement(c.AnnualView,props));
+ const cards=[...html.matchAll(/<article.*?<\/article>/g)].map(m=>m[0]);
+ assert.match(cards[11],/Nocturnidad variable/);assert.match(cards[11],/Pendiente/);
 });

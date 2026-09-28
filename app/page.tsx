@@ -618,13 +618,38 @@ function shiftFor(
     value: Number((minutes / 60 - theoretical).toFixed(2)),
   };
 }
+// Continuous wall-clock interval only. Equal endpoints cannot distinguish a
+// zero-length shift from 24 hours; neither is a supported working shift here.
+function nightOverlapMinutesForShift(start: string, end: string) {
+  const validClock = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
+  if (!validClock.test(start) || !validClock.test(end) || start === end) return NaN;
+  const a = clockMinutes(start), b = a + elapsedMinutes(start, end);
+  let overlap = 0;
+  for (let day = -1; day <= 1; day++) {
+    const nightStart = day * 1440 + 1320;
+    overlap += Math.max(0, Math.min(b, nightStart + 480) - Math.max(a, nightStart));
+  }
+  return overlap;
+}
 function nightMinutesForShift(start: string, end: string, total: number) {
-  const a = clockMinutes(start),
-    endAbs = a + total,
-    nightStart = a < 1320 ? 1320 : a;
-  let night = Math.max(0, endAbs - nightStart);
-  if (night > total / 2) night = total;
-  return Math.min(total, night);
+  const overlap = nightOverlapMinutesForShift(start, end);
+  if (!Number.isFinite(overlap) || !Number.isFinite(total) ||
+      total <= 0 || total !== elapsedMinutes(start, end)) return NaN;
+  // FMB I-83: strictly more than four nocturnal hours pays the whole shift.
+  return overlap > 240 ? total : overlap;
+}
+function nightForDay(d: DayData, profile: UserProfile, code: string | null | undefined,
+  start: string, end: string, total: number) {
+  const overlap = nightOverlapMinutesForShift(start, end);
+  let reason = "";
+  if (isFullTime(profile)) reason = "Nocturnidad de tiempo completo pendiente de validar";
+  else if (code?.endsWith("_FINS_23H")) reason = "Pendiente: jornada abonada y presencia en Nochebuena";
+  else if (code?.includes("CANVI_HORA") && overlap > 0) reason = "Pendiente: duración nocturna en cambio de hora";
+  else if (d.special === "NON_STOP_EXTRA") reason = "Pendiente: tratamiento de Non Stop extraordinario";
+  else if (d.status === "FORMACION" || d.status === "REVISION_MEDICA") reason = "Pendiente: horario efectivo y abono de esta situación";
+  const payable = reason ? NaN : nightMinutesForShift(start, end, total);
+  if (!reason && !Number.isFinite(payable)) reason = "Pendiente: horario incompleto o duración distinta del intervalo";
+  return { overlap, payable, reason };
 }
 
 function calcDay(
@@ -647,6 +672,9 @@ function calcDay(
       workedMinutes: 0,
       nightMinutes: 0,
       nightHours: 0,
+      nightOverlapMinutes: 0,
+      nightPayableMinutes: 0,
+      nightReason: "",
       ordinaryHours: 0,
       horaNona: 0,
       creditedMinutes: 0,
@@ -674,7 +702,8 @@ function calcDay(
       start = d.customStart!; end = d.customEnd!;
       minutes = elapsedMinutes(start, end);
     }
-    const night = fullTime ? 0 : Number.isFinite(minutes) ? nightMinutesForShift(start, end, minutes) : NaN;
+    const nightResult = nightForDay(d, profile, code, start, end, minutes);
+    const night = fullTime ? 0 : nightResult.payable;
     return {
       scheduleReview: !Number.isFinite(minutes), compensationPending: fullTime,
       value: fullTime || toPreviousYear ? 0 : toCurrentYear ? decimalHoursFromMinutes(minutes) : NaN,
@@ -684,6 +713,9 @@ function calcDay(
       workedMinutes: toPreviousYear ? 0 : minutes,
       nightMinutes: toPreviousYear ? 0 : night,
       nightHours: toPreviousYear ? 0 : decimalHoursFromMinutes(night),
+      nightOverlapMinutes: nightResult.overlap,
+      nightPayableMinutes: nightResult.payable,
+      nightReason: nightResult.reason,
       ordinaryHours: decimalHoursFromMinutes(minutes),
       horaNona: fullTime ? 0 : Number.isFinite(minutes) ? Math.max(0, Math.ceil((minutes - 480) / 15) * 0.25) : NaN,
       creditedMinutes: fullTime || (!toPreviousYear && !toCurrentYear) ? 0 : minutes,
@@ -741,7 +773,8 @@ function calcDay(
     reason = "Modificación de jornada";
   }
   const actualWorkedMinutes = workedMinutes,
-    actualNightMinutes = isFullTime(profile) ? 0 : nightMinutesForShift(start, end, actualWorkedMinutes),
+    nightResult = nightForDay(d, profile, code, start, end, actualWorkedMinutes),
+    actualNightMinutes = isFullTime(profile) ? 0 : nightResult.payable,
     actualNightHours = decimalHoursFromMinutes(actualNightMinutes),
     actualOrdinaryHours = decimalHoursFromMinutes(actualWorkedMinutes),
     actualHoraNona =
@@ -772,6 +805,9 @@ function calcDay(
     workedMinutes: toPreviousYear ? 0 : actualWorkedMinutes,
     nightMinutes: toPreviousYear ? 0 : actualNightMinutes,
     nightHours: toPreviousYear ? 0 : actualNightHours,
+    nightOverlapMinutes: nightResult.overlap,
+    nightPayableMinutes: nightResult.payable,
+    nightReason: nightResult.reason,
     ordinaryHours: actualOrdinaryHours,
     horaNona: actualHoraNona,
     creditedMinutes: !fullTime && (toPreviousYear || toCurrentYear) ? actualWorkedMinutes : 0,
@@ -4309,7 +4345,7 @@ function AnnualView({
                       )}
                     </div>
                     <strong>{p ? balanceLabel(profile, monthTotals[m]) : "—"}</strong>
-                    {!!p && showMonthlyConcept(monthNightHours[m]) && <div className="annual-night">
+                    {!!p && (!Number.isFinite(monthNightHours[m]) || showMonthlyConcept(monthNightHours[m])) && <div className="annual-night">
                       <span>
                         <Moon size={12} />
                         Nocturnidad variable
@@ -4614,7 +4650,12 @@ function MonthView({
                     <small className="block text-white/35">{c.hours}</small>
                     {c.scheduleReview && <small className="block text-amber-300">Horario por confirmar</small>}
                   </TableCell>
-                  <TableCell>{isFullTime(profile) && isWorking(d.status) ? "Pendiente" : c.night}</TableCell>
+                  <TableCell>
+                    {isFullTime(profile) && isWorking(d.status) ? "Pendiente" : c.night}
+                    {c.nightReason && d.status !== "COMPUTO_ANTERIOR" && (
+                      <span className="block text-xs text-muted-foreground">{c.nightReason}</span>
+                    )}
+                  </TableCell>
                   <TableCell
                     className={`text-right font-bold ${c.value > 0 ? "text-[#71d7cc]" : c.value < 0 ? "text-[#ff8d7c]" : "text-white/45"}`}
                   >
