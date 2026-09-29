@@ -639,12 +639,12 @@ function nightMinutesForShift(start: string, end: string, total: number) {
   return overlap > 240 ? total : overlap;
 }
 function nightForDay(d: DayData, profile: UserProfile, code: string | null | undefined,
-  start: string, end: string, total: number) {
+  start: string, end: string, total: number, month: number) {
   const overlap = nightOverlapMinutesForShift(start, end);
   let reason = "";
   if (isFullTime(profile)) reason = "Nocturnidad de tiempo completo pendiente de validar";
   else if (code?.endsWith("_FINS_23H")) reason = "Pendiente: jornada abonada y presencia en Nochebuena";
-  else if (code?.includes("CANVI_HORA") && overlap > 0 && code === "DISSABTE_CANVI_HORA" && start !== "20:30") reason = "Pendiente: duración nocturna en cambio de hora";
+  else if (code?.includes("CANVI_HORA") && overlap > 0 && month === 10) reason = "Pendiente: duración nocturna en cambio de hora";
   else if (d.special === "NON_STOP_EXTRA") reason = "Pendiente: tratamiento de Non Stop extraordinario";
   const payable = reason ? NaN : nightMinutesForShift(start, end, total);
   if (!reason && !Number.isFinite(payable)) reason = "Pendiente: horario incompleto o duración distinta del intervalo";
@@ -701,7 +701,7 @@ function calcDay(
       start = d.customStart!; end = d.customEnd!;
       minutes = elapsedMinutes(start, end);
     }
-    const nightResult = nightForDay(d, profile, code, start, end, minutes);
+    const nightResult = nightForDay(d, profile, code, start, end, minutes, month);
     const night = fullTime ? 0 : nightResult.payable;
     return {
       scheduleReview: !Number.isFinite(minutes), compensationPending: fullTime,
@@ -772,7 +772,7 @@ function calcDay(
     reason = "Modificación de jornada";
   }
   const actualWorkedMinutes = workedMinutes,
-    nightResult = nightForDay(d, profile, code, start, end, actualWorkedMinutes),
+    nightResult = nightForDay(d, profile, code, start, end, actualWorkedMinutes, month),
     actualNightMinutes = isFullTime(profile) ? 0 : nightResult.payable,
     actualNightHours = decimalHoursFromMinutes(actualNightMinutes),
     actualOrdinaryHours = decimalHoursFromMinutes(actualWorkedMinutes),
