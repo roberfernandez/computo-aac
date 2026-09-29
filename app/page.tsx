@@ -644,9 +644,8 @@ function nightForDay(d: DayData, profile: UserProfile, code: string | null | und
   let reason = "";
   if (isFullTime(profile)) reason = "Nocturnidad de tiempo completo pendiente de validar";
   else if (code?.endsWith("_FINS_23H")) reason = "Pendiente: jornada abonada y presencia en Nochebuena";
-  else if (code?.includes("CANVI_HORA") && overlap > 0) reason = "Pendiente: duración nocturna en cambio de hora";
+  else if (code?.includes("CANVI_HORA") && overlap > 0 && code === "DISSABTE_CANVI_HORA" && start !== "20:30") reason = "Pendiente: duración nocturna en cambio de hora";
   else if (d.special === "NON_STOP_EXTRA") reason = "Pendiente: tratamiento de Non Stop extraordinario";
-  else if (d.status === "FORMACION" || d.status === "REVISION_MEDICA") reason = "Pendiente: horario efectivo y abono de esta situación";
   const payable = reason ? NaN : nightMinutesForShift(start, end, total);
   if (!reason && !Number.isFinite(payable)) reason = "Pendiente: horario incompleto o duración distinta del intervalo";
   return { overlap, payable, reason };
@@ -709,10 +708,10 @@ function calcDay(
       value: fullTime || toPreviousYear ? 0 : toCurrentYear ? decimalHoursFromMinutes(minutes) : NaN,
       shift: Number.isFinite(minutes) ? `${start}–${end}` : "Pendiente",
       hours: Number.isFinite(minutes) ? `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, "0")}` : "Pendiente",
-      night: toPreviousYear ? "—" : iso(decimalHoursFromMinutes(night)),
+      night: iso(decimalHoursFromMinutes(night)),
       workedMinutes: toPreviousYear ? 0 : minutes,
-      nightMinutes: toPreviousYear ? 0 : night,
-      nightHours: toPreviousYear ? 0 : decimalHoursFromMinutes(night),
+      nightMinutes: night,
+      nightHours: decimalHoursFromMinutes(night),
       nightOverlapMinutes: nightResult.overlap,
       nightPayableMinutes: nightResult.payable,
       nightReason: nightResult.reason,
@@ -799,12 +798,10 @@ function calcDay(
     value: fullTime ? 0 : Number(value.toFixed(2)),
     shift: `${start}–${end}`,
     hours,
-    night: toPreviousYear
-      ? "—"
-      : iso(actualNightHours),
+    night: iso(actualNightHours),
     workedMinutes: toPreviousYear ? 0 : actualWorkedMinutes,
-    nightMinutes: toPreviousYear ? 0 : actualNightMinutes,
-    nightHours: toPreviousYear ? 0 : actualNightHours,
+    nightMinutes: actualNightMinutes,
+    nightHours: actualNightHours,
     nightOverlapMinutes: nightResult.overlap,
     nightPayableMinutes: nightResult.payable,
     nightReason: nightResult.reason,
@@ -2395,9 +2392,15 @@ function detectPhotographedAnnual(canvas: HTMLCanvasElement, year: number) {
     return {x:px*co-py*si,y:px*si+py*co};
   };
   // Conflicting independently valid layouts are not silently selected.
-  for(const candidate of candidates.slice(1))for(let m=0;m<12;m++){
+  for(const candidate of candidates.slice(1)){
+    // Different image scales can yield weaker alternative fits, especially on
+    // the historical 6x2 sheet. Only a similarly strong fit for the same
+    // layout is evidence of genuine geometric ambiguity.
+    if(candidate.columns!==best.columns||candidate.score>best.score*1.35+.5)continue;
+    for(let m=0;m<12;m++){
     const a=point(best,m,3,2),b=point(candidate,m,3,2);
     if(Math.hypot(a.x-b.x,a.y-b.y)>Math.hypot(best.models[0][1][0],best.models[0][1][1])*.2)return null;
+    }
   }
   const output=document.createElement("canvas"),cw=48,ch=24,gap=24;
   output.width=best.columns*(7*cw+gap);output.height=(12/best.columns)*(6*ch+gap);
