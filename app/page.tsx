@@ -3341,7 +3341,7 @@ export default function Home() {
             <div className="min-w-0">
               <p className="text-xs font-semibold uppercase tracking-[.22em] text-[#71d7cc]">
                 Ciclo {profile.fiestaLetter} · {" "}
-                {profileLabel(profile)} · versión {APP_BUILD}
+                {profileLabel(profile)} · versión {APP_BUILD} · versión {APP_BUILD}
                 {!isFullTime(profile) && profile.contract === "75" && profile.subturn
                   ? ` · ${profile.subturn}`
                   : ""}
