@@ -140,6 +140,7 @@ const MONTHS = [
 ];
 const WEEKDAYS = ["L", "M", "X", "J", "V", "S", "D"];
 const INITIAL_YEAR = new Date().getFullYear();
+const APP_BUILD = (process.env.NEXT_PUBLIC_GIT_SHA || "local").slice(0, 7);
 const DEFAULT_PROFILE: UserProfile = {
   turn: "T8",
   name: "",
@@ -212,7 +213,7 @@ const CONFIRMED_SPECIAL_RETRIBUTIVE_DAYS = [
 // Incrementar esta versión cuando cambie la lógica de reconocimiento anual.
 // Los años analizados con una versión anterior se conservan, pero la interfaz
 // avisa de que conviene volver a leer su imagen.
-const ANNUAL_DETECTOR_VERSION = 20;
+const ANNUAL_DETECTOR_VERSION = 21;
 const statusLabel: Record<Status, string> = {
   REVISAR: "Revisar",
   AGCG: "Trabajo · AGCG",
@@ -2425,7 +2426,9 @@ function detectPhotographedAnnual(canvas: HTMLCanvasElement, year: number) {
 async function classifyAnnual(file: File, year: number) {
   let canvas = await loadAnnualCanvas(file);
   if (!canvas) return null;
-  let panels = detectModernAnnualPanels(canvas, year) || detectModernAnnualPanels(canvas, year, true);
+  let panels = detectModernAnnualPanels(canvas, year) || detectModernAnnualPanels(canvas, year, true) || detectStraightAnnualPanels(canvas, year);
+  // Historical TMB annual sheets use a straight 6x2 layout. Keep its proven
+  // header-based detector ahead of the generic photographed-geometry fallback.
   if (!panels) { const photo = detectPhotographedAnnual(canvas, year); if (photo) { canvas = photo.canvas; panels = photo.panels; } }
   if (!panels) throw new Error("No se han podido validar las 12 cuadrículas (7 columnas, fechas y huecos). Acerca el calendario y evita reflejos o una perspectiva pronunciada.");
   // Never silently apply a six-column coordinate template to an unknown layout.
@@ -3338,7 +3341,7 @@ export default function Home() {
             <div className="min-w-0">
               <p className="text-xs font-semibold uppercase tracking-[.22em] text-[#71d7cc]">
                 Ciclo {profile.fiestaLetter} · {" "}
-                {profileLabel(profile)}
+                {profileLabel(profile)} · versión {APP_BUILD}
                 {!isFullTime(profile) && profile.contract === "75" && profile.subturn
                   ? ` · ${profile.subturn}`
                   : ""}
