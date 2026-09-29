@@ -25,7 +25,7 @@ test('digital 4x3 keeps its 365 statuses and ten ambiguous blue dates',async()=>
  const r=await recognize(fixtures[1]);reference=flatten(r);assert.equal(reference.length,365);assert.equal(r.uncertain,10);assert.equal(r.cycleDifferences,12);
  assert.deepEqual(Array.from(r.uncertainDaysByMonth),['Mar: 23, 24','Jun: 16, 19, 20, 21, 22, 23, 24','Jul: 20']);
 });
-test('old 6x2 remains a known safe rejection, not a fabricated year',async()=>{await assert.rejects(()=>recognize(fixtures[0]),/12 cuadrículas/)});
+test('old 6x2 is recognized without changing the modern 4x3 path',async()=>{const r=await recognize(fixtures[0]);assert.equal(flatten(r).length,365);assert.equal(Object.keys(r.plan).length,12)});
 test('blank images and a full rectangular matrix cannot impersonate a calendar',()=>{
  const image={width:1280,height:800,data:new Uint8ClampedArray(1280*800*4).fill(255)};
  assert.equal(c.detectPhotographedAnnual(canvasFor(image),2026),null);
