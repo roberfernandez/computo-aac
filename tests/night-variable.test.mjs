@@ -63,21 +63,31 @@ test('modifications at start/end keep their existing duration and use the result
  }
 });
 test('exceptional remuneration remains pending without changing the shift or balance',()=>{
- for(const [y,m,n,extras,reason] of [[2026,12,24,{},'Nochebuena'],[2026,10,24,{},'cambio de hora'],[2026,3,28,{},'cambio de hora'],[2026,9,23,{special:'NON_STOP_EXTRA'},'extraordinario'],[2026,9,25,{status:'FORMACION'},'situación'],[2026,9,25,{status:'REVISION_MEDICA'},'situación']]){
+ for(const [y,m,n,extras,reason] of [[2026,12,24,{},'Nochebuena'],[2026,10,24,{},'cambio de hora'],[2026,9,23,{special:'NON_STOP_EXTRA'},'extraordinario']]){
   const d=day(n,extras),c=api.calcDay(d,[d],y,m,profile),old=oldContext.api.calcDay(d,[d],y,m,profile);
   assert.ok(Number.isNaN(c.nightPayableMinutes));assert.ok(Number.isNaN(c.nightHours));assert.match(c.nightReason,new RegExp(reason));
   for(const key of ['shift','value','workedMinutes','ordinaryHours','horaNona','creditedMinutes'])assert.equal(c[key],old[key],key);
  }
  const d=day(24),c=api.calcDay(d,[d],2026,12,profile);assert.equal(c.shift,'18:46–23:50');assert.equal(c.workedMinutes,364);assert.equal(c.nightOverlapMinutes,110);
 });
-test('current/prior allocation preserves source night measurements without leaking prior credit',()=>{
+test('current/prior allocation preserves source night remuneration without leaking it into current-year balance',()=>{
  for(const status of ['COMPUTO_ANTERIOR','COMPUTO_ACTUAL']){
   const d=day(31,{status,...custom('02:00','05:00')}),c=api.calcDay(d,[d],2025,3,profile);
-  assert.equal(c.nightOverlapMinutes,180);assert.equal(c.nightPayableMinutes,180);
-  assert.equal(c.nightHours,status==='COMPUTO_ANTERIOR'?0:3);
+  assert.equal(c.nightOverlapMinutes,180);assert.equal(c.nightPayableMinutes,180);assert.equal(c.nightHours,3);
   assert.equal(c.creditedMinutes,180);
  }
- const d=day(24,{status:'COMPUTO_ANTERIOR'});assert.equal(api.nightHoursFor([d],2026,12,profile),0);
+ const d=day(24,{status:'COMPUTO_ANTERIOR'});assert.equal(api.nightHoursFor([d],2026,12,profile),2.83);
+});
+
+test('validated ordinary-schedule situations pay their normal night hours',()=>{
+ for(const status of ['FORMACION','REVISION_MEDICA']){
+  const d=day(19,{status}),c=api.calcDay(d,[d],2026,2,profile);
+  assert.equal(c.shift,'18:46–00:50');assert.equal(c.nightHours,2.83);assert.equal(c.nightReason,'');
+ }
+ const spring=day(28),c=api.calcDay(spring,[spring],2026,3,profile);
+ assert.equal(c.shift,'20:30–05:00');assert.equal(c.nightHours,8.5);assert.equal(c.nightReason,'');
+ const sunday=day(29),s=api.calcDay(sunday,[sunday],2026,3,profile);
+ assert.equal(s.shift,'18:46–00:50');assert.equal(s.nightHours,2.83);assert.equal(s.nightReason,'');
 });
 test('monthly and annual consumer sums preserve pending instead of a plausible total',()=>{
  const d=day(25,custom('19:00','01:30'));
