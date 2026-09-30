@@ -920,7 +920,7 @@ function dominantStatus(data: Uint8ClampedArray): Status {
   if (r > 190 && g > 180 && b > 145) return "AGCG";
   return "REVISAR";
 }
-function annualBlockEvidence(data: Uint8ClampedArray) {
+function annualBlockEvidence(data: Uint8ClampedArray): { status: Status; confidence: number; detectedColour?: "BLUE" } {
   let eligible = 0,
     cyan = 0,
     orange = 0,
