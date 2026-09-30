@@ -42,6 +42,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import { markStorageKeyPending, pushStorageKey, syncComputoStorage, type SyncState } from "./computo-sync";
 import {
   Table,
   TableBody,
@@ -2650,6 +2651,7 @@ export default function Home() {
     [month, setMonth] = useState(1),
     [plan, setPlan] = useState<YearPlan>({}),
     [days, setDays] = useState<DayData[]>(() => makeDays(INITIAL_YEAR, 1));
+  const [syncState, setSyncState] = useState<SyncState>("local");
   const [officialRevision, setOfficialRevision] = useState(0);
   const [calendarStatus, setCalendarStatus] = useState("Cargando calendario oficial…");
   const [calendarRetry, setCalendarRetry] = useState(0);
@@ -2754,40 +2756,32 @@ export default function Home() {
     setDays(makeDays(y, month));
     setMessage("Sube el calendario anual para crear la previsión completa.");
   }
-  // La carga inicial se ejecuta una sola vez; después se usa el selector de año.
+  // Primero sincroniza la copia compartida y después carga el año ya convergido.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    loadYear(INITIAL_YEAR);
-    try {
-      const stored = localStorage.getItem("metro-profile-v2"),
-        previous = localStorage.getItem("metro-profile-v1");
-      if (stored) {
-        const parsed = JSON.parse(stored) as Partial<UserProfile>,
-          valid = !!parsed.contract && parsed.contract in CONTRACT_LABELS,
-          next = {
-            ...DEFAULT_PROFILE,
-            ...parsed,
-            contract: valid ? parsed.contract : DEFAULT_PROFILE.contract,
-          } as UserProfile;
-        setProfile(next);
-        setProfileDraft(next);
-        setProfileOpen(!valid);
-      } else if (previous) {
-        const parsed = JSON.parse(previous) as Partial<UserProfile>,
-          valid = !!parsed.contract && parsed.contract in CONTRACT_LABELS,
-          next = {
-            ...DEFAULT_PROFILE,
-            ...parsed,
-            contract: valid ? parsed.contract : DEFAULT_PROFILE.contract,
-          } as UserProfile;
-        setProfile(next);
-        setProfileDraft(next);
-        setProfileOpen(true);
+    (async () => {
+      await syncComputoStorage(setSyncState);
+      loadYear(INITIAL_YEAR);
+      try {
+        const stored = localStorage.getItem("metro-profile-v2"),
+          previous = localStorage.getItem("metro-profile-v1");
+        if (stored || previous) {
+          const parsed = JSON.parse(stored || previous || "{}") as Partial<UserProfile>,
+            valid = !!parsed.contract && parsed.contract in CONTRACT_LABELS,
+            next = {
+              ...DEFAULT_PROFILE,
+              ...parsed,
+              contract: valid ? parsed.contract : DEFAULT_PROFILE.contract,
+            } as UserProfile;
+          setProfile(next);
+          setProfileDraft(next);
+          setProfileOpen(!stored || !valid);
+        }
+      } catch {
+      } finally {
+        setProfileLoaded(true);
       }
-    } catch {
-    } finally {
-      setProfileLoaded(true);
-    }
+    })();
   }, []);
   useEffect(
     () => () => {
@@ -2803,16 +2797,25 @@ export default function Home() {
   );
   function persist(next: YearPlan) {
     setPlan(next);
-    localStorage.setItem(`metro-year-${year}`, JSON.stringify(next));
+    const key = `metro-year-${year}`;
+    localStorage.setItem(key, JSON.stringify(next));
+    markStorageKeyPending(key);
+    pushStorageKey(key).then(ok => ok && setSyncState("synced")).catch(() => setSyncState(navigator.onLine ? "error" : "offline"));
   }
   function persistPeriods(next: PeriodRecord[]) {
     setPeriods(next);
-    localStorage.setItem(`metro-periods-${year}`, JSON.stringify(next));
+    const key = `metro-periods-${year}`;
+    localStorage.setItem(key, JSON.stringify(next));
+    markStorageKeyPending(key);
+    pushStorageKey(key).catch(() => setSyncState(navigator.onLine ? "error" : "offline"));
   }
   function savePriorEntitlement(value: number) {
     const next = Math.max(0, Math.floor(value || 0));
     setPriorEntitlement(next);
-    localStorage.setItem(`metro-prior-${year}`, String(next));
+    const key = `metro-prior-${year}`;
+    localStorage.setItem(key, String(next));
+    markStorageKeyPending(key);
+    pushStorageKey(key).catch(() => setSyncState(navigator.onLine ? "error" : "offline"));
   }
   function saveProfile() {
     const name = profileDraft.name.trim(),
@@ -2830,6 +2833,9 @@ export default function Home() {
     setProfileDraft(next);
     localStorage.setItem("metro-profile-v1", JSON.stringify(next));
     localStorage.setItem("metro-profile-v2", JSON.stringify(next));
+    markStorageKeyPending("metro-profile-v1");
+    markStorageKeyPending("metro-profile-v2");
+    Promise.all([pushStorageKey("metro-profile-v1"), pushStorageKey("metro-profile-v2")]).catch(() => setSyncState(navigator.onLine ? "error" : "offline"));
     setProfileOpen(false);
   }
   function editProfile() {
@@ -3385,7 +3391,7 @@ export default function Home() {
             <div className="min-w-0">
               <p className="text-xs font-semibold uppercase tracking-[.22em] text-[#71d7cc]">
                 Ciclo {profile.fiestaLetter} · {" "}
-                {profileLabel(profile)} · versión {APP_BUILD}
+                {profileLabel(profile)} · versión {APP_BUILD} · {syncState === "synced" ? "☁ sincronizado" : syncState === "syncing" ? "☁ sincronizando…" : syncState === "offline" ? "☁ sin conexión" : syncState === "error" ? "☁ pendiente" : "☁ local"}
                 {!isFullTime(profile) && profile.contract === "75" && profile.subturn
                   ? ` · ${profile.subturn}`
                   : ""}

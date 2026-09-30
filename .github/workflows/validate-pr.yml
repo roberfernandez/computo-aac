@@ -1,0 +1,20 @@
+name: Validate pull request
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npx eslint app/computo-sync.ts app/tmb-session.ts app/page.tsx
+      - run: npm run build
+        env:
+          NEXT_PUBLIC_GIT_SHA: ${{ github.event.pull_request.head.sha }}
