@@ -213,7 +213,7 @@ const CONFIRMED_SPECIAL_RETRIBUTIVE_DAYS = [
 // Incrementar esta versión cuando cambie la lógica de reconocimiento anual.
 // Los años analizados con una versión anterior se conservan, pero la interfaz
 // avisa de que conviene volver a leer su imagen.
-const ANNUAL_DETECTOR_VERSION = 21;
+const ANNUAL_DETECTOR_VERSION = 22;
 const statusLabel: Record<Status, string> = {
   REVISAR: "Revisar",
   AGCG: "Trabajo · AGCG",
@@ -933,6 +933,11 @@ function annualBlockEvidence(data: Uint8ClampedArray) {
     if (r + g + b < 180 && !isBlue) continue;
     eligible++;
     if (isBlue) blue++;
+    // Revisión médica uses a pale/desaturated green: its red and blue
+    // components stay high. Enfermedad is the saturated green with much
+    // lower red/blue. Test the pale green first so compression/rescaling
+    // cannot turn a medical cell into disease merely by increasing G.
+    else if (g > r + 14 && g > b + 14 && r >= 115 && b >= 115) medical++;
     else if (g > r + 50 && g > b + 50 && g > 135 && r < 135 && b < 135)
       disease++;
     else if (g > r + 14 && g > b + 14 && r > 75 && b > 75) medical++;
