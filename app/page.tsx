@@ -659,10 +659,15 @@ function nightForDay(d: DayData, profile: UserProfile, code: string | null | und
   const overlap = nightOverlapMinutesForShift(start, end);
   let reason = "";
   if (isFullTime(profile)) reason = "Nocturnidad de tiempo completo pendiente de validar";
-  else if (code?.endsWith("_FINS_23H")) reason = "Pendiente: jornada abonada y presencia en Nochebuena";
   else if (code?.includes("CANVI_HORA") && overlap > 0 && month === 10) reason = "Pendiente: duración nocturna en cambio de hora";
   else if (d.special === "NON_STOP_EXTRA") reason = "Pendiente: tratamiento de Non Stop extraordinario";
-  const payable = reason ? NaN : nightMinutesForShift(start, end, total);
+  let payable = reason ? NaN : nightMinutesForShift(start, end, total);
+  if (!reason && code?.endsWith("_FINS_23H")) {
+    // Nochebuena: la reducción de presencia no reduce la nocturnidad abonada.
+    // Nómina 12/2025 confirma que T8 cobra la nocturnidad de la jornada normal.
+    const normal = shiftFor(profile, "NORMAL", 1);
+    payable = nightMinutesForShift(normal.start, normal.end, normal.minutes);
+  }
   if (!reason && !Number.isFinite(payable)) reason = "Pendiente: horario incompleto o duración distinta del intervalo";
   return { overlap, payable, reason };
 }
