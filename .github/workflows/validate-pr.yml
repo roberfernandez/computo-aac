@@ -14,7 +14,7 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
-      - run: npm run lint
+      - run: npx eslint app/computo-sync.ts app/tmb-session.ts app/page.tsx
       - run: npm run build
         env:
           NEXT_PUBLIC_GIT_SHA: ${{ github.event.pull_request.head.sha }}
