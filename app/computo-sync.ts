@@ -6,6 +6,7 @@ const EXACT = new Set(["metro-profile-v1", "metro-profile-v2"]);
 const PENDING_KEY = "computo-sync-pending-v1";
 function pendingKeys(){ try { const v=JSON.parse(localStorage.getItem(PENDING_KEY)||"[]"); return Array.isArray(v)?v.filter((x):x is string=>typeof x==="string"):[]; } catch { return []; } }
 function markPending(key:string){ localStorage.setItem(PENDING_KEY, JSON.stringify([...new Set([...pendingKeys(),key])])); }
+export function markStorageKeyPending(key:string){ if(isComputoStorageKey(key)) markPending(key); }
 function clearPending(key:string){ localStorage.setItem(PENDING_KEY, JSON.stringify(pendingKeys().filter(k=>k!==key))); }
 export function isComputoStorageKey(key:string){ return EXACT.has(key) || PREFIXES.some(prefix=>key.startsWith(prefix)); }
 function headers(token:string){ return { apikey:SUPABASE_PUBLIC_KEY, Authorization:`Bearer ${token}`, "Content-Type":"application/json", Prefer:"resolution=merge-duplicates,return=minimal" }; }
