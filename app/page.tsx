@@ -3359,6 +3359,20 @@ export default function Home() {
       <header className="border-b border-white/10 bg-[#0a1d25]/92 px-4 py-4 backdrop-blur md:px-8">
         <div className="mx-auto flex max-w-[1500px] flex-wrap items-center justify-between gap-4">
           <div className="flex min-w-0 items-center gap-3">
+            <a
+              href="https://roberfernandez.github.io/tmb-agent/"
+              aria-label="Tornar a TMB Agent"
+              title="Tornar a TMB Agent"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition hover:bg-white/10"
+            >
+              <img
+                src="/computo-aac/tmb-agent-192.png"
+                alt=""
+                width={34}
+                height={34}
+                className="h-[34px] w-[34px] rounded-lg object-cover"
+              />
+            </a>
             <div className="logo-mark shrink-0">
               <img
                 src="/computo-aac/computo-aac-v3-192.png"
