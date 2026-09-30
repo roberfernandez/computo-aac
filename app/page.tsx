@@ -100,6 +100,7 @@ type DayData = {
   priorOrigin?: PriorOrigin;
   confidence?: number;
   manualEdited?: boolean;
+  detectedColour?: "BLUE";
 };
 type MonthPlan = { original: DayData[]; days: DayData[]; confirmed: boolean };
 type YearPlan = Record<number, MonthPlan>;
@@ -213,7 +214,7 @@ const CONFIRMED_SPECIAL_RETRIBUTIVE_DAYS = [
 // Incrementar esta versión cuando cambie la lógica de reconocimiento anual.
 // Los años analizados con una versión anterior se conservan, pero la interfaz
 // avisa de que conviene volver a leer su imagen.
-const ANNUAL_DETECTOR_VERSION = 22;
+const ANNUAL_DETECTOR_VERSION = 23;
 const statusLabel: Record<Status, string> = {
   REVISAR: "Revisar",
   AGCG: "Trabajo · AGCG",
@@ -245,6 +246,10 @@ const specialLabel: Record<Special, string> = {
 // Presentation only: preserve the colour families recognized by the detector.
 // Ambiguous/manual states have no proven original colour and stay neutral.
 function dayColourClass(d: DayData) {
+  // A blue block is deliberately left as REVISAR when its exact TMB concept
+  // cannot be inferred from colour alone. Preserve that observed colour in
+  // the UI without changing the interpretation of the day.
+  if (d.status === "REVISAR" && d.detectedColour === "BLUE") return "tmb-blue";
   if (d.status === "VAC_ANTERIOR") {
     return d.priorOrigin === "RJ" ? "tmb-blue" : d.priorOrigin === "COMPUTO" ? "tmb-neutral" : "tmb-brown";
   }
@@ -963,7 +968,7 @@ function annualBlockEvidence(data: Uint8ClampedArray) {
   if (best === laudo) return { status: "LAUDO" as Status, confidence };
   if (best === brown)
     return { status: "VACACIONES_PENDIENTES" as Status, confidence };
-  return { status: "REVISAR" as Status, confidence };
+  return { status: "REVISAR" as Status, confidence, detectedColour: best === blue ? "BLUE" as const : undefined };
 }
 function annualCellEvidence(
   ctx: CanvasRenderingContext2D,
@@ -976,7 +981,8 @@ function annualCellEvidence(
   // Two interior side strips avoid the central day number and the cell border.
   const offsets = [[-0.30, 0], [0.30, 0]],
     votes = new Map<Status, number>();
-  let total = 0;
+  let total = 0,
+    blueWeight = 0;
   for (const [dx, dy] of offsets) {
     const sw = Math.max(2, Math.round(cellW * 0.18)),
       sh = Math.max(3, Math.round(cellH * 0.50)),
@@ -992,6 +998,7 @@ function annualCellEvidence(
       ),
       weight = 0.3 + evidence.confidence;
     votes.set(evidence.status, (votes.get(evidence.status) || 0) + weight);
+    if (evidence.detectedColour === "BLUE") blueWeight += weight;
     total += weight;
   }
   const ranked = [...votes.entries()].sort((a, b) => b[1] - a[1]),
@@ -1005,10 +1012,12 @@ function annualCellEvidence(
     return {
       status: "REVISAR" as Status,
       confidence: Math.max(0, Math.min(1, share)),
+      detectedColour: blueWeight / Math.max(total, 0.0001) >= 0.5 ? "BLUE" as const : undefined,
     };
   return {
     status,
     confidence: Math.max(0, Math.min(1, share + margin * 0.35)),
+    detectedColour: status === "REVISAR" && blueWeight / Math.max(total, 0.0001) >= 0.5 ? "BLUE" as const : undefined,
   };
 }
 function retryUncertainAnnualCell(
@@ -2445,7 +2454,7 @@ async function classifyAnnual(file: File, year: number) {
       cellW = panel.length / 7,
       cellH = panel.cellH,
       y0 = panel.gridTop + cellH * .5,
-      statuses: { status: Status; confidence: number }[] = [];
+      statuses: { status: Status; confidence: number; detectedColour?: "BLUE" }[] = [];
     for (let day = 1; day <= daysInMonth(year, month); day++) {
       const index = weekdayMon(year, month, 1) + day - 1,
         col = index % 7,
@@ -2481,6 +2490,7 @@ async function classifyAnnual(file: File, year: number) {
       status: statuses[i].status,
       baseStatus: baseOf(statuses[i].status),
       confidence: statuses[i].confidence,
+      detectedColour: statuses[i].detectedColour,
     }));
   }
   const phase = inferCyclePhase(year, raw),
