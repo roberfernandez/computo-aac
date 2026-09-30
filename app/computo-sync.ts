@@ -11,7 +11,13 @@ function clearPending(key:string){ localStorage.setItem(PENDING_KEY, JSON.string
 export function isComputoStorageKey(key:string){ return EXACT.has(key) || PREFIXES.some(prefix=>key.startsWith(prefix)); }
 function headers(token:string){ return { apikey:SUPABASE_PUBLIC_KEY, Authorization:`Bearer ${token}`, "Content-Type":"application/json", Prefer:"resolution=merge-duplicates,return=minimal" }; }
 function encodePayload(raw:string){ try { return JSON.parse(raw); } catch { return { __raw: raw }; } }
-function decodePayload(payload:any){ return payload && typeof payload==="object" && Object.keys(payload).length===1 && typeof payload.__raw==="string" ? payload.__raw : JSON.stringify(payload); }
+function decodePayload(payload:unknown){
+  if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+    const record = payload as Record<string, unknown>;
+    if (Object.keys(record).length === 1 && typeof record.__raw === "string") return record.__raw;
+  }
+  return JSON.stringify(payload);
+}
 
 export async function pushStorageKey(key:string){
   if(!isComputoStorageKey(key)) return false;
@@ -34,7 +40,7 @@ export async function syncComputoStorage(onState?:(s:SyncState)=>void){
     for(const key of pendingKeys()) if(isComputoStorageKey(key)) await pushStorageKey(key);
     const response=await fetch(`${SUPABASE_URL}/rest/v1/computo_sync?select=storage_key,payload,updated_at&user_id=eq.${encodeURIComponent(userId)}`,{headers:headers(session.access_token),cache:"no-store"});
     if(!response.ok) throw new Error(`sync pull ${response.status}`);
-    const remote=await response.json() as Array<{storage_key:string,payload:any}>;
+    const remote=await response.json() as Array<{storage_key:string,payload:unknown}>;
     // Conservative first migration: remote wins for keys already in cloud; otherwise upload local keys.
     const remoteKeys=new Set(remote.map(r=>r.storage_key));
     for(const row of remote) if(isComputoStorageKey(row.storage_key)) {
