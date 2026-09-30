@@ -26,6 +26,13 @@ test('digital 4x3 keeps its 365 statuses and ten ambiguous blue dates',async()=>
  assert.deepEqual(Array.from(r.uncertainDaysByMonth),['Mar: 23, 24','Jun: 16, 19, 20, 21, 22, 23, 24','Jul: 20']);
 });
 test('old 6x2 is recognized without changing the modern 4x3 path',async()=>{const r=await recognize(fixtures[0]);assert.equal(flatten(r).length,365);assert.equal(Object.keys(r.plan).length,12)});
+test('medical-review pale green stays distinct from saturated disease green',()=>{
+ const block=(rgb)=>{const data=new Uint8ClampedArray(40);for(let p=0;p<data.length;p+=4){data[p]=rgb[0];data[p+1]=rgb[1];data[p+2]=rgb[2];data[p+3]=255}return c.annualBlockEvidence(data).status};
+ assert.equal(block([151,186,150]),'REVISION_MEDICA');
+ assert.equal(block([65,199,65]),'ENFERMEDAD');
+ // Rescaling/compression may strengthen G on the pale medical tone.
+ assert.equal(block([120,180,120]),'REVISION_MEDICA');
+});
 test('blank images and a full rectangular matrix cannot impersonate a calendar',()=>{
  const image={width:1280,height:800,data:new Uint8ClampedArray(1280*800*4).fill(255)};
  assert.equal(c.detectPhotographedAnnual(canvasFor(image),2026),null);
@@ -39,7 +46,7 @@ test('unrelated helpers remain unchanged from v19 except approved orchestration,
  const base=execFileSync('git',['show','cc64617fccff43aaf9e4569ad28c3a98984c5f36:app/page.tsx'],{encoding:'utf8'});
  const previous=ts.createSourceFile('page.tsx',base.slice(0,base.indexOf('export default function Home')),ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
  // Night-only behavior is covered by night-variable.test.mjs, including unchanged balances.
- for(const fn of previous.statements.filter(ts.isFunctionDeclaration))if(!['classifyAnnual','specialRetributiveDaysCount','nightMinutesForShift','calcDay'].includes(fn.name.text)){
+ for(const fn of previous.statements.filter(ts.isFunctionDeclaration))if(!['classifyAnnual','annualBlockEvidence','specialRetributiveDaysCount','nightMinutesForShift','calcDay'].includes(fn.name.text)){
   const actual=ast.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name.text===fn.name.text);assert.equal(actual.getText(ast),fn.getText(previous),fn.name.text);
  }
 });
