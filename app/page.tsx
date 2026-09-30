@@ -2759,37 +2759,29 @@ export default function Home() {
   // Primero sincroniza la copia compartida y después carga el año ya convergido.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    syncComputoStorage(setSyncState).finally(() => loadYear(INITIAL_YEAR));
-    try {
-      const stored = localStorage.getItem("metro-profile-v2"),
-        previous = localStorage.getItem("metro-profile-v1");
-      if (stored) {
-        const parsed = JSON.parse(stored) as Partial<UserProfile>,
-          valid = !!parsed.contract && parsed.contract in CONTRACT_LABELS,
-          next = {
-            ...DEFAULT_PROFILE,
-            ...parsed,
-            contract: valid ? parsed.contract : DEFAULT_PROFILE.contract,
-          } as UserProfile;
-        setProfile(next);
-        setProfileDraft(next);
-        setProfileOpen(!valid);
-      } else if (previous) {
-        const parsed = JSON.parse(previous) as Partial<UserProfile>,
-          valid = !!parsed.contract && parsed.contract in CONTRACT_LABELS,
-          next = {
-            ...DEFAULT_PROFILE,
-            ...parsed,
-            contract: valid ? parsed.contract : DEFAULT_PROFILE.contract,
-          } as UserProfile;
-        setProfile(next);
-        setProfileDraft(next);
-        setProfileOpen(true);
+    (async () => {
+      await syncComputoStorage(setSyncState);
+      loadYear(INITIAL_YEAR);
+      try {
+        const stored = localStorage.getItem("metro-profile-v2"),
+          previous = localStorage.getItem("metro-profile-v1");
+        if (stored || previous) {
+          const parsed = JSON.parse(stored || previous || "{}") as Partial<UserProfile>,
+            valid = !!parsed.contract && parsed.contract in CONTRACT_LABELS,
+            next = {
+              ...DEFAULT_PROFILE,
+              ...parsed,
+              contract: valid ? parsed.contract : DEFAULT_PROFILE.contract,
+            } as UserProfile;
+          setProfile(next);
+          setProfileDraft(next);
+          setProfileOpen(!stored || !valid);
+        }
+      } catch {
+      } finally {
+        setProfileLoaded(true);
       }
-    } catch {
-    } finally {
-      setProfileLoaded(true);
-    }
+    })();
   }, []);
   useEffect(
     () => () => {
