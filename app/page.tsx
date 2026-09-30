@@ -42,7 +42,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { pushStorageKey, syncComputoStorage, type SyncState } from "./computo-sync";
+import { markStorageKeyPending, pushStorageKey, syncComputoStorage, type SyncState } from "./computo-sync";
 import {
   Table,
   TableBody,
@@ -2799,12 +2799,14 @@ export default function Home() {
     setPlan(next);
     const key = `metro-year-${year}`;
     localStorage.setItem(key, JSON.stringify(next));
+    markStorageKeyPending(key);
     pushStorageKey(key).then(ok => ok && setSyncState("synced")).catch(() => setSyncState(navigator.onLine ? "error" : "offline"));
   }
   function persistPeriods(next: PeriodRecord[]) {
     setPeriods(next);
     const key = `metro-periods-${year}`;
     localStorage.setItem(key, JSON.stringify(next));
+    markStorageKeyPending(key);
     pushStorageKey(key).catch(() => setSyncState(navigator.onLine ? "error" : "offline"));
   }
   function savePriorEntitlement(value: number) {
@@ -2812,6 +2814,7 @@ export default function Home() {
     setPriorEntitlement(next);
     const key = `metro-prior-${year}`;
     localStorage.setItem(key, String(next));
+    markStorageKeyPending(key);
     pushStorageKey(key).catch(() => setSyncState(navigator.onLine ? "error" : "offline"));
   }
   function saveProfile() {
@@ -2830,6 +2833,8 @@ export default function Home() {
     setProfileDraft(next);
     localStorage.setItem("metro-profile-v1", JSON.stringify(next));
     localStorage.setItem("metro-profile-v2", JSON.stringify(next));
+    markStorageKeyPending("metro-profile-v1");
+    markStorageKeyPending("metro-profile-v2");
     Promise.all([pushStorageKey("metro-profile-v1"), pushStorageKey("metro-profile-v2")]).catch(() => setSyncState(navigator.onLine ? "error" : "offline"));
     setProfileOpen(false);
   }
