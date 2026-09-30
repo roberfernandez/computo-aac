@@ -249,7 +249,17 @@ function dayColourClass(d: DayData) {
   // A blue block is deliberately left as REVISAR when its exact TMB concept
   // cannot be inferred from colour alone. Preserve that observed colour in
   // the UI without changing the interpretation of the day.
-  if (d.status === "REVISAR" && d.detectedColour === "BLUE") return "tmb-blue";
+  if (
+    d.detectedColour === "BLUE" &&
+    (d.status === "REVISAR" ||
+      d.status === "RJ" ||
+      d.status === "MINI" ||
+      d.status === "COMPUTO_ANTERIOR" ||
+      d.status === "COMPUTO_ACTUAL" ||
+      (d.status === "VAC_ANTERIOR" &&
+        (d.priorOrigin === "RJ" || d.priorOrigin === "COMPUTO")))
+  )
+    return "tmb-blue";
   if (d.status === "VAC_ANTERIOR") {
     return d.priorOrigin === "RJ" ? "tmb-blue" : d.priorOrigin === "COMPUTO" ? "tmb-neutral" : "tmb-brown";
   }
