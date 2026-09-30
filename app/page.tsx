@@ -3366,7 +3366,7 @@ export default function Home() {
               className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition hover:bg-white/10"
             >
               <img
-                src="/computo-aac/tmb-agent-192.png"
+                src="https://roberfernandez.github.io/tmb-agent/assets/icons/tmb-agent-192.png"
                 alt=""
                 width={34}
                 height={34}
