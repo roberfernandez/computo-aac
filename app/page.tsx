@@ -42,6 +42,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import { pushStorageKey, syncComputoStorage, type SyncState } from "./computo-sync";
 import {
   Table,
   TableBody,
@@ -2650,6 +2651,7 @@ export default function Home() {
     [month, setMonth] = useState(1),
     [plan, setPlan] = useState<YearPlan>({}),
     [days, setDays] = useState<DayData[]>(() => makeDays(INITIAL_YEAR, 1));
+  const [syncState, setSyncState] = useState<SyncState>("local");
   const [officialRevision, setOfficialRevision] = useState(0);
   const [calendarStatus, setCalendarStatus] = useState("Cargando calendario oficial…");
   const [calendarRetry, setCalendarRetry] = useState(0);
@@ -2754,10 +2756,10 @@ export default function Home() {
     setDays(makeDays(y, month));
     setMessage("Sube el calendario anual para crear la previsión completa.");
   }
-  // La carga inicial se ejecuta una sola vez; después se usa el selector de año.
+  // Primero sincroniza la copia compartida y después carga el año ya convergido.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    loadYear(INITIAL_YEAR);
+    syncComputoStorage(setSyncState).finally(() => loadYear(INITIAL_YEAR));
     try {
       const stored = localStorage.getItem("metro-profile-v2"),
         previous = localStorage.getItem("metro-profile-v1");
@@ -2803,16 +2805,22 @@ export default function Home() {
   );
   function persist(next: YearPlan) {
     setPlan(next);
-    localStorage.setItem(`metro-year-${year}`, JSON.stringify(next));
+    const key = `metro-year-${year}`;
+    localStorage.setItem(key, JSON.stringify(next));
+    pushStorageKey(key).then(ok => ok && setSyncState("synced")).catch(() => setSyncState(navigator.onLine ? "error" : "offline"));
   }
   function persistPeriods(next: PeriodRecord[]) {
     setPeriods(next);
-    localStorage.setItem(`metro-periods-${year}`, JSON.stringify(next));
+    const key = `metro-periods-${year}`;
+    localStorage.setItem(key, JSON.stringify(next));
+    pushStorageKey(key).catch(() => setSyncState(navigator.onLine ? "error" : "offline"));
   }
   function savePriorEntitlement(value: number) {
     const next = Math.max(0, Math.floor(value || 0));
     setPriorEntitlement(next);
-    localStorage.setItem(`metro-prior-${year}`, String(next));
+    const key = `metro-prior-${year}`;
+    localStorage.setItem(key, String(next));
+    pushStorageKey(key).catch(() => setSyncState(navigator.onLine ? "error" : "offline"));
   }
   function saveProfile() {
     const name = profileDraft.name.trim(),
@@ -2830,6 +2838,7 @@ export default function Home() {
     setProfileDraft(next);
     localStorage.setItem("metro-profile-v1", JSON.stringify(next));
     localStorage.setItem("metro-profile-v2", JSON.stringify(next));
+    Promise.all([pushStorageKey("metro-profile-v1"), pushStorageKey("metro-profile-v2")]).catch(() => setSyncState(navigator.onLine ? "error" : "offline"));
     setProfileOpen(false);
   }
   function editProfile() {
