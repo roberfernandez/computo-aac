@@ -39,7 +39,7 @@
 .day.tmb-pink{--day-fill:#703c70}
 .day.tmb-green{--day-fill:#285e32}
 .day.tmb-sage{--day-fill:#415e48}
-.day.tmb-blue{--day-fill:#293d81}
+.day.tmb-blue{--day-fill:#163f9e}
 .day.tmb-neutral{--day-fill:#172731}
 .day[class*="tmb-"]{background:var(--day-fill);color:#fff;border-color:#ffffff30}
 .day[class*="tmb-"]:hover{background:var(--day-fill);border-color:#fff9;box-shadow:inset 0 0 0 1px #ffffff40}
