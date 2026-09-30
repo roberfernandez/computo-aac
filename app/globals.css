@@ -31,7 +31,7 @@
 .tmb-return a:focus-visible{outline:2px solid #83b9e6;outline-offset:-3px}
 
 /* TMB personal colour families, softened for white-text contrast. */
-.day.tmb-grey{--day-fill:#41494c}
+.day.tmb-grey{--day-fill:#626b6f}
 .day.tmb-turquoise{--day-fill:#155b60}
 .day.tmb-salmon{--day-fill:#794739}
 .day.tmb-orange{--day-fill:#79520b}
