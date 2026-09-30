@@ -2800,14 +2800,20 @@ export default function Home() {
     const key = `metro-year-${year}`;
     localStorage.setItem(key, JSON.stringify(next));
     markStorageKeyPending(key);
-    pushStorageKey(key).then(ok => ok && setSyncState("synced")).catch(() => setSyncState(navigator.onLine ? "error" : "offline"));
+    setSyncState("syncing");
+    pushStorageKey(key)
+      .then(ok => setSyncState(ok ? "synced" : navigator.onLine ? "error" : "offline"))
+      .catch(() => setSyncState(navigator.onLine ? "error" : "offline"));
   }
   function persistPeriods(next: PeriodRecord[]) {
     setPeriods(next);
     const key = `metro-periods-${year}`;
     localStorage.setItem(key, JSON.stringify(next));
     markStorageKeyPending(key);
-    pushStorageKey(key).catch(() => setSyncState(navigator.onLine ? "error" : "offline"));
+    setSyncState("syncing");
+    pushStorageKey(key)
+      .then(ok => setSyncState(ok ? "synced" : navigator.onLine ? "error" : "offline"))
+      .catch(() => setSyncState(navigator.onLine ? "error" : "offline"));
   }
   function savePriorEntitlement(value: number) {
     const next = Math.max(0, Math.floor(value || 0));
@@ -2815,7 +2821,10 @@ export default function Home() {
     const key = `metro-prior-${year}`;
     localStorage.setItem(key, String(next));
     markStorageKeyPending(key);
-    pushStorageKey(key).catch(() => setSyncState(navigator.onLine ? "error" : "offline"));
+    setSyncState("syncing");
+    pushStorageKey(key)
+      .then(ok => setSyncState(ok ? "synced" : navigator.onLine ? "error" : "offline"))
+      .catch(() => setSyncState(navigator.onLine ? "error" : "offline"));
   }
   function saveProfile() {
     const name = profileDraft.name.trim(),
@@ -2835,7 +2844,10 @@ export default function Home() {
     localStorage.setItem("metro-profile-v2", JSON.stringify(next));
     markStorageKeyPending("metro-profile-v1");
     markStorageKeyPending("metro-profile-v2");
-    Promise.all([pushStorageKey("metro-profile-v1"), pushStorageKey("metro-profile-v2")]).catch(() => setSyncState(navigator.onLine ? "error" : "offline"));
+    setSyncState("syncing");
+    Promise.all([pushStorageKey("metro-profile-v1"), pushStorageKey("metro-profile-v2")])
+      .then(results => setSyncState(results.every(Boolean) ? "synced" : navigator.onLine ? "error" : "offline"))
+      .catch(() => setSyncState(navigator.onLine ? "error" : "offline"));
     setProfileOpen(false);
   }
   function editProfile() {
@@ -3395,7 +3407,10 @@ export default function Home() {
             <div className="min-w-0">
               <p className="text-xs font-semibold uppercase tracking-[.22em] text-[#71d7cc]">
                 Ciclo {profile.fiestaLetter} · {" "}
-                {profileLabel(profile)} · versión {APP_BUILD} · {syncState === "synced" ? "☁ sincronizado" : syncState === "syncing" ? "☁ sincronizando…" : syncState === "offline" ? "☁ sin conexión" : syncState === "error" ? "☁ pendiente" : "☁ local"}
+                {profileLabel(profile)} · versión {APP_BUILD} ·{" "}
+                <span className={syncState === "syncing" ? "text-[#eeb64b]" : ""}>
+                  {syncState === "synced" ? "☁ sincronizado" : syncState === "syncing" ? "☁ sincronizando…" : syncState === "offline" ? "☁ sin conexión" : syncState === "error" ? "☁ pendiente" : "☁ local"}
+                </span>
                 {!isFullTime(profile) && profile.contract === "75" && profile.subturn
                   ? ` · ${profile.subturn}`
                   : ""}
