@@ -4,10 +4,14 @@ export type SyncState = "local" | "syncing" | "synced" | "offline" | "error";
 const PREFIXES = ["metro-year-", "metro-periods-", "metro-prior-", "metro-detector-version-", "metro-cycle-phase-"];
 const EXACT = new Set(["metro-profile-v1", "metro-profile-v2"]);
 const PENDING_KEY = "computo-sync-pending-v1";
+const PENDING_DELETE_KEY = "computo-sync-pending-delete-v1";
 function pendingKeys(){ try { const v=JSON.parse(localStorage.getItem(PENDING_KEY)||"[]"); return Array.isArray(v)?v.filter((x):x is string=>typeof x==="string"):[]; } catch { return []; } }
 function markPending(key:string){ localStorage.setItem(PENDING_KEY, JSON.stringify([...new Set([...pendingKeys(),key])])); }
 export function markStorageKeyPending(key:string){ if(isComputoStorageKey(key)) markPending(key); }
 function clearPending(key:string){ localStorage.setItem(PENDING_KEY, JSON.stringify(pendingKeys().filter(k=>k!==key))); }
+function pendingDeletes(){ try { const v=JSON.parse(localStorage.getItem(PENDING_DELETE_KEY)||"[]"); return Array.isArray(v)?v.filter((x):x is string=>typeof x==="string"):[]; } catch { return []; } }
+function markPendingDelete(key:string){ localStorage.setItem(PENDING_DELETE_KEY, JSON.stringify([...new Set([...pendingDeletes(),key])])); clearPending(key); }
+function clearPendingDelete(key:string){ localStorage.setItem(PENDING_DELETE_KEY, JSON.stringify(pendingDeletes().filter(k=>k!==key))); }
 export function isComputoStorageKey(key:string){ return EXACT.has(key) || PREFIXES.some(prefix=>key.startsWith(prefix)); }
 function headers(token:string){ return { apikey:SUPABASE_PUBLIC_KEY, Authorization:`Bearer ${token}`, "Content-Type":"application/json", Prefer:"resolution=merge-duplicates,return=minimal" }; }
 function encodePayload(raw:string){ try { return JSON.parse(raw); } catch { return { __raw: raw }; } }
@@ -31,11 +35,30 @@ export async function pushStorageKey(key:string){
   return true;
 }
 
+export async function deleteStorageKeys(keys:string[]){
+  const valid=keys.filter(isComputoStorageKey);
+  valid.forEach(key=>{ localStorage.removeItem(key); markPendingDelete(key); });
+  const session=readSharedSession(); if(!session) return false;
+  const userId=await authenticatedUserId(session); if(!userId) return false;
+  for(const key of valid){
+    const response=await fetch(`${SUPABASE_URL}/rest/v1/computo_sync?user_id=eq.${encodeURIComponent(userId)}&storage_key=eq.${encodeURIComponent(key)}`,{method:"DELETE",headers:headers(session.access_token)});
+    if(!response.ok) throw new Error(`sync delete ${response.status}`);
+    clearPendingDelete(key);
+  }
+  return true;
+}
+
 export async function syncComputoStorage(onState?:(s:SyncState)=>void){
   const session=readSharedSession(); if(!session){onState?.("local");return;}
   onState?.("syncing");
   try{
     const userId=await authenticatedUserId(session); if(!userId){onState?.("local");return;}
+    // Los borrados pendientes se aplican antes de descargar para que la nube no resucite datos eliminados.
+    for(const key of pendingDeletes()) if(isComputoStorageKey(key)) {
+      const response=await fetch(`${SUPABASE_URL}/rest/v1/computo_sync?user_id=eq.${encodeURIComponent(userId)}&storage_key=eq.${encodeURIComponent(key)}`,{method:"DELETE",headers:headers(session.access_token)});
+      if(!response.ok) throw new Error(`sync delete ${response.status}`);
+      clearPendingDelete(key);
+    }
     // Los cambios hechos sin conexión se suben antes de descargar la nube.
     for(const key of pendingKeys()) if(isComputoStorageKey(key)) await pushStorageKey(key);
     const response=await fetch(`${SUPABASE_URL}/rest/v1/computo_sync?select=storage_key,payload,updated_at&user_id=eq.${encodeURIComponent(userId)}`,{headers:headers(session.access_token),cache:"no-store"});

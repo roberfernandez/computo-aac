@@ -42,7 +42,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { markStorageKeyPending, pushStorageKey, syncComputoStorage, type SyncState } from "./computo-sync";
+import { deleteStorageKeys, markStorageKeyPending, pushStorageKey, syncComputoStorage, type SyncState } from "./computo-sync";
 import {
   Table,
   TableBody,
@@ -3194,14 +3194,18 @@ export default function Home() {
     setDays(makeDays(year, month));
     clearAnnualImage();
     clearMonthlyImage();
-    localStorage.removeItem(`metro-year-${year}`);
-    localStorage.removeItem(`metro-periods-${year}`);
-    localStorage.removeItem(`metro-prior-${year}`);
-    localStorage.removeItem(`metro-detector-version-${year}`);
-    localStorage.removeItem(`metro-cycle-phase-${year}`);
-    localStorage.removeItem(
+    const keysToDelete = [
+      `metro-year-${year}`,
+      `metro-periods-${year}`,
+      `metro-prior-${year}`,
+      `metro-detector-version-${year}`,
+      `metro-cycle-phase-${year}`,
       `metro-cycle-phase-${year}-${profile.fiestaLetter}`,
-    );
+    ];
+    setSyncState("syncing");
+    deleteStorageKeys(keysToDelete)
+      .then(ok => setSyncState(ok ? "synced" : navigator.onLine ? "error" : "offline"))
+      .catch(() => setSyncState(navigator.onLine ? "error" : "offline"));
     setDetectorVersion(0);
     setMessage(
       "Previsión anual e imágenes cargadas vaciadas. Puedes volver a importar el calendario.",
