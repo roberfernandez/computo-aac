@@ -15,6 +15,9 @@ function clearPendingDelete(key:string){ localStorage.setItem(PENDING_DELETE_KEY
 export function isComputoStorageKey(key:string){ return EXACT.has(key) || PREFIXES.some(prefix=>key.startsWith(prefix)); }
 function headers(token:string){ return { apikey:SUPABASE_PUBLIC_KEY, Authorization:`Bearer ${token}`, "Content-Type":"application/json", Prefer:"resolution=merge-duplicates,return=minimal" }; }
 function encodePayload(raw:string){ try { return JSON.parse(raw); } catch { return { __raw: raw }; } }
+function isDeletedPayload(payload:unknown){
+  return !!payload && typeof payload === "object" && !Array.isArray(payload) && (payload as Record<string,unknown>).__deleted === true;
+}
 function decodePayload(payload:unknown){
   if (payload && typeof payload === "object" && !Array.isArray(payload)) {
     const record = payload as Record<string, unknown>;
@@ -41,7 +44,7 @@ export async function deleteStorageKeys(keys:string[]){
   const session=readSharedSession(); if(!session) return false;
   const userId=await authenticatedUserId(session); if(!userId) return false;
   for(const key of valid){
-    const response=await fetch(`${SUPABASE_URL}/rest/v1/computo_sync?user_id=eq.${encodeURIComponent(userId)}&storage_key=eq.${encodeURIComponent(key)}`,{method:"DELETE",headers:headers(session.access_token)});
+    const response=await fetch(`${SUPABASE_URL}/rest/v1/computo_sync?on_conflict=user_id,storage_key`,{method:"POST",headers:headers(session.access_token),body:JSON.stringify({user_id:userId,storage_key:key,payload:{__deleted:true},updated_at:new Date().toISOString()})});
     if(!response.ok) throw new Error(`sync delete ${response.status}`);
     clearPendingDelete(key);
   }
@@ -55,7 +58,7 @@ export async function syncComputoStorage(onState?:(s:SyncState)=>void){
     const userId=await authenticatedUserId(session); if(!userId){onState?.("local");return;}
     // Los borrados pendientes se aplican antes de descargar para que la nube no resucite datos eliminados.
     for(const key of pendingDeletes()) if(isComputoStorageKey(key)) {
-      const response=await fetch(`${SUPABASE_URL}/rest/v1/computo_sync?user_id=eq.${encodeURIComponent(userId)}&storage_key=eq.${encodeURIComponent(key)}`,{method:"DELETE",headers:headers(session.access_token)});
+      const response=await fetch(`${SUPABASE_URL}/rest/v1/computo_sync?on_conflict=user_id,storage_key`,{method:"POST",headers:headers(session.access_token),body:JSON.stringify({user_id:userId,storage_key:key,payload:{__deleted:true},updated_at:new Date().toISOString()})});
       if(!response.ok) throw new Error(`sync delete ${response.status}`);
       clearPendingDelete(key);
     }
@@ -67,6 +70,11 @@ export async function syncComputoStorage(onState?:(s:SyncState)=>void){
     // Conservative first migration: remote wins for keys already in cloud; otherwise upload local keys.
     const remoteKeys=new Set(remote.map(r=>r.storage_key));
     for(const row of remote) if(isComputoStorageKey(row.storage_key)) {
+      if(isDeletedPayload(row.payload)) {
+        localStorage.removeItem(row.storage_key);
+        clearPending(row.storage_key);
+        continue;
+      }
       const incoming=decodePayload(row.payload), current=localStorage.getItem(row.storage_key);
       // La primera convergencia nunca destruye una copia local distinta: se conserva como respaldo recuperable.
       if(current!==null && current!==incoming) localStorage.setItem(`computo-sync-backup-v1:${row.storage_key}`, current);
