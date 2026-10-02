@@ -216,7 +216,7 @@ const CONFIRMED_SPECIAL_RETRIBUTIVE_DAYS = [
 // Incrementar esta versión cuando cambie la lógica de reconocimiento anual.
 // Los años analizados con una versión anterior se conservan, pero la interfaz
 // avisa de que conviene volver a leer su imagen.
-const ANNUAL_DETECTOR_VERSION = 31;
+const ANNUAL_DETECTOR_VERSION = 32;
 const statusLabel: Record<Status, string> = {
   REVISAR: "Revisar",
   AGCG: "Trabajo · AGCG",
@@ -3803,6 +3803,497 @@ function refineAnnualPanelGrid(
   };
 }
 
+
+type AnnualGridLine = { a: number; b: number };
+type AnnualGridModel = {
+  vertical: AnnualGridLine[];
+  horizontal: AnnualGridLine[];
+  confidence: number;
+};
+type OpenCvGridResult = {
+  models: (AnnualGridModel | null)[];
+  available: boolean;
+  error?: string;
+};
+
+let openCvRuntimePromise: Promise<any | null> | null = null;
+
+function loadOpenCvRuntime(): Promise<any | null> {
+  if (openCvRuntimePromise) return openCvRuntimePromise;
+  openCvRuntimePromise = new Promise((resolve) => {
+    if (typeof window === "undefined") {
+      resolve(null);
+      return;
+    }
+    const globalWindow = window as any,
+      ready = async () => {
+        try {
+          let cv = globalWindow.cv;
+          if (cv && typeof cv.then === "function") cv = await cv;
+          if (cv?.Mat && cv?.HoughLinesP && cv?.adaptiveThreshold) {
+            resolve(cv);
+            return true;
+          }
+        } catch {}
+        return false;
+      };
+
+    void (async () => {
+      if (await ready()) return;
+      let script = document.getElementById(
+        "opencv-runtime",
+      ) as HTMLScriptElement | null;
+      if (!script) {
+        script = document.createElement("script");
+        script.id = "opencv-runtime";
+        script.src = "https://docs.opencv.org/4.x/opencv.js";
+        script.async = true;
+        document.head.appendChild(script);
+      }
+      const started = Date.now(),
+        poll = async () => {
+          if (await ready()) return;
+          if (Date.now() - started > 20000) {
+            resolve(null);
+            return;
+          }
+          window.setTimeout(() => void poll(), 120);
+        };
+      script.addEventListener("error", () => resolve(null), { once: true });
+      void poll();
+    })();
+  });
+  return openCvRuntimePromise;
+}
+
+function annualGridIntersection(
+  vertical: AnnualGridLine,
+  horizontal: AnnualGridLine,
+) {
+  // x = av*y + bv ; y = ah*x + bh
+  const denominator = 1 - vertical.a * horizontal.a;
+  if (Math.abs(denominator) < 1e-6) return null;
+  const x =
+      (vertical.a * horizontal.b + vertical.b) / denominator,
+    y = horizontal.a * x + horizontal.b;
+  return { x, y };
+}
+
+function annualGridCellGeometry(
+  model: AnnualGridModel,
+  col: number,
+  row: number,
+) {
+  const tl = annualGridIntersection(
+      model.vertical[col],
+      model.horizontal[row],
+    ),
+    tr = annualGridIntersection(
+      model.vertical[col + 1],
+      model.horizontal[row],
+    ),
+    bl = annualGridIntersection(
+      model.vertical[col],
+      model.horizontal[row + 1],
+    ),
+    br = annualGridIntersection(
+      model.vertical[col + 1],
+      model.horizontal[row + 1],
+    );
+  if (!tl || !tr || !bl || !br) return null;
+  const cx = (tl.x + tr.x + bl.x + br.x) / 4,
+    cy = (tl.y + tr.y + bl.y + br.y) / 4,
+    topWidth = Math.hypot(tr.x - tl.x, tr.y - tl.y),
+    bottomWidth = Math.hypot(br.x - bl.x, br.y - bl.y),
+    leftHeight = Math.hypot(bl.x - tl.x, bl.y - tl.y),
+    rightHeight = Math.hypot(br.x - tr.x, br.y - tr.y);
+  return {
+    cx,
+    cy,
+    cellW: (topWidth + bottomWidth) / 2,
+    cellH: (leftHeight + rightHeight) / 2,
+  };
+}
+
+function fitIndexedGridLines(
+  candidates: {
+    a: number;
+    b: number;
+    reference: number;
+    length: number;
+  }[],
+  expectedCount: number,
+  nominalStart: number,
+  nominalStep: number,
+  referenceCoordinate: number,
+  tolerance: number,
+) {
+  const chosen: (AnnualGridLine | null)[] = Array(expectedCount).fill(null),
+    referencePositions: (number | null)[] = Array(expectedCount).fill(null),
+    residuals: number[] = [];
+
+  for (let index = 0; index < expectedCount; index++) {
+    const expected = nominalStart + nominalStep * index,
+      nearby = candidates
+        .map((candidate) => ({
+          ...candidate,
+          distance: Math.abs(candidate.reference - expected),
+        }))
+        .filter((candidate) => candidate.distance <= tolerance)
+        .sort(
+          (left, right) =>
+            left.distance - right.distance ||
+            right.length - left.length,
+        )
+        .slice(0, 5);
+    if (!nearby.length) continue;
+    let weight = 0,
+      a = 0,
+      b = 0,
+      position = 0;
+    for (const candidate of nearby) {
+      const w =
+        candidate.length /
+        Math.max(1, 1 + candidate.distance * candidate.distance);
+      weight += w;
+      a += candidate.a * w;
+      b += candidate.b * w;
+      position += candidate.reference * w;
+    }
+    if (!weight) continue;
+    chosen[index] = { a: a / weight, b: b / weight };
+    referencePositions[index] = position / weight;
+    residuals.push(Math.abs(position / weight - expected));
+  }
+
+  const detected = chosen.filter(Boolean).length;
+  if (detected < Math.max(4, expectedCount - 3)) return null;
+
+  const points = referencePositions
+    .map((position, index) =>
+      position === null ? null : { index, position },
+    )
+    .filter(Boolean) as { index: number; position: number }[];
+  const meanI =
+      points.reduce((sum, point) => sum + point.index, 0) /
+      points.length,
+    meanP =
+      points.reduce((sum, point) => sum + point.position, 0) /
+      points.length;
+  let numerator = 0,
+    denominator = 0;
+  for (const point of points) {
+    numerator += (point.index - meanI) * (point.position - meanP);
+    denominator += (point.index - meanI) ** 2;
+  }
+  const fittedStep = denominator
+      ? numerator / denominator
+      : nominalStep,
+    fittedStart = meanP - fittedStep * meanI;
+
+  if (
+    fittedStep < nominalStep * 0.72 ||
+    fittedStep > nominalStep * 1.28
+  )
+    return null;
+
+  const detectedSlopes = chosen
+      .filter(Boolean)
+      .map((line) => (line as AnnualGridLine).a)
+      .sort((a, b) => a - b),
+    medianSlope =
+      detectedSlopes[
+        Math.floor(detectedSlopes.length / 2)
+      ] || 0;
+
+  for (let index = 0; index < expectedCount; index++) {
+    if (chosen[index]) continue;
+    const position = fittedStart + fittedStep * index;
+    chosen[index] = {
+      a: medianSlope,
+      b: position - medianSlope * referenceCoordinate,
+    };
+  }
+
+  const fitResidual =
+    points.reduce(
+      (sum, point) =>
+        sum +
+        Math.abs(
+          point.position -
+            (fittedStart + fittedStep * point.index),
+        ),
+      0,
+    ) / points.length;
+  if (fitResidual > nominalStep * 0.2) return null;
+
+  return {
+    lines: chosen as AnnualGridLine[],
+    detected,
+    fittedStep,
+    residual:
+      residuals.length
+        ? residuals.reduce((sum, value) => sum + value, 0) /
+          residuals.length
+        : 0,
+    fitResidual,
+  };
+}
+
+function openCvGridForPanel(
+  cv: any,
+  source: any,
+  panel: AnnualPanel,
+): AnnualGridModel | null {
+  const cellW = panel.length / 7,
+    cellH = panel.cellH,
+    marginX = cellW * 0.55,
+    marginY = cellH * 0.75,
+    x = Math.max(0, Math.floor(panel.x - marginX)),
+    y = Math.max(0, Math.floor(panel.gridTop - marginY)),
+    right = Math.min(
+      source.cols,
+      Math.ceil(panel.x + panel.length + marginX),
+    ),
+    bottom = Math.min(
+      source.rows,
+      Math.ceil(panel.gridTop + cellH * 6 + marginY),
+    ),
+    width = right - x,
+    height = bottom - y;
+  if (width < cellW * 6.5 || height < cellH * 5) return null;
+
+  const rect = new cv.Rect(x, y, width, height),
+    roi = source.roi(rect),
+    gray = new cv.Mat(),
+    binary = new cv.Mat(),
+    vertical = new cv.Mat(),
+    horizontal = new cv.Mat(),
+    verticalLines = new cv.Mat(),
+    horizontalLines = new cv.Mat();
+
+  let verticalKernel: any = null,
+    horizontalKernel: any = null;
+  try {
+    cv.cvtColor(roi, gray, cv.COLOR_RGBA2GRAY);
+    const blockSize = Math.max(
+      9,
+      Math.round(Math.min(cellW, cellH) * 0.9) | 1,
+    );
+    cv.adaptiveThreshold(
+      gray,
+      binary,
+      255,
+      cv.ADAPTIVE_THRESH_MEAN_C,
+      cv.THRESH_BINARY_INV,
+      blockSize % 2 ? blockSize : blockSize + 1,
+      7,
+    );
+
+    binary.copyTo(vertical);
+    binary.copyTo(horizontal);
+    verticalKernel = cv.getStructuringElement(
+      cv.MORPH_RECT,
+      new cv.Size(
+        1,
+        Math.max(3, Math.round(cellH * 0.62)),
+      ),
+    );
+    horizontalKernel = cv.getStructuringElement(
+      cv.MORPH_RECT,
+      new cv.Size(
+        Math.max(5, Math.round(cellW * 0.62)),
+        1,
+      ),
+    );
+    cv.erode(vertical, vertical, verticalKernel);
+    cv.dilate(vertical, vertical, verticalKernel);
+    cv.erode(horizontal, horizontal, horizontalKernel);
+    cv.dilate(horizontal, horizontal, horizontalKernel);
+
+    cv.HoughLinesP(
+      vertical,
+      verticalLines,
+      1,
+      Math.PI / 180,
+      Math.max(6, Math.round(cellH * 0.45)),
+      Math.max(4, cellH * 0.5),
+      Math.max(2, cellH * 0.42),
+    );
+    cv.HoughLinesP(
+      horizontal,
+      horizontalLines,
+      1,
+      Math.PI / 180,
+      Math.max(6, Math.round(cellW * 0.42)),
+      Math.max(5, cellW * 0.5),
+      Math.max(2, cellW * 0.38),
+    );
+
+    const verticalCandidates: {
+        a: number;
+        b: number;
+        reference: number;
+        length: number;
+      }[] = [],
+      horizontalCandidates: {
+        a: number;
+        b: number;
+        reference: number;
+        length: number;
+      }[] = [],
+      referenceY =
+        panel.gridTop + cellH * 3,
+      referenceX = panel.x + panel.length / 2;
+
+    for (let i = 0; i < verticalLines.rows; i++) {
+      const offset = i * 4,
+        x1 = verticalLines.data32S[offset] + x,
+        y1 = verticalLines.data32S[offset + 1] + y,
+        x2 = verticalLines.data32S[offset + 2] + x,
+        y2 = verticalLines.data32S[offset + 3] + y,
+        dx = x2 - x1,
+        dy = y2 - y1,
+        length = Math.hypot(dx, dy);
+      if (
+        Math.abs(dy) < Math.abs(dx) * 1.6 ||
+        Math.abs(dy) < cellH * 0.42
+      )
+        continue;
+      const a = dx / dy,
+        b = x1 - a * y1;
+      verticalCandidates.push({
+        a,
+        b,
+        reference: a * referenceY + b,
+        length,
+      });
+    }
+
+    for (let i = 0; i < horizontalLines.rows; i++) {
+      const offset = i * 4,
+        x1 = horizontalLines.data32S[offset] + x,
+        y1 = horizontalLines.data32S[offset + 1] + y,
+        x2 = horizontalLines.data32S[offset + 2] + x,
+        y2 = horizontalLines.data32S[offset + 3] + y,
+        dx = x2 - x1,
+        dy = y2 - y1,
+        length = Math.hypot(dx, dy);
+      if (
+        Math.abs(dx) < Math.abs(dy) * 1.6 ||
+        Math.abs(dx) < cellW * 0.42
+      )
+        continue;
+      const a = dy / dx,
+        b = y1 - a * x1;
+      horizontalCandidates.push({
+        a,
+        b,
+        reference: a * referenceX + b,
+        length,
+      });
+    }
+
+    const verticalFit = fitIndexedGridLines(
+        verticalCandidates,
+        8,
+        panel.x,
+        cellW,
+        referenceY,
+        cellW * 0.4,
+      ),
+      horizontalFit = fitIndexedGridLines(
+        horizontalCandidates,
+        7,
+        panel.gridTop,
+        cellH,
+        referenceX,
+        cellH * 0.42,
+      );
+    if (!verticalFit || !horizontalFit) return null;
+
+    const confidence = Math.max(
+      0,
+      Math.min(
+        1,
+        0.35 +
+          (verticalFit.detected / 8) * 0.3 +
+          (horizontalFit.detected / 7) * 0.3 -
+          (verticalFit.fitResidual / cellW) * 0.45 -
+          (horizontalFit.fitResidual / cellH) * 0.45,
+      ),
+    );
+    if (confidence < 0.58) return null;
+
+    const model: AnnualGridModel = {
+      vertical: verticalFit.lines,
+      horizontal: horizontalFit.lines,
+      confidence,
+    };
+    for (let row = 0; row < 6; row++)
+      for (let col = 0; col < 7; col++) {
+        const geometry = annualGridCellGeometry(model, col, row);
+        if (
+          !geometry ||
+          geometry.cellW < cellW * 0.55 ||
+          geometry.cellW > cellW * 1.45 ||
+          geometry.cellH < cellH * 0.5 ||
+          geometry.cellH > cellH * 1.55 ||
+          geometry.cx < x - cellW * 0.15 ||
+          geometry.cx > right + cellW * 0.15 ||
+          geometry.cy < y - cellH * 0.15 ||
+          geometry.cy > bottom + cellH * 0.15
+        )
+          return null;
+      }
+
+    return model;
+  } finally {
+    if (verticalKernel) verticalKernel.delete();
+    if (horizontalKernel) horizontalKernel.delete();
+    verticalLines.delete();
+    horizontalLines.delete();
+    vertical.delete();
+    horizontal.delete();
+    binary.delete();
+    gray.delete();
+    roi.delete();
+  }
+}
+
+async function refineAnnualGridsOpenCv(
+  canvas: HTMLCanvasElement,
+  panels: AnnualPanel[],
+): Promise<OpenCvGridResult> {
+  const cv = await loadOpenCvRuntime();
+  if (!cv)
+    return {
+      models: panels.map(() => null),
+      available: false,
+      error: "OpenCV.js no disponible",
+    };
+
+  let source: any = null;
+  try {
+    source = cv.imread(canvas);
+    const models = panels.map((panel) =>
+      openCvGridForPanel(cv, source, panel),
+    );
+    return { models, available: true };
+  } catch (error) {
+    return {
+      models: panels.map(() => null),
+      available: true,
+      error:
+        error instanceof Error
+          ? error.message
+          : "error en cuadrícula OpenCV",
+    };
+  } finally {
+    if (source) source.delete();
+  }
+}
+
 async function classifyAnnual(file: File, year: number) {
   const diagnostic: string[] = [];
   let canvas = await loadAnnualCanvas(file);
@@ -3817,19 +4308,14 @@ async function classifyAnnual(file: File, year: number) {
   // header-based detector ahead of the generic photographed-geometry fallback.
   if (!panels) { const photo = detectPhotographedAnnual(canvas, year, diagnostic); if (photo) { canvas = photo.canvas; panels = photo.panels; } }
   if (!panels) throw new Error("DIAGNÓSTICO " + originalSize + ". " + diagnostic.join(" · "));
-  // v31: every month is micro-aligned independently. The refinement uses only
-  // the known 7×6 calendar geometry, grid edges and occupied-vs-empty slots.
-  // It never uses a labour cycle or a colour category, so it generalises to
-  // different employees and to both camera photos and clean screenshots.
-  const refinements = panels.map((panel, index) =>
-      refineAnnualPanelGrid(canvas, panel, year, index + 1),
-    ),
-    refinedCount = refinements.filter((item) => item.changed).length,
-    weakGeometryMonths = refinements
-      .map((item, index) => ({ item, month: index + 1 }))
-      .filter(({ item }) => item.confidence < 0.28)
-      .map(({ month }) => month);
-  panels = refinements.map((item) => item.panel);
+  // v32: OpenCV extracts the physical grid lines. A model is used only when
+  // enough vertical/horizontal lines are detected with good regularity; otherwise
+  // we keep the original detector coordinates rather than "optimising" them.
+  const openCvGrid = await refineAnnualGridsOpenCv(canvas, panels),
+    openCvRefinedMonths = openCvGrid.models.filter(Boolean).length,
+    openCvFallbackMonths = openCvGrid.models
+      .map((model, index) => (model ? 0 : index + 1))
+      .filter(Boolean);
 
   // Never silently apply a six-column coordinate template to an unknown layout.
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
@@ -3838,9 +4324,10 @@ async function classifyAnnual(file: File, year: number) {
     colourFeatures: Record<number, (AnnualColourFeature | null)[]> = {};
   for (let month = 1; month <= 12; month++) {
     const panel = panels[month - 1],
-      cellW = panel.length / 7,
-      cellH = panel.cellH,
-      y0 = panel.gridTop + cellH * .5,
+      gridModel = openCvGrid.models[month - 1],
+      fallbackCellW = panel.length / 7,
+      fallbackCellH = panel.cellH,
+      fallbackY0 = panel.gridTop + fallbackCellH * .5,
       statuses: {
         status: Status;
         confidence: number;
@@ -3851,8 +4338,17 @@ async function classifyAnnual(file: File, year: number) {
       const index = weekdayMon(year, month, 1) + day - 1,
         col = index % 7,
         week = Math.floor(index / 7),
-        cx = panel.x + cellW * (col + 0.5),
-        cy = y0 + week * cellH,
+        physicalGeometry = gridModel
+          ? annualGridCellGeometry(gridModel, col, week)
+          : null,
+        cellW = physicalGeometry?.cellW || fallbackCellW,
+        cellH = physicalGeometry?.cellH || fallbackCellH,
+        cx =
+          physicalGeometry?.cx ||
+          panel.x + fallbackCellW * (col + 0.5),
+        cy =
+          physicalGeometry?.cy ||
+          fallbackY0 + week * fallbackCellH,
         samples = [-0.22, 0, 0.22].map((dy) =>
           annualCellEvidence(
             ctx,
@@ -3966,8 +4462,10 @@ async function classifyAnnual(file: File, year: number) {
       .map((count, index) => `${index + 1}:${count}`),
     paletteChanged: palette.changed,
     paletteClusters: palette.clusters,
-    refinedMonths: refinedCount,
-    weakGeometryMonths,
+    openCvAvailable: openCvGrid.available,
+    openCvRefinedMonths,
+    openCvFallbackMonths,
+    openCvError: openCvGrid.error,
   };
 }
 
@@ -4359,7 +4857,7 @@ export default function Home() {
         0,
       );
       setMessage(
-        `Detector v${ANNUAL_DETECTOR_VERSION} · Previsión de ${year} creada: ${total} días. Microalineación mensual ajustó ${found.refinedMonths}/12 meses.${found.weakGeometryMonths.length ? ` Geometría débil en meses: ${found.weakGeometryMonths.join(", ")}.` : ""} Lectura directa prioritaria. Paleta auxiliar de ${found.paletteClusters} grupos recuperó ${found.paletteChanged} lecturas dudosas. Calibración local recuperó ${found.calibrated} lecturas (por mes: ${found.calibratedByMonth.join(" · ")}). Lecturas realmente dudosas: ${found.uncertain} (por mes: ${found.uncertainByMonth.join(" · ")}).${found.uncertain ? ` Días dudosos: ${found.uncertainDaysByMonth.join(" · ")}.` : ""} Azul marino por identificar: ${found.blueAmbiguous} (por mes: ${found.blueByMonth.join(" · ")}).${found.blueAmbiguous ? ` Días azules: ${found.blueDaysByMonth.join(" · ")}. Revísalos en Detalle mensual y usa la selección múltiple para asignar la categoría correcta.` : ""} Diferencias visibles respecto al ciclo base: ${found.cycleDifferences} (informativas; pueden ser vacaciones, permisos, festivos u otras excepciones reales).`,
+        `Detector v${ANNUAL_DETECTOR_VERSION} · Previsión de ${year} creada: ${total} días. OpenCV ${found.openCvAvailable ? "activo" : "no disponible"}: cuadrícula física usada en ${found.openCvRefinedMonths}/12 meses.${found.openCvFallbackMonths.length ? ` Fallback geométrico en meses: ${found.openCvFallbackMonths.join(", ")}.` : ""}${found.openCvError ? ` ${found.openCvError}.` : ""} Lectura directa prioritaria. Paleta auxiliar de ${found.paletteClusters} grupos recuperó ${found.paletteChanged} lecturas dudosas. Calibración local recuperó ${found.calibrated} lecturas (por mes: ${found.calibratedByMonth.join(" · ")}). Lecturas realmente dudosas: ${found.uncertain} (por mes: ${found.uncertainByMonth.join(" · ")}).${found.uncertain ? ` Días dudosos: ${found.uncertainDaysByMonth.join(" · ")}.` : ""} Azul marino por identificar: ${found.blueAmbiguous} (por mes: ${found.blueByMonth.join(" · ")}).${found.blueAmbiguous ? ` Días azules: ${found.blueDaysByMonth.join(" · ")}. Revísalos en Detalle mensual y usa la selección múltiple para asignar la categoría correcta.` : ""} Diferencias visibles respecto al ciclo base: ${found.cycleDifferences} (informativas; pueden ser vacaciones, permisos, festivos u otras excepciones reales).`,
       );
     } catch (error) {
       const detail =
