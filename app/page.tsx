@@ -216,7 +216,7 @@ const CONFIRMED_SPECIAL_RETRIBUTIVE_DAYS = [
 // Incrementar esta versión cuando cambie la lógica de reconocimiento anual.
 // Los años analizados con una versión anterior se conservan, pero la interfaz
 // avisa de que conviene volver a leer su imagen.
-const ANNUAL_DETECTOR_VERSION = 30;
+const ANNUAL_DETECTOR_VERSION = 31;
 const statusLabel: Record<Status, string> = {
   REVISAR: "Revisar",
   AGCG: "Trabajo · AGCG",
@@ -3456,6 +3456,353 @@ function detectPhotographedAnnual(canvas: HTMLCanvasElement, year: number, diagn
 }
 
 
+
+type AnnualPanelRefinement = {
+  panel: AnnualPanel;
+  changed: boolean;
+  rawScore: number;
+  baselineScore: number;
+  confidence: number;
+};
+
+function refineAnnualPanelGrid(
+  canvas: HTMLCanvasElement,
+  panel: AnnualPanel,
+  year: number,
+  month: number,
+): AnnualPanelRefinement {
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) {
+    return {
+      panel,
+      changed: false,
+      rawScore: 0,
+      baselineScore: 0,
+      confidence: 0,
+    };
+  }
+
+  const baseCellW = panel.length / 7,
+    baseCellH = panel.cellH,
+    marginX = baseCellW * 1.45,
+    marginY = baseCellH * 1.35,
+    left = Math.max(0, Math.floor(panel.x - marginX)),
+    top = Math.max(0, Math.floor(panel.gridTop - marginY)),
+    right = Math.min(
+      canvas.width,
+      Math.ceil(panel.x + panel.length + marginX),
+    ),
+    bottom = Math.min(
+      canvas.height,
+      Math.ceil(panel.gridTop + baseCellH * 6 + marginY),
+    ),
+    width = right - left,
+    height = bottom - top;
+
+  if (
+    width < baseCellW * 6.5 ||
+    height < baseCellH * 5.2 ||
+    baseCellW < 4 ||
+    baseCellH < 3
+  ) {
+    return {
+      panel,
+      changed: false,
+      rawScore: 0,
+      baselineScore: 0,
+      confidence: 0,
+    };
+  }
+
+  const pixels = ctx.getImageData(left, top, width, height).data,
+    feature = new Float32Array(width * height),
+    gray = new Float32Array(width * height),
+    integralWidth = width + 1,
+    integral = new Float64Array((width + 1) * (height + 1));
+
+  for (let y = 0; y < height; y++) {
+    let rowSum = 0;
+    for (let x = 0; x < width; x++) {
+      const i = y * width + x,
+        p = i * 4,
+        r = pixels[p],
+        g = pixels[p + 1],
+        b = pixels[p + 2],
+        max = Math.max(r, g, b),
+        min = Math.min(r, g, b),
+        luminance = r * 0.299 + g * 0.587 + b * 0.114,
+        value = 255 - luminance + (max - min) * 0.75;
+      gray[i] = luminance;
+      feature[i] = value;
+      rowSum += value;
+      integral[(y + 1) * integralWidth + x + 1] =
+        integral[y * integralWidth + x + 1] + rowSum;
+    }
+  }
+
+  const patchMean = (
+      cx: number,
+      cy: number,
+      radiusX: number,
+      radiusY: number,
+    ) => {
+      const x0 = Math.max(0, Math.floor(cx - radiusX)),
+        x1 = Math.min(width - 1, Math.ceil(cx + radiusX)),
+        y0 = Math.max(0, Math.floor(cy - radiusY)),
+        y1 = Math.min(height - 1, Math.ceil(cy + radiusY));
+      if (x1 < x0 || y1 < y0) return 0;
+      const a = y0 * integralWidth + x0,
+        b = y0 * integralWidth + x1 + 1,
+        c = (y1 + 1) * integralWidth + x0,
+        d = (y1 + 1) * integralWidth + x1 + 1;
+      return (
+        (integral[d] - integral[b] - integral[c] + integral[a]) /
+        ((x1 - x0 + 1) * (y1 - y0 + 1))
+      );
+    },
+    verticalEdges = new Float32Array(width),
+    horizontalEdges = new Float32Array(height);
+
+  for (let x = 1; x < width - 1; x++) {
+    let total = 0,
+      samples = 0;
+    for (let y = 1; y < height - 1; y += 2) {
+      total += Math.abs(
+        gray[y * width + x + 1] - gray[y * width + x - 1],
+      );
+      samples++;
+    }
+    verticalEdges[x] = samples ? total / samples : 0;
+  }
+  for (let y = 1; y < height - 1; y++) {
+    let total = 0,
+      samples = 0;
+    for (let x = 1; x < width - 1; x += 2) {
+      total += Math.abs(
+        gray[(y + 1) * width + x] - gray[(y - 1) * width + x],
+      );
+      samples++;
+    }
+    horizontalEdges[y] = samples ? total / samples : 0;
+  }
+
+  const edgePeak = (
+      edges: Float32Array,
+      position: number,
+      radius: number,
+    ) => {
+      let best = 0;
+      const center = Math.round(position);
+      for (
+        let i = Math.max(0, center - radius);
+        i <= Math.min(edges.length - 1, center + radius);
+        i++
+      )
+        best = Math.max(best, edges[i]);
+      return best / 255;
+    },
+    first = weekdayMon(year, month, 1),
+    count = daysInMonth(year, month);
+
+  const evaluate = (
+    x0Abs: number,
+    cellW: number,
+    y0Abs: number,
+    cellH: number,
+  ) => {
+    const localX0 = x0Abs - left,
+      localY0 = y0Abs - top;
+    if (
+      localX0 < -cellW * 0.2 ||
+      localY0 < -cellH * 0.2 ||
+      localX0 + 7 * cellW > width + cellW * 0.2 ||
+      localY0 + 6 * cellH > height + cellH * 0.2
+    )
+      return { raw: -Infinity, objective: -Infinity };
+
+    let occupied = 0,
+      occupiedCount = 0,
+      empty = 0,
+      emptyCount = 0;
+
+    for (let slot = 0; slot < 42; slot++) {
+      const col = slot % 7,
+        row = Math.floor(slot / 7),
+        cx = localX0 + (col + 0.5) * cellW,
+        cy = localY0 + (row + 0.5) * cellH,
+        value = patchMean(
+          cx,
+          cy,
+          Math.max(1.5, cellW * 0.18),
+          Math.max(1.2, cellH * 0.18),
+        );
+      if (slot >= first && slot < first + count) {
+        occupied += value;
+        occupiedCount++;
+      } else {
+        empty += value;
+        emptyCount++;
+      }
+    }
+
+    if (!occupiedCount || !emptyCount)
+      return { raw: -Infinity, objective: -Infinity };
+
+    const contrast =
+        occupied / occupiedCount - empty / emptyCount,
+      edgeRadiusX = Math.max(1, Math.round(cellW * 0.035)),
+      edgeRadiusY = Math.max(1, Math.round(cellH * 0.05));
+    let edge = 0,
+      edgeWeight = 0;
+
+    for (let boundary = 0; boundary <= 7; boundary++) {
+      const weight = boundary === 0 || boundary === 7 ? 1.6 : 1;
+      edge +=
+        edgePeak(
+          verticalEdges,
+          localX0 + boundary * cellW,
+          edgeRadiusX,
+        ) * weight;
+      edgeWeight += weight;
+    }
+    for (let boundary = 0; boundary <= 6; boundary++) {
+      const weight = boundary === 0 || boundary === 6 ? 1.45 : 1;
+      edge +=
+        edgePeak(
+          horizontalEdges,
+          localY0 + boundary * cellH,
+          edgeRadiusY,
+        ) * weight;
+      edgeWeight += weight;
+    }
+    const edgeScore = edgeWeight ? edge / edgeWeight : 0,
+      raw = contrast + edgeScore * 20,
+      dx = (x0Abs - panel.x) / Math.max(baseCellW, 1),
+      dy = (y0Abs - panel.gridTop) / Math.max(baseCellH, 1),
+      sx = cellW / Math.max(baseCellW, 1),
+      sy = cellH / Math.max(baseCellH, 1),
+      regularization =
+        Math.abs(dx) * 0.9 +
+        Math.abs(dy) * 0.65 +
+        Math.abs(sx - 1) * 9 +
+        Math.abs(sy - 1) * 7;
+    return { raw, objective: raw - regularization };
+  };
+
+  const baseline = evaluate(
+      panel.x,
+      baseCellW,
+      panel.gridTop,
+      baseCellH,
+    ),
+    coarseDx = Array.from({ length: 15 }, (_, i) => -1.05 + i * 0.15),
+    coarseDy = Array.from({ length: 11 }, (_, i) => -0.65 + i * 0.13),
+    coarseSx = [0.94, 0.97, 1, 1.03, 1.06],
+    coarseSy = [0.92, 0.96, 1, 1.04, 1.08];
+
+  let best = {
+    x0: panel.x,
+    cellW: baseCellW,
+    y0: panel.gridTop,
+    cellH: baseCellH,
+    raw: baseline.raw,
+    objective: baseline.objective,
+  };
+
+  for (const dx of coarseDx)
+    for (const sx of coarseSx)
+      for (const dy of coarseDy)
+        for (const sy of coarseSy) {
+          const x0 = panel.x + dx * baseCellW,
+            cellW = baseCellW * sx,
+            y0 = panel.gridTop + dy * baseCellH,
+            cellH = baseCellH * sy,
+            score = evaluate(x0, cellW, y0, cellH);
+          if (score.objective > best.objective)
+            best = {
+              x0,
+              cellW,
+              y0,
+              cellH,
+              raw: score.raw,
+              objective: score.objective,
+            };
+        }
+
+  // Fine pass around the best coarse candidate. This remains generic: no
+  // month/day/color knowledge is used beyond which of the 42 slots belong to
+  // the requested month.
+  const fineDx = [-0.12, -0.08, -0.04, 0, 0.04, 0.08, 0.12],
+    fineDy = [-0.12, -0.08, -0.04, 0, 0.04, 0.08, 0.12],
+    fineS = [-0.018, -0.009, 0, 0.009, 0.018],
+    coarseBest = { ...best };
+
+  for (const dx of fineDx)
+    for (const sx of fineS)
+      for (const dy of fineDy)
+        for (const sy of fineS) {
+          const x0 = coarseBest.x0 + dx * baseCellW,
+            cellW = coarseBest.cellW * (1 + sx),
+            y0 = coarseBest.y0 + dy * baseCellH,
+            cellH = coarseBest.cellH * (1 + sy),
+            score = evaluate(x0, cellW, y0, cellH);
+          if (score.objective > best.objective)
+            best = {
+              x0,
+              cellW,
+              y0,
+              cellH,
+              raw: score.raw,
+              objective: score.objective,
+            };
+        }
+
+  const improvement = best.objective - baseline.objective,
+    moved =
+      Math.abs(best.x0 - panel.x) > baseCellW * 0.04 ||
+      Math.abs(best.y0 - panel.gridTop) > baseCellH * 0.04 ||
+      Math.abs(best.cellW / baseCellW - 1) > 0.012 ||
+      Math.abs(best.cellH / baseCellH - 1) > 0.012,
+    reliable =
+      Number.isFinite(best.raw) &&
+      best.raw >= 9 &&
+      (improvement >= 0.65 || !moved),
+    confidence = reliable
+      ? Math.max(
+          0,
+          Math.min(
+            1,
+            0.35 +
+              Math.max(0, best.raw - 9) / 28 +
+              Math.max(0, improvement) / 12,
+          ),
+        )
+      : 0;
+
+  if (!reliable || !moved) {
+    return {
+      panel,
+      changed: false,
+      rawScore: Number.isFinite(best.raw) ? best.raw : 0,
+      baselineScore: Number.isFinite(baseline.raw) ? baseline.raw : 0,
+      confidence,
+    };
+  }
+
+  return {
+    panel: {
+      x: best.x0,
+      length: best.cellW * 7,
+      gridTop: best.y0,
+      cellH: best.cellH,
+    },
+    changed: true,
+    rawScore: best.raw,
+    baselineScore: Number.isFinite(baseline.raw) ? baseline.raw : 0,
+    confidence,
+  };
+}
+
 async function classifyAnnual(file: File, year: number) {
   const diagnostic: string[] = [];
   let canvas = await loadAnnualCanvas(file);
@@ -3470,6 +3817,20 @@ async function classifyAnnual(file: File, year: number) {
   // header-based detector ahead of the generic photographed-geometry fallback.
   if (!panels) { const photo = detectPhotographedAnnual(canvas, year, diagnostic); if (photo) { canvas = photo.canvas; panels = photo.panels; } }
   if (!panels) throw new Error("DIAGNÓSTICO " + originalSize + ". " + diagnostic.join(" · "));
+  // v31: every month is micro-aligned independently. The refinement uses only
+  // the known 7×6 calendar geometry, grid edges and occupied-vs-empty slots.
+  // It never uses a labour cycle or a colour category, so it generalises to
+  // different employees and to both camera photos and clean screenshots.
+  const refinements = panels.map((panel, index) =>
+      refineAnnualPanelGrid(canvas, panel, year, index + 1),
+    ),
+    refinedCount = refinements.filter((item) => item.changed).length,
+    weakGeometryMonths = refinements
+      .map((item, index) => ({ item, month: index + 1 }))
+      .filter(({ item }) => item.confidence < 0.28)
+      .map(({ month }) => month);
+  panels = refinements.map((item) => item.panel);
+
   // Never silently apply a six-column coordinate template to an unknown layout.
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (!ctx || !panels) return null;
@@ -3605,6 +3966,8 @@ async function classifyAnnual(file: File, year: number) {
       .map((count, index) => `${index + 1}:${count}`),
     paletteChanged: palette.changed,
     paletteClusters: palette.clusters,
+    refinedMonths: refinedCount,
+    weakGeometryMonths,
   };
 }
 
@@ -3996,7 +4359,7 @@ export default function Home() {
         0,
       );
       setMessage(
-        `Detector v${ANNUAL_DETECTOR_VERSION} · Previsión de ${year} creada: ${total} días. Lectura directa prioritaria. Paleta auxiliar de ${found.paletteClusters} grupos recuperó ${found.paletteChanged} lecturas dudosas. Calibración local recuperó ${found.calibrated} lecturas (por mes: ${found.calibratedByMonth.join(" · ")}). Lecturas realmente dudosas: ${found.uncertain} (por mes: ${found.uncertainByMonth.join(" · ")}).${found.uncertain ? ` Días dudosos: ${found.uncertainDaysByMonth.join(" · ")}.` : ""} Azul marino por identificar: ${found.blueAmbiguous} (por mes: ${found.blueByMonth.join(" · ")}).${found.blueAmbiguous ? ` Días azules: ${found.blueDaysByMonth.join(" · ")}. Revísalos en Detalle mensual y usa la selección múltiple para asignar la categoría correcta.` : ""} Diferencias visibles respecto al ciclo base: ${found.cycleDifferences} (informativas; pueden ser vacaciones, permisos, festivos u otras excepciones reales).`,
+        `Detector v${ANNUAL_DETECTOR_VERSION} · Previsión de ${year} creada: ${total} días. Microalineación mensual ajustó ${found.refinedMonths}/12 meses.${found.weakGeometryMonths.length ? ` Geometría débil en meses: ${found.weakGeometryMonths.join(", ")}.` : ""} Lectura directa prioritaria. Paleta auxiliar de ${found.paletteClusters} grupos recuperó ${found.paletteChanged} lecturas dudosas. Calibración local recuperó ${found.calibrated} lecturas (por mes: ${found.calibratedByMonth.join(" · ")}). Lecturas realmente dudosas: ${found.uncertain} (por mes: ${found.uncertainByMonth.join(" · ")}).${found.uncertain ? ` Días dudosos: ${found.uncertainDaysByMonth.join(" · ")}.` : ""} Azul marino por identificar: ${found.blueAmbiguous} (por mes: ${found.blueByMonth.join(" · ")}).${found.blueAmbiguous ? ` Días azules: ${found.blueDaysByMonth.join(" · ")}. Revísalos en Detalle mensual y usa la selección múltiple para asignar la categoría correcta.` : ""} Diferencias visibles respecto al ciclo base: ${found.cycleDifferences} (informativas; pueden ser vacaciones, permisos, festivos u otras excepciones reales).`,
       );
     } catch (error) {
       const detail =
