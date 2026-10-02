@@ -216,7 +216,7 @@ const CONFIRMED_SPECIAL_RETRIBUTIVE_DAYS = [
 // Incrementar esta versión cuando cambie la lógica de reconocimiento anual.
 // Los años analizados con una versión anterior se conservan, pero la interfaz
 // avisa de que conviene volver a leer su imagen.
-const ANNUAL_DETECTOR_VERSION = 26;
+const ANNUAL_DETECTOR_VERSION = 27;
 const statusLabel: Record<Status, string> = {
   REVISAR: "Revisar",
   AGCG: "Trabajo · AGCG",
@@ -1150,6 +1150,207 @@ function retryUncertainAnnualCell(
     ),
   };
 }
+
+type AnnualColourFeature = {
+  red: number;
+  green: number;
+  blue: number;
+  saturation: number;
+  luma: number;
+};
+
+function annualCellColourFeature(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  cellW: number,
+  cellH: number,
+  canvas: HTMLCanvasElement,
+): AnnualColourFeature | null {
+  const regions = [
+      [-0.31, 0, 0.18, 0.48],
+      [0.31, 0, 0.18, 0.48],
+      [-0.22, -0.27, 0.18, 0.14],
+      [0.22, -0.27, 0.18, 0.14],
+      [-0.22, 0.27, 0.18, 0.14],
+      [0.22, 0.27, 0.18, 0.14],
+    ],
+    rs: number[] = [],
+    gs: number[] = [],
+    bs: number[] = [];
+
+  for (const [dx, dy, rw, rh] of regions) {
+    const sw = Math.max(2, Math.round(cellW * rw)),
+      sh = Math.max(2, Math.round(cellH * rh)),
+      sx = Math.max(0, Math.round(cx + cellW * dx - sw / 2)),
+      sy = Math.max(0, Math.round(cy + cellH * dy - sh / 2)),
+      data = ctx.getImageData(
+        sx,
+        sy,
+        Math.min(sw, canvas.width - sx),
+        Math.min(sh, canvas.height - sy),
+      ).data;
+    for (let p = 0; p < data.length; p += 4) {
+      const r = data[p],
+        g = data[p + 1],
+        b = data[p + 2],
+        sum = r + g + b;
+      if (sum < 180) continue;
+      if (r > 247 && g > 247 && b > 247) continue;
+      rs.push(r);
+      gs.push(g);
+      bs.push(b);
+    }
+  }
+  if (rs.length < 8) return null;
+  const median = (values: number[]) => {
+      const ordered = [...values].sort((a, b) => a - b);
+      return ordered[Math.floor(ordered.length / 2)];
+    },
+    r = median(rs),
+    g = median(gs),
+    b = median(bs),
+    sum = Math.max(1, r + g + b),
+    max = Math.max(r, g, b),
+    min = Math.min(r, g, b);
+  return {
+    red: r / sum,
+    green: g / sum,
+    blue: b / sum,
+    saturation: (max - min) / 255,
+    luma: (r * 0.299 + g * 0.587 + b * 0.114) / 255,
+  };
+}
+
+function annualColourFeatureDistance(
+  a: AnnualColourFeature,
+  b: AnnualColourFeature,
+) {
+  return Math.hypot(
+    (a.red - b.red) * 3.2,
+    (a.green - b.green) * 3.2,
+    (a.blue - b.blue) * 3.2,
+    (a.saturation - b.saturation) * 0.8,
+    (a.luma - b.luma) * 0.35,
+  );
+}
+
+function calibrateAnnualUncertainColours(
+  raw: Record<number, DayData[]>,
+  features: Record<number, (AnnualColourFeature | null)[]>,
+) {
+  const eligibleStatuses = new Set<Status>([
+      "AGCG",
+      "DCOM",
+      "FEST",
+      "FORMACION",
+      "ENFERMEDAD",
+      "REVISION_MEDICA",
+      "LAUDO",
+      "VACACIONES_PENDIENTES",
+    ]),
+    samples = new Map<Status, AnnualColourFeature[]>();
+
+  for (let month = 1; month <= 12; month++) {
+    (raw[month] || []).forEach((day, index) => {
+      const feature = features[month]?.[index];
+      if (
+        !feature ||
+        !eligibleStatuses.has(day.status) ||
+        day.detectedColour === "BLUE" ||
+        (day.confidence || 0) < 0.55
+      )
+        return;
+      const values = samples.get(day.status) || [];
+      values.push(feature);
+      samples.set(day.status, values);
+    });
+  }
+
+  const median = (values: number[]) => {
+      const ordered = [...values].sort((a, b) => a - b);
+      return ordered[Math.floor(ordered.length / 2)];
+    },
+    percentile = (values: number[], q: number) => {
+      const ordered = [...values].sort((a, b) => a - b);
+      if (!ordered.length) return 0;
+      return ordered[Math.min(
+        ordered.length - 1,
+        Math.floor((ordered.length - 1) * q),
+      )];
+    },
+    models: {
+      status: Status;
+      center: AnnualColourFeature;
+      radius: number;
+    }[] = [];
+
+  for (const [status, values] of samples) {
+    if (values.length < 3) continue;
+    const center: AnnualColourFeature = {
+        red: median(values.map((v) => v.red)),
+        green: median(values.map((v) => v.green)),
+        blue: median(values.map((v) => v.blue)),
+        saturation: median(values.map((v) => v.saturation)),
+        luma: median(values.map((v) => v.luma)),
+      },
+      distances = values.map((v) => annualColourFeatureDistance(v, center)),
+      radius = Math.max(0.055, percentile(distances, 0.82) * 1.9);
+    models.push({ status, center, radius });
+  }
+
+  const recoveredByMonth = Array.from({ length: 12 }, () => 0);
+  let total = 0;
+  if (models.length < 2) return { total, recoveredByMonth };
+
+  for (let month = 1; month <= 12; month++) {
+    raw[month] = (raw[month] || []).map((day, index) => {
+      const feature = features[month]?.[index];
+      if (
+        day.status !== "REVISAR" ||
+        day.detectedColour === "BLUE" ||
+        !feature
+      )
+        return day;
+
+      const ranked = models
+        .map((model) => ({
+          ...model,
+          distance: annualColourFeatureDistance(feature, model.center),
+        }))
+        .map((candidate) => ({
+          ...candidate,
+          normalized: candidate.distance / candidate.radius,
+        }))
+        .sort((a, b) => a.normalized - b.normalized),
+        best = ranked[0],
+        second = ranked[1];
+
+      if (!best || best.normalized > 1.12) return day;
+      if (
+        second &&
+        second.normalized - best.normalized < 0.32 &&
+        second.normalized / Math.max(best.normalized, 0.001) < 1.45
+      )
+        return day;
+
+      total++;
+      recoveredByMonth[month - 1]++;
+      return {
+        ...day,
+        status: best.status,
+        baseStatus: baseOf(best.status),
+        confidence: Math.max(
+          day.confidence || 0,
+          Math.min(0.78, 0.58 + (1.12 - best.normalized) * 0.18),
+        ),
+        note: "Color recuperado por calibración local de la misma imagen",
+      };
+    });
+  }
+  return { total, recoveredByMonth };
+}
+
 function monthlyColorMask(r: number, g: number, b: number) {
   const max = Math.max(r, g, b),
     min = Math.min(r, g, b);
@@ -2981,13 +3182,19 @@ async function classifyAnnual(file: File, year: number) {
   // Never silently apply a six-column coordinate template to an unknown layout.
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (!ctx || !panels) return null;
-  const raw: Record<number, DayData[]> = {};
+  const raw: Record<number, DayData[]> = {},
+    colourFeatures: Record<number, (AnnualColourFeature | null)[]> = {};
   for (let month = 1; month <= 12; month++) {
     const panel = panels[month - 1],
       cellW = panel.length / 7,
       cellH = panel.cellH,
       y0 = panel.gridTop + cellH * .5,
-      statuses: { status: Status; confidence: number; detectedColour?: "BLUE" }[] = [];
+      statuses: {
+        status: Status;
+        confidence: number;
+        detectedColour?: "BLUE";
+        feature: AnnualColourFeature | null;
+      }[] = [];
     for (let day = 1; day <= daysInMonth(year, month); day++) {
       const index = weekdayMon(year, month, 1) + day - 1,
         col = index % 7,
@@ -3015,8 +3222,17 @@ async function classifyAnnual(file: File, year: number) {
                 cellH,
                 canvas,
               )
-            : null;
-      statuses.push(recovered || evidence);
+            : null,
+        chosen = recovered || evidence,
+        feature = annualCellColourFeature(
+          ctx,
+          cx,
+          cy,
+          cellW,
+          cellH,
+          canvas,
+        );
+      statuses.push({ ...chosen, feature });
     }
     raw[month] = makeDays(year, month).map((d, i) => ({
       ...d,
@@ -3025,8 +3241,10 @@ async function classifyAnnual(file: File, year: number) {
       confidence: statuses[i].confidence,
       detectedColour: statuses[i].detectedColour,
     }));
+    colourFeatures[month] = statuses.map((status) => status.feature);
   }
-  const phase = inferCyclePhase(year, raw),
+  const calibration = calibrateAnnualUncertainColours(raw, colourFeatures),
+    phase = inferCyclePhase(year, raw),
     result: YearPlan = {},
     cycleDifferenceByMonth: string[] = [],
     uncertainByMonth: string[] = [],
@@ -3087,6 +3305,9 @@ async function classifyAnnual(file: File, year: number) {
     blueAmbiguous,
     blueByMonth,
     blueDaysByMonth,
+    calibrated: calibration.total,
+    calibratedByMonth: calibration.recoveredByMonth
+      .map((count, index) => `${index + 1}:${count}`),
   };
 }
 
@@ -3182,6 +3403,97 @@ function storedFollowingYearVacationUse(sourceYear: number) {
   } catch {
     return 0;
   }
+}
+
+
+type BluePeriodResolution = "RJ" | "MINI" | "PATERNIDAD";
+type BluePeriodGroup = {
+  id: string;
+  start: string;
+  end: string;
+  label: string;
+  blueDays: number;
+};
+
+function bluePeriodGroups(plan: YearPlan, year: number): BluePeriodGroup[] {
+  const byOrdinal = new Map<number, { month: number; day: DayData }>(),
+    blue: { ordinal: number; month: number; day: DayData }[] = [];
+  for (let month = 1; month <= 12; month++) {
+    for (const day of plan[month]?.days || []) {
+      const ordinal = Math.floor(
+        Date.UTC(year, month - 1, day.day) / 86400000,
+      );
+      byOrdinal.set(ordinal, { month, day });
+      if (
+        day.status === "REVISAR" &&
+        day.detectedColour === "BLUE" &&
+        !day.periodId
+      )
+        blue.push({ ordinal, month, day });
+    }
+  }
+  blue.sort((a, b) => a.ordinal - b.ordinal);
+  if (!blue.length) return [];
+
+  const formatDate = (ordinal: number) => {
+      const date = new Date(ordinal * 86400000),
+        month = date.getUTCMonth(),
+        day = date.getUTCDate();
+      return `${day} ${MONTHS[month].slice(0, 3).toLowerCase()}.`;
+    },
+    isoDate = (ordinal: number) => {
+      const date = new Date(ordinal * 86400000);
+      return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
+    },
+    canBridge = (previous: number, next: number) => {
+      const gap = next - previous;
+      if (gap <= 1) return true;
+      if (gap > 5) return false;
+      for (let ordinal = previous + 1; ordinal < next; ordinal++) {
+        const entry = byOrdinal.get(ordinal)?.day;
+        if (!entry) return false;
+        const allowed =
+          entry.status === "DCOM" ||
+          entry.status === "FEST" ||
+          entry.status === "LAUDO" ||
+          (entry.status === "REVISAR" && entry.detectedColour === "BLUE");
+        if (!allowed) return false;
+      }
+      return true;
+    };
+
+  const groups: {
+      start: number;
+      end: number;
+      lastBlue: number;
+      blueDays: number;
+    }[] = [];
+  for (const entry of blue) {
+    const current = groups[groups.length - 1];
+    if (!current || !canBridge(current.lastBlue, entry.ordinal)) {
+      groups.push({
+        start: entry.ordinal,
+        end: entry.ordinal,
+        lastBlue: entry.ordinal,
+        blueDays: 1,
+      });
+      continue;
+    }
+    current.end = entry.ordinal;
+    current.lastBlue = entry.ordinal;
+    current.blueDays++;
+  }
+
+  return groups.map((group) => ({
+    id: `${group.start}-${group.end}`,
+    start: isoDate(group.start),
+    end: isoDate(group.end),
+    label:
+      group.start === group.end
+        ? formatDate(group.start)
+        : `${formatDate(group.start)} – ${formatDate(group.end)}`,
+    blueDays: group.blueDays,
+  }));
 }
 
 export default function Home() {
@@ -3467,7 +3779,7 @@ export default function Home() {
         0,
       );
       setMessage(
-        `Detector v${ANNUAL_DETECTOR_VERSION} · Previsión de ${year} creada: ${total} días. Lecturas realmente dudosas: ${found.uncertain} (por mes: ${found.uncertainByMonth.join(" · ")}).${found.uncertain ? ` Días dudosos: ${found.uncertainDaysByMonth.join(" · ")}.` : ""} Azul marino por identificar: ${found.blueAmbiguous} (por mes: ${found.blueByMonth.join(" · ")}).${found.blueAmbiguous ? ` Días azules: ${found.blueDaysByMonth.join(" · ")}. El color azul marino puede ser RJ, Mini o Paternidad; asígnalo como periodo sin cambiar DCOM/FEST.` : ""} Diferencias visibles respecto al ciclo base: ${found.cycleDifferences} (informativas; pueden ser vacaciones, permisos, festivos u otras excepciones reales).`,
+        `Detector v${ANNUAL_DETECTOR_VERSION} · Previsión de ${year} creada: ${total} días. Calibración local recuperó ${found.calibrated} lecturas (por mes: ${found.calibratedByMonth.join(" · ")}). Lecturas realmente dudosas: ${found.uncertain} (por mes: ${found.uncertainByMonth.join(" · ")}).${found.uncertain ? ` Días dudosos: ${found.uncertainDaysByMonth.join(" · ")}.` : ""} Azul marino por identificar: ${found.blueAmbiguous} (por mes: ${found.blueByMonth.join(" · ")}).${found.blueAmbiguous ? ` Días azules: ${found.blueDaysByMonth.join(" · ")}. Los bloques azules se agrupan debajo para identificarlos como RJ, Mini o Paternidad sin cambiar DCOM/FEST.` : ""} Diferencias visibles respecto al ciclo base: ${found.cycleDifferences} (informativas; pueden ser vacaciones, permisos, festivos u otras excepciones reales).`,
       );
     } catch (error) {
       const detail =
@@ -3539,6 +3851,67 @@ export default function Home() {
       setBusy(false);
     }
   }
+  function resolveBlueGroup(
+    group: BluePeriodGroup,
+    kind: BluePeriodResolution,
+  ) {
+    const start = Math.floor(Date.parse(`${group.start}T00:00:00Z`) / 86400000),
+      end = Math.floor(Date.parse(`${group.end}T00:00:00Z`) / 86400000),
+      id = `blue-${kind.toLowerCase()}-${Date.now()}`,
+      next: YearPlan = { ...plan };
+    let applied = 0;
+
+    for (let m = 1; m <= 12; m++) {
+      if (!next[m]) continue;
+      const changed = next[m].days.map((day) => {
+        const ordinal = Math.floor(
+          Date.UTC(year, m - 1, day.day) / 86400000,
+        );
+        if (
+          ordinal < start ||
+          ordinal > end ||
+          day.status !== "REVISAR" ||
+          day.detectedColour !== "BLUE" ||
+          day.periodId
+        )
+          return day;
+        applied++;
+        return {
+          ...day,
+          status: kind as Status,
+          baseStatus:
+            day.baseStatus === "REVISAR" ? ("AGCG" as BaseStatus) : day.baseStatus,
+          note:
+            kind === "PATERNIDAD"
+              ? "Permiso de paternidad"
+              : kind === "MINI"
+                ? "Miniperiodo"
+                : "RJ",
+          periodId: id,
+          manualEdited: true,
+        };
+      });
+      next[m] = { ...next[m], days: changed };
+    }
+
+    if (!applied) {
+      setMessage("Ese bloque azul ya no contiene días pendientes de identificar.");
+      return;
+    }
+    const record: PeriodRecord = {
+      id,
+      kind,
+      start: group.start,
+      end: group.end,
+    };
+    persist(next);
+    persistPeriods([...periods, record]);
+    if (next[month]) setDays(next[month].days);
+    setMessage(
+      `Bloque azul ${group.label} identificado como ${statusLabel[kind]}: ${applied} días. DCOM, FEST y Laudo intermedios se han conservado.`,
+    );
+  }
+
   function applyPeriod() {
     const start = new Date(`${periodStart}T12:00:00`),
       end = new Date(`${periodEnd}T12:00:00`);
@@ -3767,6 +4140,11 @@ export default function Home() {
       "Previsión anual e imágenes cargadas vaciadas. Puedes volver a importar el calendario.",
     );
   }
+
+  const unresolvedBlueGroups = useMemo(
+    () => bluePeriodGroups(plan, year),
+    [plan, year],
+  );
 
   const calculations = useMemo(
       () => days.map((d) => ({ d, c: calcDay(d, days, year, month, profile) })),
@@ -4132,6 +4510,58 @@ export default function Home() {
               <span>{message}</span>
             </div>
           </section>
+          {unresolvedBlueGroups.length > 0 && (
+            <section className="panel p-5">
+              <div className="mb-3">
+                <h2 className="font-semibold text-[#71d7cc]">
+                  Azul marino por identificar
+                </h2>
+                <p className="mt-1 text-xs text-white/50">
+                  La app ha agrupado los días azules contiguos. Identifica cada
+                  bloque una sola vez; los DCOM, FEST y Laudo intermedios se
+                  conservan.
+                </p>
+              </div>
+              <div className="space-y-3">
+                {unresolvedBlueGroups.map((group) => (
+                  <div
+                    key={group.id}
+                    className="rounded-xl border border-[#71d7cc]/25 bg-[#0b2029] p-3"
+                  >
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                      <b className="text-sm">{group.label}</b>
+                      <span className="text-xs text-white/50">
+                        {group.blueDays} {group.blueDays === 1 ? "día azul" : "días azules"}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => resolveBlueGroup(group, "RJ")}
+                      >
+                        RJ
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => resolveBlueGroup(group, "MINI")}
+                      >
+                        Mini
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => resolveBlueGroup(group, "PATERNIDAD")}
+                      >
+                        Paternidad
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
           <section className="panel p-5">
             <div className="mb-4 flex items-center gap-2">
               <CalendarRange className="text-[#71d7cc]" size={19} />
@@ -4140,7 +4570,7 @@ export default function Home() {
                   {editingPeriodId ? "Editar periodo" : "Añadir periodo"}
                 </h2>
                 <p className="text-xs text-white/40">
-                  Vacaciones, mini o días pendientes
+                  Vacaciones, mini, RJ, paternidad o días pendientes
                 </p>
               </div>
             </div>
