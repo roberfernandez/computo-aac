@@ -1074,10 +1074,12 @@ function retryUncertainAnnualCell(
         if (status !== "REVISAR")
           broadVotes.set(status, (broadVotes.get(status) || 0) + 1);
       }
-      const broad = [...broadVotes.entries()].sort((a, b) => b[1] - a[1]);
-      return broad[0]?.[1] >= 2 && (!broad[1] || broad[0][1] > broad[1][1])
-        ? { status: broad[0][0], confidence: 0.48 }
-        : null;
+      const broad = [...broadVotes.entries()].sort((a, b) => b[1] - a[1]),
+        winner = broad[0],
+        runnerUp = broad[1];
+      if (!winner || winner[1] < 2 || (runnerUp && winner[1] <= runnerUp[1]))
+        return null;
+      return { status: winner[0], confidence: 0.48 };
     },
     regions = [
       [-0.34, -0.27, 0.12, 0.16], [0.34, -0.27, 0.12, 0.16],
