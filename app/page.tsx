@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, @next/next/no-img-element, react-hooks/set-state-in-effect */
+﻿/* eslint-disable @typescript-eslint/no-explicit-any, @next/next/no-img-element, react-hooks/set-state-in-effect */
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -170,7 +170,7 @@ function profileTurn(profile: UserProfile): Turn {
 }
 function isFullTime(profile: UserProfile) { return profileTurn(profile) !== "T8"; }
 function profileLabel(profile: UserProfile) {
-  return isFullTime(profile) ? `${profileTurn(profile)} · 100 %` : `T8 · ${CONTRACT_LABELS[profile.contract]}`;
+  return isFullTime(profile) ? `${profileTurn(profile)} Â· 100 %` : `T8 Â· ${CONTRACT_LABELS[profile.contract]}`;
 }
 function theoreticalHours(year: number, profile: UserProfile) {
   return isFullTime(profile) ? FULL_TIME_HOURS[year] : ANNUAL_THEORETICAL_HOURS[year]?.[profile.contract];
@@ -184,7 +184,7 @@ function nightLabel(profile: UserProfile, value: number) {
   return isFullTime(profile) ? "Pendiente" : formatHours(value);
 }
 const SUBTURNS: Subturn[] = ["T8.1", "T8.2", "T8.3", "T8.4", "T8.5"];
-// Jornadas acordadas con el usuario para 2020–2027. Horas = base al 100 % × porcentaje.
+// Jornadas acordadas con el usuario para 2020â€“2027. Horas = base al 100 % Ã— porcentaje.
 const ANNUAL_THEORETICAL_HOURS: Record<number, Partial<Record<ContractType, number>>> = {
   2020: { "85.81": 1429.59, "85": 1416.10, "78.91": 1314.64, "78.14": 1301.81, "75": 1249.50 },
   2021: { "85.81": 1429.59, "85": 1416.10, "78.91": 1314.64, "78.14": 1301.81, "75": 1249.50 },
@@ -212,37 +212,37 @@ const CONFIRMED_SPECIAL_RETRIBUTIVE_DAYS = [
   { from: 2025, month: 6, day: 24 },
   { from: 2026, month: 9, day: 24 },
 ] as const;
-// Incrementar esta versión cuando cambie la lógica de reconocimiento anual.
-// Los años analizados con una versión anterior se conservan, pero la interfaz
+// Incrementar esta versiÃ³n cuando cambie la lÃ³gica de reconocimiento anual.
+// Los aÃ±os analizados con una versiÃ³n anterior se conservan, pero la interfaz
 // avisa de que conviene volver a leer su imagen.
-const ANNUAL_DETECTOR_VERSION = 23;
+const ANNUAL_DETECTOR_VERSION = 24;
 const statusLabel: Record<Status, string> = {
   REVISAR: "Revisar",
-  AGCG: "Trabajo · AGCG",
-  DCOM: "Descanso · DCOM",
-  FEST: "Fiesta del ciclo · FEST",
-  VACACIONES: "Vacaciones año actual",
-  VACACIONES_PENDIENTES: "Vacaciones · indicar año",
-  VAC_ANTERIOR: "Año/s anterior/es",
+  AGCG: "Trabajo Â· AGCG",
+  DCOM: "Descanso Â· DCOM",
+  FEST: "Fiesta del ciclo Â· FEST",
+  VACACIONES: "Vacaciones aÃ±o actual",
+  VACACIONES_PENDIENTES: "Vacaciones Â· indicar aÃ±o",
+  VAC_ANTERIOR: "AÃ±o/s anterior/es",
   MINI: "Mini",
   LAUDO: "Laudo",
   RJ: "RJ",
-  FORMACION: "Formación",
-  REVISION_MEDICA: "Revisión médica",
+  FORMACION: "FormaciÃ³n",
+  REVISION_MEDICA: "RevisiÃ³n mÃ©dica",
   ENFERMEDAD: "Baja o enfermedad",
   PERMISO: "Permiso",
-  VISPERA_FESTIVO: "Víspera de festivo",
+  VISPERA_FESTIVO: "VÃ­spera de festivo",
   HUELGA_LEGAL: "Huelga legal",
-  COMPUTO_ANTERIOR: "Cómputo año anterior",
-  COMPUTO_ACTUAL: "Cómputo año actual",
+  COMPUTO_ANTERIOR: "CÃ³mputo aÃ±o anterior",
+  COMPUTO_ACTUAL: "CÃ³mputo aÃ±o actual",
 };
 const specialLabel: Record<Special, string> = {
-  NINGUNA: "Jornada según calendario",
-  VISPERA_MANUAL: "Víspera de festivo",
+  NINGUNA: "Jornada segÃºn calendario",
+  VISPERA_MANUAL: "VÃ­spera de festivo",
   FESTIVO_ESPECIAL: "Festivo especial operativo",
   NON_STOP_PACTADO: "Non stop pactado",
   NON_STOP_EXTRA: "Non stop extraordinario",
-  MODIFICACION: "Modificación de jornada",
+  MODIFICACION: "ModificaciÃ³n de jornada",
 };
 // Presentation only: preserve the colour families recognized by the detector.
 // Ambiguous/manual states have no proven original colour and stay neutral.
@@ -278,12 +278,12 @@ function showMonthlyConcept(value: number) {
 const priorOriginLabel: Record<PriorOrigin, string> = {
   VACACIONES: "Vacaciones pendientes",
   RJ: "RJ pendiente",
-  COMPUTO: "Cómputo horario positivo",
+  COMPUTO: "CÃ³mputo horario positivo",
 };
 const priorSituationLabel: Record<PriorOrigin, string> = {
-  VACACIONES: "Vacaciones año anterior",
-  RJ: "RJ año anterior",
-  COMPUTO: "Cómputo positivo año anterior",
+  VACACIONES: "Vacaciones aÃ±o anterior",
+  RJ: "RJ aÃ±o anterior",
+  COMPUTO: "CÃ³mputo positivo aÃ±o anterior",
 };
 const CYCLE_PATTERN: BaseStatus[] = [
   "AGCG",
@@ -333,7 +333,7 @@ function isConfirmedSpecialRetributiveDay(
 }
 function iso(n: number) {
   if (!Number.isFinite(n)) return "Pendiente";
-  return n.toFixed(2).replace("-", "−").replace(".", ",");
+  return n.toFixed(2).replace("-", "âˆ’").replace(".", ",");
 }
 function signed(n: number) {
   return `${n > 0 ? "+" : ""}${iso(n)}`;
@@ -376,7 +376,7 @@ function situationLabel(d: DayData) {
       ? priorSituationLabel[d.priorOrigin]
       : statusLabel[d.status];
   return d.special !== "NINGUNA"
-    ? `${base} · ${specialLabel[d.special]}`
+    ? `${base} Â· ${specialLabel[d.special]}`
     : base;
 }
 function compactStatusLabel(d: DayData) {
@@ -386,19 +386,19 @@ function compactStatusLabel(d: DayData) {
       ? d.priorOrigin === "RJ"
         ? "RJ ANT."
         : d.priorOrigin === "COMPUTO"
-          ? "CÓMP. + ANT."
+          ? "CÃ“MP. + ANT."
           : "VAC. ANT."
       : d.status === "VACACIONES_PENDIENTES"
-        ? "VAC. ¿AÑO?"
+        ? "VAC. Â¿AÃ‘O?"
       : d.status === "COMPUTO_ANTERIOR"
-        ? "CÓMP. ANT."
+        ? "CÃ“MP. ANT."
         : d.status === "COMPUTO_ACTUAL"
-          ? "CÓMP. ACT."
+          ? "CÃ“MP. ACT."
           : d.status;
 }
 function specialMark(s: Special) {
   return s === "VISPERA_MANUAL"
-    ? "VÍS"
+    ? "VÃS"
     : s === "FESTIVO_ESPECIAL"
       ? "F.ESP"
       : s === "MODIFICACION"
@@ -459,7 +459,7 @@ function applyCycleValidation(
             ...d,
             baseStatus: expected,
             status: expected,
-            note: "Jornada completada mediante el ciclo de 28 días",
+            note: "Jornada completada mediante el ciclo de 28 dÃ­as",
           }
         : d;
     if (
@@ -487,7 +487,7 @@ function applyCycleValidation(
         ...d,
         baseStatus: expected,
         status: expected,
-        note: "Fiesta validada por el ciclo de 28 días",
+        note: "Fiesta validada por el ciclo de 28 dÃ­as",
       };
     if (canUseCycle && detected !== expected && hasPhotoEvidence)
       return strongPhotoEvidence
@@ -501,14 +501,14 @@ function applyCycleValidation(
             ...d,
             baseStatus: expected,
             status: expected,
-            note: "Jornada corregida mediante el ciclo de 28 días",
+            note: "Jornada corregida mediante el ciclo de 28 dÃ­as",
           };
     if (canUseCycle && detected !== expected && autoMismatch)
       return {
         ...d,
         baseStatus: expected,
         status: expected,
-        note: "Jornada corregida mediante el ciclo de 28 días",
+        note: "Jornada corregida mediante el ciclo de 28 dÃ­as",
       };
     return {
       ...d,
@@ -660,16 +660,16 @@ function nightForDay(d: DayData, profile: UserProfile, code: string | null | und
   const overlap = nightOverlapMinutesForShift(start, end);
   let reason = "";
   if (isFullTime(profile)) reason = "Nocturnidad de tiempo completo pendiente de validar";
-  else if (code?.includes("CANVI_HORA") && overlap > 0 && month === 10) reason = "Pendiente: duración nocturna en cambio de hora";
+  else if (code?.includes("CANVI_HORA") && overlap > 0 && month === 10) reason = "Pendiente: duraciÃ³n nocturna en cambio de hora";
   else if (d.special === "NON_STOP_EXTRA") reason = "Pendiente: tratamiento de Non Stop extraordinario";
   let payable = reason ? NaN : nightMinutesForShift(start, end, total);
   if (!reason && code?.endsWith("_FINS_23H")) {
-    // Nochebuena: la reducción de presencia no reduce la nocturnidad abonada.
-    // Nómina 12/2025 confirma que T8 cobra la nocturnidad de la jornada normal.
+    // Nochebuena: la reducciÃ³n de presencia no reduce la nocturnidad abonada.
+    // NÃ³mina 12/2025 confirma que T8 cobra la nocturnidad de la jornada normal.
     const normal = shiftFor(profile, "NORMAL", 1);
     payable = nightMinutesForShift(normal.start, normal.end, normal.minutes);
   }
-  if (!reason && !Number.isFinite(payable)) reason = "Pendiente: horario incompleto o duración distinta del intervalo";
+  if (!reason && !Number.isFinite(payable)) reason = "Pendiente: horario incompleto o duraciÃ³n distinta del intervalo";
   return { overlap, payable, reason };
 }
 
@@ -687,7 +687,7 @@ function calcDay(
       scheduleReview: false,
       compensationPending: isFullTime(profile),
       value: 0,
-      shift: "—",
+      shift: "â€”",
       hours: "0",
       night: "0",
       workedMinutes: 0,
@@ -728,7 +728,7 @@ function calcDay(
     return {
       scheduleReview: !Number.isFinite(minutes), compensationPending: fullTime,
       value: fullTime || toPreviousYear ? 0 : toCurrentYear ? decimalHoursFromMinutes(minutes) : NaN,
-      shift: Number.isFinite(minutes) ? `${start}–${end}` : "Pendiente",
+      shift: Number.isFinite(minutes) ? `${start}â€“${end}` : "Pendiente",
       hours: Number.isFinite(minutes) ? `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, "0")}` : "Pendiente",
       night: iso(decimalHoursFromMinutes(night)),
       workedMinutes: toPreviousYear ? 0 : minutes,
@@ -740,7 +740,7 @@ function calcDay(
       ordinaryHours: decimalHoursFromMinutes(minutes),
       horaNona: fullTime ? 0 : Number.isFinite(minutes) ? Math.max(0, Math.ceil((minutes - 480) / 15) * 0.25) : NaN,
       creditedMinutes: fullTime || (!toPreviousYear && !toCurrentYear) ? 0 : minutes,
-      reason: "Categoría oficial no disponible · solo los cálculos dependientes quedan pendientes",
+      reason: "CategorÃ­a oficial no disponible Â· solo los cÃ¡lculos dependientes quedan pendientes",
     };
   }
   const rule = CATEGORY_RULES[code], wd = rule.weekday;
@@ -750,13 +750,13 @@ function calcDay(
   // is reconstructed from tomorrow or a last-Saturday formula.
   if (code === "DISSABTE_CANVI_HORA" && profile.contract === "75" && month === 10) {
     kind = "LONG_SATURDAY";
-    reason = "Sábado largo · cambio de hora";
+    reason = "SÃ¡bado largo Â· cambio de hora";
   }
   // Explicit personal overrides remain visible and are not inferred from colours.
   if (d.special === "NON_STOP_PACTADO" || d.special === "NON_STOP_EXTRA") {
-    kind = "NON_STOP"; reason = specialLabel[d.special] + " · manual";
+    kind = "NON_STOP"; reason = specialLabel[d.special] + " Â· manual";
   } else if (d.special === "FESTIVO_ESPECIAL" || d.special === "VISPERA_MANUAL" || d.status === "VISPERA_FESTIVO") {
-    kind = "FRIDAY_EVE"; reason = "Jornada especial · manual";
+    kind = "FRIDAY_EVE"; reason = "Jornada especial Â· manual";
   }
   let definition = shiftFor(profile, kind, wd),
     start = definition.start,
@@ -770,7 +770,7 @@ function calcDay(
     end = "23:50";
     workedMinutes = normal.minutes;
     value = normal.value;
-    reason = "Nochebuena · jornada normal abonada";
+    reason = "Nochebuena Â· jornada normal abonada";
   }
   if (d.special === "MODIFICACION") {
     if (
@@ -791,7 +791,7 @@ function calcDay(
       else end = clockLabel(clockMinutes(end) + delta);
       value += d.extraHours;
     }
-    reason = "Modificación de jornada";
+    reason = "ModificaciÃ³n de jornada";
   }
   const actualWorkedMinutes = workedMinutes,
     nightResult = nightForDay(d, profile, code, start, end, actualWorkedMinutes, month),
@@ -805,20 +805,20 @@ function calcDay(
     hours = `${Math.floor(actualWorkedMinutes / 60)}:${String(actualWorkedMinutes % 60).padStart(2, "0")}`;
   if (toPreviousYear) {
     value = 0;
-    reason = `Cómputo aplicado a ${year - 1}`;
+    reason = `CÃ³mputo aplicado a ${year - 1}`;
   } else if (toCurrentYear) {
     value = actualWorkedMinutes / 60;
-    reason = `Cómputo aplicado a ${year}`;
+    reason = `CÃ³mputo aplicado a ${year}`;
   }
   const fullTime = isFullTime(profile);
   const scheduleReview = fullTime && ["T1", "T2"].includes(profileTurn(profile)) && (wd === 5 || kind === "NON_STOP") && d.special !== "MODIFICACION";
   const absenceReview = fullTime && ["FORMACION", "REVISION_MEDICA", "COMPUTO_ANTERIOR", "COMPUTO_ACTUAL"].includes(d.status);
-  if (fullTime) reason = `${profileTurn(profile)} · ${scheduleReview ? "horario histórico por confirmar" : reason}${absenceReview ? " · abono pendiente" : ""} · cómputo pendiente`;
+  if (fullTime) reason = `${profileTurn(profile)} Â· ${scheduleReview ? "horario histÃ³rico por confirmar" : reason}${absenceReview ? " Â· abono pendiente" : ""} Â· cÃ³mputo pendiente`;
   return {
     scheduleReview,
     compensationPending: fullTime,
     value: fullTime ? 0 : Number(value.toFixed(2)),
-    shift: `${start}–${end}`,
+    shift: `${start}â€“${end}`,
     hours,
     night: iso(actualNightHours),
     workedMinutes: toPreviousYear ? 0 : actualWorkedMinutes,
@@ -954,7 +954,7 @@ function annualBlockEvidence(data: Uint8ClampedArray): { status: Status; confide
     if (r + g + b < 180 && !isBlue) continue;
     eligible++;
     if (isBlue) blue++;
-    // Revisión médica uses a pale/desaturated green: its red and blue
+    // RevisiÃ³n mÃ©dica uses a pale/desaturated green: its red and blue
     // components stay high. Enfermedad is the saturated green with much
     // lower red/blue. Test the pale green first so compression/rescaling
     // cannot turn a medical cell into disease merely by increasing G.
@@ -1044,9 +1044,9 @@ function retryUncertainAnnualCell(
   cellH: number,
   canvas: HTMLCanvasElement,
 ) {
-  // v17: lectura adaptativa SOLO para celdas que la primera pasada dejó
-  // en REVISAR. Muestreamos zonas pequeñas e independientes del fondo,
-  // evitando el número central y los bordes. Nunca usamos el ciclo para
+  // v17: lectura adaptativa SOLO para celdas que la primera pasada dejÃ³
+  // en REVISAR. Muestreamos zonas pequeÃ±as e independientes del fondo,
+  // evitando el nÃºmero central y los bordes. Nunca usamos el ciclo para
   // decidir el color: si no hay consenso suficiente, permanece REVISAR.
   const regions = [
       [-0.34, -0.27, 0.12, 0.16], [0.34, -0.27, 0.12, 0.16],
@@ -1079,10 +1079,10 @@ function retryUncertainAnnualCell(
     votes.set(evidence.status, current);
   }
 
-  // v18: además del voto por clase, medimos el color dominante real de la
+  // v18: ademÃ¡s del voto por clase, medimos el color dominante real de la
   // celda dudosa. Esto permite recuperar tonos uniformes que no encajan bien
-  // en los umbrales históricos, comparándolos con el patrón cromático ya
-  // observado sin usar el ciclo de 28 días como respuesta.
+  // en los umbrales histÃ³ricos, comparÃ¡ndolos con el patrÃ³n cromÃ¡tico ya
+  // observado sin usar el ciclo de 28 dÃ­as como respuesta.
   const ranked = [...votes.entries()].sort(
       (x, y) =>
         y[1].count - x[1].count ||
@@ -1098,8 +1098,8 @@ function retryUncertainAnnualCell(
     voteLead = second ? best[1].count - second[1].count : best[1].count,
     weightLead = second ? best[1].weight - second[1].weight : best[1].weight,
     // Para una celda de color uniforme, 5 regiones coincidentes ya son
-    // evidencia fuerte. Para resultados más mezclados mantenemos el criterio
-    // estricto de v17. Así v18 gana sensibilidad sin convertir ruido en datos.
+    // evidencia fuerte. Para resultados mÃ¡s mezclados mantenemos el criterio
+    // estricto de v17. AsÃ­ v18 gana sensibilidad sin convertir ruido en datos.
     uniformConsensus =
       best[1].count >= 5 &&
       share >= 0.72 &&
@@ -1221,8 +1221,8 @@ async function classifyMonthly(file: File, year: number, month: number) {
       (weekdayMon(year, month, 1) + daysInMonth(year, month)) / 7,
     );
 
-  // En lugar de las antiguas constantes 68 y 38 px, buscamos dónde termina
-  // realmente la cabecera y dónde está el borde inferior de la cuadrícula.
+  // En lugar de las antiguas constantes 68 y 38 px, buscamos dÃ³nde termina
+  // realmente la cabecera y dÃ³nde estÃ¡ el borde inferior de la cuadrÃ­cula.
   let lastHeader = border.y;
   for (
     let y = border.y;
@@ -1255,7 +1255,7 @@ async function classifyMonthly(file: File, year: number, month: number) {
     ),
     cellH = (bottom - gridTop) / weeks;
 
-  // Si la geometría encontrada no es coherente, no inventamos lecturas.
+  // Si la geometrÃ­a encontrada no es coherente, no inventamos lecturas.
   if (
     !Number.isFinite(cellH) ||
     cellH < cellW * 0.35 ||
@@ -1598,7 +1598,7 @@ function detectModernAnnualPanels(canvas: HTMLCanvasElement, year: number, allow
   }
   const middle = (values: number[]) => values.sort((a, b) => a - b)[Math.floor(values.length / 2)];
   const minimumCells = allowJoinedCells ? 280 : 350;
-  if (cells.length < minimumCells) return fail(cells.length + " celdas candidatas; mínimo " + minimumCells);
+  if (cells.length < minimumCells) return fail(cells.length + " celdas candidatas; mÃ­nimo " + minimumCells);
   const cellWidth = middle(cells.map(c => c.w)), cellHeight = middle(cells.map(c => c.h));
   const cluster = (values: number[], tolerance: number) => {
     const groups: number[][] = [];
@@ -1621,12 +1621,12 @@ function detectModernAnnualPanels(canvas: HTMLCanvasElement, year: number, allow
     // Joined JPEG cell backgrounds may lose individual components. Require
     // three separately observed regular lattices; never split one band.
     for (const rows of rowGroups) {
-      if (rows.length < 5 || rows.length > 6) return fail("fila de meses con " + rows.length + " líneas de semanas; esperadas 5 o 6");
+      if (rows.length < 5 || rows.length > 6) return fail("fila de meses con " + rows.length + " lÃ­neas de semanas; esperadas 5 o 6");
       const step = middle(rows.slice(1).map((y, i) => y - rows[i]));
-      if (rows.slice(1).some((y, i) => Math.abs(y - rows[i] - step) > step * .12)) return fail("separación vertical irregular entre semanas");
+      if (rows.slice(1).some((y, i) => Math.abs(y - rows[i] - step) > step * .12)) return fail("separaciÃ³n vertical irregular entre semanas");
     }
     for (let r = 1; r < 3; r++)
-      if (rowGroups[r][0] - rowGroups[r - 1].at(-1)! < cellHeight * 2) return fail("separación insuficiente entre filas de meses");
+      if (rowGroups[r][0] - rowGroups[r - 1].at(-1)! < cellHeight * 2) return fail("separaciÃ³n insuficiente entre filas de meses");
   }
   const panels: AnnualPanel[] = [];
   for (let month = 1; month <= 12; month++) {
@@ -1645,12 +1645,12 @@ function detectModernAnnualPanels(canvas: HTMLCanvasElement, year: number, allow
         let filled = 0, total = 0;
         for (let y = Math.ceil(cy - cellH * .28); y <= Math.floor(cy + cellH * .28); y++)
           for (let x = Math.ceil(cx - cellW * .30); x <= Math.floor(cx + cellW * .30); x++) {
-            if (x < 0 || y < 0 || x >= width || y >= height) return fail("mes " + month + ": cuadrícula fuera de los límites");
+            if (x < 0 || y < 0 || x >= width || y >= height) return fail("mes " + month + ": cuadrÃ­cula fuera de los lÃ­mites");
             total++; filled += originalMask[y * width + x];
           }
         const expectedDate = index >= first && index < first + count;
         if (!total || (expectedDate ? filled / total < .70 : filled / total > .15))
-          return fail("mes " + month + ", posición " + (index + 1) + ": ocupación " + (total ? Math.round(filled / total * 100) : 0) + "%; " + (expectedDate ? "esperaba fecha" : "esperaba hueco"));
+          return fail("mes " + month + ", posiciÃ³n " + (index + 1) + ": ocupaciÃ³n " + (total ? Math.round(filled / total * 100) : 0) + "%; " + (expectedDate ? "esperaba fecha" : "esperaba hueco"));
       }
     }
     // Every actual date must have a rectangle at its expected grid position.
@@ -1658,7 +1658,7 @@ function detectModernAnnualPanels(canvas: HTMLCanvasElement, year: number, allow
     for (let day = 1; day <= daysInMonth(year, month); day++) {
       const index = weekdayMon(year, month, 1) + day - 1;
       if (!cells.some(c => Math.abs(c.x - centers[index % 7]) < cellW * .15 &&
-        Math.abs(c.y - (rows[0] + Math.floor(index / 7) * cellH)) < cellH * .15)) { if (!allowJoinedCells) return fail("mes " + month + ": no se localiza la celda del día " + day); }
+        Math.abs(c.y - (rows[0] + Math.floor(index / 7) * cellH)) < cellH * .15)) { if (!allowJoinedCells) return fail("mes " + month + ": no se localiza la celda del dÃ­a " + day); }
     }
     panels.push(panel);
   }
@@ -1669,7 +1669,7 @@ function detectAnnualPanelsByBands(
   canvas: HTMLCanvasElement,
   year: number,
 ): AnnualPanel[] | null {
-  const fail = (reason: string) => { throw new Error(`ANUAL-V5 · ${reason}`); };
+  const fail = (reason: string) => { throw new Error(`ANUAL-V5 Â· ${reason}`); };
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (!ctx) return fail("sin contexto canvas");
   const { width, height } = canvas,
@@ -1760,11 +1760,11 @@ function detectAnnualPanelsByBands(
       gridTop = band.top - firstActiveWeek * cellH;
 
     // En una semana central los cuatro meses tienen siete celdas completas.
-    // Buscamos esa línea real para obtener los cuatro anchos y márgenes.
+    // Buscamos esa lÃ­nea real para obtener los cuatro anchos y mÃ¡rgenes.
     let runs: ReturnType<typeof panelRunsAt> = [],
       bestCount = 0;
     // La tercera fila puede quedar muy cerca de la leyenda. Recorremos toda
-    // la altura útil de la banda y nos quedamos con una línea que separe
+    // la altura Ãºtil de la banda y nos quedamos con una lÃ­nea que separe
     // claramente los cuatro meses, en vez de probar solo tres alturas fijas.
     const scanTop = Math.max(0, Math.floor(band.top + cellH * 0.15)),
       scanBottom = Math.min(height - 1, Math.ceil(band.bottom - cellH * 0.15)),
@@ -1779,7 +1779,7 @@ function detectAnnualPanelsByBands(
     }
     if (runs.length !== 4)
       return fail(
-        `fila ${row + 1}: ${bestCount} paneles máximo (esperados 4)`,
+        `fila ${row + 1}: ${bestCount} paneles mÃ¡ximo (esperados 4)`,
       );
 
     for (const run of runs) {
@@ -1788,9 +1788,9 @@ function detectAnnualPanelsByBands(
         length = Math.min(width - x, run.end - run.start + 1 + pad * 2),
         cellW = length / 7,
         // La banda de color detectada no representa la altura completa de las
-        // celdas: en fotos comprimidas suele ser solo su núcleo coloreado.
-        // Recuperamos la altura de la cuadrícula a partir del ancho real de
-        // siete columnas, cuya proporción en el calendario TMB es estable.
+        // celdas: en fotos comprimidas suele ser solo su nÃºcleo coloreado.
+        // Recuperamos la altura de la cuadrÃ­cula a partir del ancho real de
+        // siete columnas, cuya proporciÃ³n en el calendario TMB es estable.
         correctedCellH =
           cellH < cellW * 0.28 ? cellW * 0.42 : cellH,
         bandCenter = (band.top + band.bottom) / 2,
@@ -1801,7 +1801,7 @@ function detectAnnualPanelsByBands(
         correctedCellH > cellW * 0.75
       )
         return fail(
-          `fila ${row + 1}: proporción celda ${correctedCellH.toFixed(1)}/${cellW.toFixed(1)}`,
+          `fila ${row + 1}: proporciÃ³n celda ${correctedCellH.toFixed(1)}/${cellW.toFixed(1)}`,
         );
       panels.push({
         x,
@@ -1819,28 +1819,34 @@ function detectStraightAnnualPanels(
   canvas: HTMLCanvasElement,
   year: number,
 ): AnnualPanel[] | null {
-  const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  if (!ctx) return null;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context) return null;
+  const ctx: CanvasRenderingContext2D = context;
   const { width, height } = canvas,
     data = ctx.getImageData(0, 0, width, height).data,
     maxGap = Math.max(3, Math.round(width * 0.004));
-  function runsAt(y: number) {
+
+  function runsAt(y: number, columns: 4 | 6) {
     const runs: { start: number; end: number; density: number }[] = [];
     let start = -1,
       last = -1,
       count = 0,
       gap = 0;
+
     const close = () => {
       if (start < 0) return;
       const length = last - start + 1,
-        density = length > 0 ? count / length : 0;
-      if (length > width * 0.1 && length < width * 0.19 && density > 0.42)
+        density = length > 0 ? count / length : 0,
+        minLength = columns === 6 ? width * 0.1 : width * 0.18,
+        maxLength = columns === 6 ? width * 0.19 : width * 0.29;
+      if (length > minLength && length < maxLength && density > 0.42)
         runs.push({ start, end: last, density });
       start = -1;
       last = -1;
       count = 0;
       gap = 0;
     };
+
     for (let x = 0; x < width; x++) {
       const p = (y * width + x) * 4;
       if (isHeaderColor(data[p], data[p + 1], data[p + 2])) {
@@ -1853,20 +1859,36 @@ function detectStraightAnnualPanels(
     close();
     return runs;
   }
-  const rows: { y: number; runs: ReturnType<typeof runsAt> }[] = [];
-  for (let y = Math.floor(height * 0.02); y < Math.floor(height * 0.9); y++) {
-    const runs = runsAt(y);
-    if (runs.length === 6) rows.push({ y, runs });
-  }
-  if (!rows.length) return null;
-  const top = rows[0],
-    bottom = rows.find((row) => row.y - top.y > height * 0.32);
-  if (!bottom) return null;
-  const aligned = top.runs.every(
-    (run, i) => Math.abs(run.start - bottom.runs[i].start) < width * 0.025,
-  );
-  if (!aligned) return null;
-  const makeRow = (anchor: typeof top, monthOffset: number) => {
+
+  function tryLayout(columns: 4 | 6, rowCount: 2 | 3) {
+    const candidates: { y: number; runs: ReturnType<typeof runsAt> }[] = [];
+    for (let y = Math.floor(height * 0.02); y < Math.floor(height * 0.94); y++) {
+      const runs = runsAt(y, columns);
+      if (runs.length === columns) candidates.push({ y, runs });
+    }
+    if (!candidates.length) return null;
+
+    const anchors: typeof candidates = [];
+    const minRowGap = height * (rowCount === 3 ? 0.18 : 0.32);
+    for (const candidate of candidates) {
+      if (!anchors.length || candidate.y - anchors[anchors.length - 1].y > minRowGap)
+        anchors.push(candidate);
+      if (anchors.length === rowCount) break;
+    }
+    if (anchors.length !== rowCount) return null;
+
+    const reference = anchors[0];
+    const aligned = anchors.slice(1).every((anchor) =>
+      reference.runs.every(
+        (run, i) => Math.abs(run.start - anchor.runs[i].start) < width * 0.035,
+      ),
+    );
+    if (!aligned) return null;
+
+    const makeRow = (
+      anchor: (typeof anchors)[number],
+      monthOffset: number,
+    ): AnnualPanel[] => {
       const pad = Math.max(1, Math.round(width * 0.002));
       return anchor.runs.map((run, index) => {
         const x = Math.max(0, run.start - pad),
@@ -1887,15 +1909,37 @@ function detectStraightAnnualPanels(
           }
           if (total && header / total > 0.46) lastHeader = y;
         }
-        const month = monthOffset + index + 1;
-        const weeks = Math.ceil((weekdayMon(year, month, 1) + daysInMonth(year, month)) / 7);
-        const gridTop = lastHeader + 1;
-        const bottom = findPanelBottom(ctx, x, gridTop + cellW * weeks, length, cellW * .8, canvas);
-        return { x, length, gridTop, cellH: (bottom - gridTop) / weeks };
+        const month = monthOffset + index + 1,
+          weeks = Math.ceil(
+            (weekdayMon(year, month, 1) + daysInMonth(year, month)) / 7,
+          ),
+          gridTop = lastHeader + 1,
+          panelBottom = findPanelBottom(
+            ctx,
+            x,
+            gridTop + cellW * weeks,
+            length,
+            cellW * 0.8,
+            canvas,
+          );
+        return {
+          x,
+          length,
+          gridTop,
+          cellH: (panelBottom - gridTop) / weeks,
+        };
       });
-    },
-    panels = [...makeRow(top, 0), ...makeRow(bottom, 6)];
-  return panels.length === 12 ? panels : null;
+    };
+
+    const panels = anchors.flatMap((anchor, row) =>
+      makeRow(anchor, row * columns),
+    );
+    return panels.length === 12 ? panels : null;
+  }
+
+  // Conserva primero el formato histÃ³rico 6Ã—2 ya probado y aÃ±ade el
+  // calendario recto moderno 4Ã—3 usado por las capturas anuales actuales.
+  return tryLayout(6, 2) || tryLayout(4, 3);
 }
 async function rectifyAnnual(file: File) {
   const bitmap = await createImageBitmap(file),
@@ -2096,13 +2140,13 @@ async function rectifyAnnual(file: File) {
 }
 
 /**
- * Endereza una foto de un calendario mensual sin imponer la proporción del
- * calendario anual. La función queda separada del detector actual para poder
- * probar la rectificación antes de cambiar classifyMonthly().
+ * Endereza una foto de un calendario mensual sin imponer la proporciÃ³n del
+ * calendario anual. La funciÃ³n queda separada del detector actual para poder
+ * probar la rectificaciÃ³n antes de cambiar classifyMonthly().
  *
  * Busca dos bordes horizontales largos del panel y usa sus extremos como un
- * cuadrilátero. El remuestreo bilineal elimina la perspectiva típica de una
- * foto de móvil hecha a una pantalla.
+ * cuadrilÃ¡tero. El remuestreo bilineal elimina la perspectiva tÃ­pica de una
+ * foto de mÃ³vil hecha a una pantalla.
  */
 async function rectifyMonthly(file: File) {
   const bitmap = await createImageBitmap(file),
@@ -2258,12 +2302,12 @@ function auditCycle(
       return {
         ...d,
         baseStatus: expected,
-        note: `Lectura indeterminada; el ciclo de 28 días sugiere ${expected}`,
+        note: `Lectura indeterminada; el ciclo de 28 dÃ­as sugiere ${expected}`,
       };
     if (detected === expected) return { ...d, note: "" };
     return {
       ...d,
-      note: `Cambio visible respecto al ciclo de 28 días: se esperaba ${expected}`,
+      note: `Cambio visible respecto al ciclo de 28 dÃ­as: se esperaba ${expected}`,
     };
   });
 }
@@ -2274,7 +2318,7 @@ function detectPhotographedAnnual(canvas: HTMLCanvasElement, year: number, diagn
   const failures: string[] = [];
   const reject = (reason: string) => failures.push(reason);
   const fail = (reason: string): null => {
-    diagnostic?.push("fotográfico: " + reason);
+    diagnostic?.push("fotogrÃ¡fico: " + reason);
     return null;
   };
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
@@ -2290,7 +2334,7 @@ function detectPhotographedAnnual(canvas: HTMLCanvasElement, year: number, diagn
     search.width = Math.round(originalWidth * searchScale);
     search.height = Math.round(originalHeight * searchScale);
     const searchContext = search.getContext("2d");
-    if (!searchContext) return fail("sin contexto canvas de búsqueda");
+    if (!searchContext) return fail("sin contexto canvas de bÃºsqueda");
     searchContext.drawImage(canvas, 0, 0, search.width, search.height);
   }
   const W = search.width, H = search.height;
@@ -2352,7 +2396,7 @@ function detectPhotographedAnnual(canvas: HTMLCanvasElement, year: number, diagn
       const w=right-left+1,h=bottom-top+1;
       components++; if(w<5)rejectWidth++; else if(h<4)rejectHeight++; else if(w>=W*.12)rejectHuge++; else if(w/h<=1.5||w/h>=4.5)rejectAspect++; else if(count/(w*h)<=.5)rejectDensity++; else cells.push({x:sx/count,y:sy/count,w,h});
     }
-    if(cells.length<100){reject("escala " + scale + ": máscara " + maskCount + " px, tras erosión " + erodedCount + " px, componentes " + components + " (ancho<5 " + rejectWidth + ", alto<4 " + rejectHeight + ", enorme " + rejectHuge + ", proporción " + rejectAspect + ", densidad " + rejectDensity + "), " + cells.length + " celdas candidatas; mínimo 100");continue;}
+    if(cells.length<100){reject("escala " + scale + ": mÃ¡scara " + maskCount + " px, tras erosiÃ³n " + erodedCount + " px, componentes " + components + " (ancho<5 " + rejectWidth + ", alto<4 " + rejectHeight + ", enorme " + rejectHuge + ", proporciÃ³n " + rejectAspect + ", densidad " + rejectDensity + "), " + cells.length + " celdas candidatas; mÃ­nimo 100");continue;}
     const mw=median(cells.map(c=>c.w)),mh=median(cells.map(c=>c.h));
     const usable=cells.filter(c=>c.w>mw*.7&&c.w<mw*1.4&&c.h>mh*.65&&c.h<mh*1.7);
     const angles:number[]=[];
@@ -2360,7 +2404,7 @@ function detectPhotographedAnnual(canvas: HTMLCanvasElement, year: number, diagn
       let dx=usable[j].x-usable[i].x,dy=usable[j].y-usable[i].y;if(dx<0){dx=-dx;dy=-dy;}
       if(dx>mw*.8&&dx<mw*1.5&&Math.abs(dy)<mw*.35)angles.push(Math.atan2(dy,dx));
     }
-    if(angles.length<30){reject("escala " + scale + ": " + angles.length + " relaciones angulares; mínimo 30");continue;}
+    if(angles.length<30){reject("escala " + scale + ": " + angles.length + " relaciones angulares; mÃ­nimo 30");continue;}
     const bins=new Map<number,number[]>();for(const a of angles){const k=Math.round(a/(Math.PI/90));bins.set(k,[...(bins.get(k)||[]),a]);}
     const angle=median([...bins.values()].sort((a,b)=>b.length-a.length)[0]),cos=Math.cos(angle),sin=Math.sin(angle);
     const points=usable.map(c=>({x:c.x*cos+c.y*sin,y:-c.x*sin+c.y*cos})).sort((a,b)=>a.y-b.y);
@@ -2383,7 +2427,7 @@ function detectPhotographedAnnual(canvas: HTMLCanvasElement, year: number, diagn
           if(score/g.length<bestX.score)bestX={score:score/g.length,step,indices};
         }
       }
-      if(bestX.score>.13){reject("escala " + scale + ", fila " + (row + 1) + ": geometría horizontal " + bestX.score.toFixed(3) + " > 0.130");failed=true;break;}
+      if(bestX.score>.13){reject("escala " + scale + ", fila " + (row + 1) + ": geometrÃ­a horizontal " + bestX.score.toFixed(3) + " > 0.130");failed=true;break;}
       const center=g.reduce((s,p)=>s+p.x,0)/g.length;
       let bestY={score:Infinity,step:0,weeks:[] as number[]};
       for(let hi=0;hi<=24;hi++)for(let si=-10;si<=10;si++){
@@ -2394,15 +2438,15 @@ function detectPhotographedAnnual(canvas: HTMLCanvasElement, year: number, diagn
           if(score/g.length<bestY.score)bestY={score:score/g.length,step,weeks};
         }
       }
-      if(bestY.score>.13){reject("escala " + scale + ", fila " + (row + 1) + ": geometría vertical " + bestY.score.toFixed(3) + " > 0.130");failed=true;break;}
+      if(bestY.score>.13){reject("escala " + scale + ", fila " + (row + 1) + ": geometrÃ­a vertical " + bestY.score.toFixed(3) + " > 0.130");failed=true;break;}
       const A=g.map((_,i)=>[1,bestX.indices[i],Math.floor(bestX.indices[i]/7),bestY.weeks[i]]),B=g.map(p=>[p.x,p.y]);
       let keep=g.map(()=>true),coef:number[][]|null=null;
       for(let iter=0;iter<4;iter++){
         coef=solve(A.filter((_,i)=>keep[i]),B.filter((_,i)=>keep[i]));if(!coef)break;
         const model=coef;keep=A.map((a,i)=>{const px=a.reduce((s,v,k)=>s+v*model[k][0],0),py=a.reduce((s,v,k)=>s+v*model[k][1],0);return Math.hypot((g[i].x-px)/bestX.step,(g[i].y-py)/bestY.step)<.22;});
       }
-      if(!coef||keep.filter(Boolean).length<g.length*.75){reject("escala " + scale + ", fila " + (row + 1) + ": ajuste afín insuficiente (" + keep.filter(Boolean).length + "/" + g.length + " puntos)");failed=true;break;}
-      for(let m=0;m<columns;m++){const kept=keep.filter((v,i)=>v&&Math.floor(bestX.indices[i]/7)===m).length;if(kept<8){reject("escala " + scale + ", mes " + (row * columns + m + 1) + ": solo " + kept + " puntos válidos; mínimo 8");failed=true;}}
+      if(!coef||keep.filter(Boolean).length<g.length*.75){reject("escala " + scale + ", fila " + (row + 1) + ": ajuste afÃ­n insuficiente (" + keep.filter(Boolean).length + "/" + g.length + " puntos)");failed=true;break;}
+      for(let m=0;m<columns;m++){const kept=keep.filter((v,i)=>v&&Math.floor(bestX.indices[i]/7)===m).length;if(kept<8){reject("escala " + scale + ", mes " + (row * columns + m + 1) + ": solo " + kept + " puntos vÃ¡lidos; mÃ­nimo 8");failed=true;}}
       if(failed)break;
       // Affine models per observed row handle skew, shear and changing scale.
       // Accept only if every actual date and every empty slot is supported.
@@ -2425,12 +2469,12 @@ function detectPhotographedAnnual(canvas: HTMLCanvasElement, year: number, diagn
         }
         if(!errors&&error<bestError){chosen=offset;bestError=error;}
       }
-      if(chosen===null){reject("escala " + scale + ", fila " + (row + 1) + ": fechas y huecos no validan en ningún desplazamiento");failed=true;break;}
+      if(chosen===null){reject("escala " + scale + ", fila " + (row + 1) + ": fechas y huecos no validan en ningÃºn desplazamiento");failed=true;break;}
       models.push(coef);offsets.push(chosen);totalError+=bestError;
     }
     if(!failed)candidates.push({models,offsets,columns,angle,score:totalError});
   }
-  if(!candidates.length)return fail(failures.length ? failures.join(" | ") : "ninguna geometría candidata válida");
+  if(!candidates.length)return fail(failures.length ? failures.join(" | ") : "ninguna geometrÃ­a candidata vÃ¡lida");
   candidates.sort((a,b)=>a.score-b.score);const best=candidates[0];
   const point=(candidate:typeof best,month:number,x:number,y:number)=>{
     const row=Math.floor(month/candidate.columns),col=month%candidate.columns,c=candidate.models[row],a=[1,col*7+x,col,y+candidate.offsets[row]];
@@ -2445,7 +2489,7 @@ function detectPhotographedAnnual(canvas: HTMLCanvasElement, year: number, diagn
     if(candidate.columns!==best.columns||candidate.score>best.score*1.35+.5)continue;
     for(let m=0;m<12;m++){
     const a=point(best,m,3,2),b=point(candidate,m,3,2);
-    if(Math.hypot(a.x-b.x,a.y-b.y)>Math.hypot(best.models[0][1][0],best.models[0][1][1])*.2)return fail("dos geometrías válidas entran en conflicto");
+    if(Math.hypot(a.x-b.x,a.y-b.y)>Math.hypot(best.models[0][1][0],best.models[0][1][1])*.2)return fail("dos geometrÃ­as vÃ¡lidas entran en conflicto");
     }
   }
   const output=document.createElement("canvas"),cw=48,ch=24,gap=24;
@@ -2458,7 +2502,7 @@ function detectPhotographedAnnual(canvas: HTMLCanvasElement, year: number, diagn
     panels.push({x:left,length:7*cw,gridTop:top,cellH:ch});
     for(let y=0;y<6*ch;y++)for(let x=0;x<7*cw;x++){
       const p=point(best,m,(x+.5)/cw-.5,(y+.5)/ch-.5),sx=Math.round(p.x*originalWidth/W),sy=Math.round(p.y*originalHeight/H);
-      if(sx<0||sy<0||sx>=originalWidth||sy>=originalHeight)return fail("mes " + (m + 1) + ": remapeo fuera de los límites de la imagen");
+      if(sx<0||sy<0||sx>=originalWidth||sy>=originalHeight)return fail("mes " + (m + 1) + ": remapeo fuera de los lÃ­mites de la imagen");
       const from=(sy*originalWidth+sx)*4,to=((top+y)*output.width+left+x)*4;
       for(let k=0;k<4;k++)image.data[to+k]=originalPixels[from+k];
     }
@@ -2480,7 +2524,7 @@ async function classifyAnnual(file: File, year: number) {
   // Historical TMB annual sheets use a straight 6x2 layout. Keep its proven
   // header-based detector ahead of the generic photographed-geometry fallback.
   if (!panels) { const photo = detectPhotographedAnnual(canvas, year, diagnostic); if (photo) { canvas = photo.canvas; panels = photo.panels; } }
-  if (!panels) throw new Error("DIAGNÓSTICO " + originalSize + ". " + diagnostic.join(" · "));
+  if (!panels) throw new Error("DIAGNÃ“STICO " + originalSize + ". " + diagnostic.join(" Â· "));
   // Never silently apply a six-column coordinate template to an unknown layout.
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (!ctx || !panels) return null;
@@ -2673,11 +2717,11 @@ export default function Home() {
     [days, setDays] = useState<DayData[]>(() => makeDays(INITIAL_YEAR, 1));
   const [syncState, setSyncState] = useState<SyncState>("local");
   const [officialRevision, setOfficialRevision] = useState(0);
-  const [calendarStatus, setCalendarStatus] = useState("Cargando calendario oficial…");
+  const [calendarStatus, setCalendarStatus] = useState("Cargando calendario oficialâ€¦");
   const [calendarRetry, setCalendarRetry] = useState(0);
   useEffect(() => {
     let cancelled = false;
-    setCalendarStatus(`Cargando calendario oficial ${year}…`);
+    setCalendarStatus(`Cargando calendario oficial ${year}â€¦`);
     const sourceYears = [year];
     // Only load an adjacent year if saved credited work actually needs its rules.
     try {
@@ -2688,13 +2732,13 @@ export default function Home() {
       if (cancelled) return;
       const missing = calendars.flatMap(c => [...c].filter(([, code]) => code === null).map(([date]) => date));
       setCalendarStatus(missing.length
-        ? `Calendario oficial cargado. Categoría no disponible: ${missing.join(", ")}. Solo quedan pendientes los cálculos que necesiten esas categorías.`
-        : `Calendario oficial ${year} cargado y disponible en esta sesión.`);
+        ? `Calendario oficial cargado. CategorÃ­a no disponible: ${missing.join(", ")}. Solo quedan pendientes los cÃ¡lculos que necesiten esas categorÃ­as.`
+        : `Calendario oficial ${year} cargado y disponible en esta sesiÃ³n.`);
       setOfficialRevision(v => v + 1);
     }).catch(() => {
       if (cancelled) return;
       setOfficialRevision(v => v + 1);
-      setCalendarStatus("No se ha podido cargar el calendario oficial. El reconocimiento de colores sigue disponible; las jornadas sin categoría y sus totales quedan pendientes. Reintenta la carga.");
+      setCalendarStatus("No se ha podido cargar el calendario oficial. El reconocimiento de colores sigue disponible; las jornadas sin categorÃ­a y sus totales quedan pendientes. Reintenta la carga.");
     });
     return () => { cancelled = true; };
   }, [year, calendarRetry]);
@@ -2708,7 +2752,7 @@ export default function Home() {
     [busy, setBusy] = useState(false),
     [detectorVersion, setDetectorVersion] = useState(0),
     [message, setMessage] = useState(
-      "Sube el calendario anual para crear la previsión completa.",
+      "Sube el calendario anual para crear la previsiÃ³n completa.",
     );
   const [selected, setSelected] = useState<DayData | null>(null),
     [periodKind, setPeriodKind] = useState<PeriodKind>("VACACIONES"),
@@ -2765,18 +2809,18 @@ export default function Home() {
         setMessage(
           Object.keys(normalized).length
             ? detectorIsCurrent
-              ? `Previsión anual recuperada · detector v${ANNUAL_DETECTOR_VERSION}.`
-              : "Este año se analizó con un detector anterior. Vuelve a subir el calendario anual y pulsa Crear previsión."
-            : "Sube el calendario anual para crear la previsión completa.",
+              ? `PrevisiÃ³n anual recuperada Â· detector v${ANNUAL_DETECTOR_VERSION}.`
+              : "Este aÃ±o se analizÃ³ con un detector anterior. Vuelve a subir el calendario anual y pulsa Crear previsiÃ³n."
+            : "Sube el calendario anual para crear la previsiÃ³n completa.",
         );
         return;
       } catch {}
     setDetectorVersion(0);
     setPlan({});
     setDays(makeDays(y, month));
-    setMessage("Sube el calendario anual para crear la previsión completa.");
+    setMessage("Sube el calendario anual para crear la previsiÃ³n completa.");
   }
-  // Primero sincroniza la copia compartida y después carga el año ya convergido.
+  // Primero sincroniza la copia compartida y despuÃ©s carga el aÃ±o ya convergido.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     (async () => {
@@ -2893,7 +2937,7 @@ export default function Home() {
     if (annualPreview) URL.revokeObjectURL(annualPreview);
     setAnnualFile(f);
     setAnnualPreview(URL.createObjectURL(f));
-    setMessage("Calendario anual preparado. Pulsa Crear previsión.");
+    setMessage("Calendario anual preparado. Pulsa Crear previsiÃ³n.");
   }
   function chooseMonthly(f: File) {
     if (monthlyPreview) URL.revokeObjectURL(monthlyPreview);
@@ -2923,7 +2967,7 @@ export default function Home() {
     }
     setBusy(true);
     setProgress(12);
-    setMessage("Leyendo los doce meses…");
+    setMessage("Leyendo los doce mesesâ€¦");
     try {
       // The annual request is shared with the screen loader, never per cell.
       await officialCalendar.load(year).catch(() => undefined);
@@ -2949,14 +2993,14 @@ export default function Home() {
         0,
       );
       setMessage(
-        `Detector v${ANNUAL_DETECTOR_VERSION} · Previsión de ${year} creada: ${total} días. Lecturas dudosas: ${found.uncertain} (por mes: ${found.uncertainByMonth.join(" · ")}).${found.uncertain ? ` Días dudosos: ${found.uncertainDaysByMonth.join(" · ")}.` : ""} Diferencias visibles respecto al ciclo base: ${found.cycleDifferences} (informativas; pueden ser vacaciones, permisos, festivos u otras excepciones reales).`,
+        `Detector v${ANNUAL_DETECTOR_VERSION} Â· PrevisiÃ³n de ${year} creada: ${total} dÃ­as. Lecturas dudosas: ${found.uncertain} (por mes: ${found.uncertainByMonth.join(" Â· ")}).${found.uncertain ? ` DÃ­as dudosos: ${found.uncertainDaysByMonth.join(" Â· ")}.` : ""} Diferencias visibles respecto al ciclo base: ${found.cycleDifferences} (informativas; pueden ser vacaciones, permisos, festivos u otras excepciones reales).`,
       );
     } catch (error) {
       const detail =
         error instanceof Error && error.message
           ? error.message
           : "error anual desconocido";
-      console.error("[Còmput AAC] Error al analizar calendario anual:", error);
+      console.error("[CÃ²mput AAC] Error al analizar calendario anual:", error);
       setMessage(`No he podido localizar con seguridad los doce calendarios. ${detail}`);
 
     } finally {
@@ -2970,13 +3014,13 @@ export default function Home() {
     }
     setBusy(true);
     setProgress(15);
-    setMessage("Comprobando el mes…");
+    setMessage("Comprobando el mesâ€¦");
     try {
       await officialCalendar.load(year).catch(() => undefined);
       const found = await classifyMonthly(monthlyFile, year, month);
       if (!found)
         throw new Error(
-          "DIAGNÓSTICO: no se ha podido localizar una cuadrícula mensual válida.",
+          "DIAGNÃ“STICO: no se ha podido localizar una cuadrÃ­cula mensual vÃ¡lida.",
         );
       const read = makeDays(year, month).map((d) => {
           const status = found.get(d.day) || "REVISAR";
@@ -3006,7 +3050,7 @@ export default function Home() {
       setCalendarRetry(v => v + 1);
       setProgress(100);
       setMessage(
-        `${next.length} días reconocidos. ${next.filter((d) => needsReview(d.status)).length} pendientes.`,
+        `${next.length} dÃ­as reconocidos. ${next.filter((d) => needsReview(d.status)).length} pendientes.`,
       );
     } catch (error) {
       const detail =
@@ -3015,8 +3059,8 @@ export default function Home() {
           : typeof error === "string" && error
             ? error
             : "error desconocido";
-      console.error("[Còmput AAC] Error al analizar captura mensual:", error);
-      setMessage(`DIAG-MES-2 · ${detail}`);
+      console.error("[CÃ²mput AAC] Error al analizar captura mensual:", error);
+      setMessage(`DIAG-MES-2 Â· ${detail}`);
     } finally {
       setBusy(false);
     }
@@ -3031,7 +3075,7 @@ export default function Home() {
       start.getFullYear() !== year ||
       end.getFullYear() !== year
     ) {
-      setMessage(`Indica un intervalo válido dentro de ${year}.`);
+      setMessage(`Indica un intervalo vÃ¡lido dentro de ${year}.`);
       return;
     }
     let applied = 0,
@@ -3110,7 +3154,7 @@ export default function Home() {
     }
     if (!applied) {
       setMessage(
-        "El periodo no contiene días laborables disponibles para asignar.",
+        "El periodo no contiene dÃ­as laborables disponibles para asignar.",
       );
       return;
     }
@@ -3132,7 +3176,7 @@ export default function Home() {
     setPeriodEnd("");
     setEditingPeriodId(null);
     setMessage(
-      `${statusLabel[periodKind]} registrado en ${applied} días laborables. Los DCOM y FEST originales se conservan.`,
+      `${statusLabel[periodKind]} registrado en ${applied} dÃ­as laborables. Los DCOM y FEST originales se conservan.`,
     );
   }
   function editPeriod(record: PeriodRecord) {
@@ -3156,7 +3200,7 @@ export default function Home() {
       setPeriodEnd("");
     }
     setMessage(
-      "Periodo eliminado y sus días restaurados a la planificación original.",
+      "Periodo eliminado y sus dÃ­as restaurados a la planificaciÃ³n original.",
     );
   }
   function updateSelected() {
@@ -3170,7 +3214,7 @@ export default function Home() {
     );
     setSelected(null);
     setMessage(
-      "Corrección aplicada. La previsión mensual y anual se ha actualizado.",
+      "CorrecciÃ³n aplicada. La previsiÃ³n mensual y anual se ha actualizado.",
     );
   }
   function restoreSelected() {
@@ -3183,7 +3227,7 @@ export default function Home() {
         ),
       );
       setSelected(null);
-      setMessage("Día restaurado a la planificación anual original.");
+      setMessage("DÃ­a restaurado a la planificaciÃ³n anual original.");
     }
   }
   function toggleConfirmed(m: number) {
@@ -3240,7 +3284,7 @@ export default function Home() {
       .catch(() => setSyncState(navigator.onLine ? "error" : "offline"));
     setDetectorVersion(0);
     setMessage(
-      "Previsión anual e imágenes cargadas vaciadas. Puedes volver a importar el calendario.",
+      "PrevisiÃ³n anual e imÃ¡genes cargadas vaciadas. Puedes volver a importar el calendario.",
     );
   }
 
@@ -3384,7 +3428,7 @@ export default function Home() {
         (n) => n >= 1 && n <= days.length,
       );
       out.push({
-        label: `${Math.min(...nums)}–${Math.max(...nums)} ${MONTHS[month - 1].slice(0, 3).toLowerCase()}.`,
+        label: `${Math.min(...nums)}â€“${Math.max(...nums)} ${MONTHS[month - 1].slice(0, 3).toLowerCase()}.`,
         total: nums.reduce(
           (a, n) => a + (calculations.find((x) => x.d.day === n)?.c.value ?? 0),
           0,
@@ -3426,17 +3470,17 @@ export default function Home() {
             </div>
             <div className="min-w-0">
               <p className="text-xs font-semibold uppercase tracking-[.22em] text-[#71d7cc]">
-                Ciclo {profile.fiestaLetter} · {" "}
-                {profileLabel(profile)} · versión {APP_BUILD} ·{" "}
+                Ciclo {profile.fiestaLetter} Â· {" "}
+                {profileLabel(profile)} Â· versiÃ³n {APP_BUILD} Â·{" "}
                 <span className={syncState === "syncing" ? "text-[#eeb64b]" : ""}>
-                  {syncState === "synced" ? "☁ sincronizado" : syncState === "syncing" ? "☁ sincronizando…" : syncState === "offline" ? "☁ sin conexión" : syncState === "error" ? "☁ pendiente" : "☁ local"}
+                  {syncState === "synced" ? "â˜ sincronizado" : syncState === "syncing" ? "â˜ sincronizandoâ€¦" : syncState === "offline" ? "â˜ sin conexiÃ³n" : syncState === "error" ? "â˜ pendiente" : "â˜ local"}
                 </span>
                 {!isFullTime(profile) && profile.contract === "75" && profile.subturn
-                  ? ` · ${profile.subturn}`
+                  ? ` Â· ${profile.subturn}`
                   : ""}
               </p>
               <h1 className="text-base font-bold tracking-tight sm:text-lg lg:text-xl">
-                Cómputo AAC{" "}
+                CÃ³mputo AAC{" "}
                 <span className="text-[#eeb64b]">
                   {profile.name} - {profile.employeeNumber}
                 </span>
@@ -3456,16 +3500,16 @@ export default function Home() {
             </Button>
             <Badge className="border border-white/15 bg-white/5 px-3 py-1.5 text-white/70">
               {annualWorkdays
-                ? `${annualWorkdays} días · ${year}`
-                : `Días por definir · ${year}`}
+                ? `${annualWorkdays} dÃ­as Â· ${year}`
+                : `DÃ­as por definir Â· ${year}`}
             </Badge>
             <div className="annual-hours" aria-label={`Horas anuales de ${year}`}>
               <span>
-                Teóricas · {profileLabel(profile)}: <b>{annualTheoreticalHours === undefined ? "por confirmar" : formatHours(annualTheoreticalHours)}</b>
+                TeÃ³ricas Â· {profileLabel(profile)}: <b>{annualTheoreticalHours === undefined ? "por confirmar" : formatHours(annualTheoreticalHours)}</b>
               </span>
               <span title="Suma de Horas ordinarias de los meses cargados, incluidos los futuros.">
-                Horas previstas · calendario {year}: <b>{Object.keys(plan).length ? formatHours(annualOrdinaryHours) : "sin calendario"}</b>
-                {Object.keys(plan).length > 0 && (!planReady || allCurrentDays.some((d) => needsReview(d.status))) && " · provisional"}
+                Horas previstas Â· calendario {year}: <b>{Object.keys(plan).length ? formatHours(annualOrdinaryHours) : "sin calendario"}</b>
+                {Object.keys(plan).length > 0 && (!planReady || allCurrentDays.some((d) => needsReview(d.status))) && " Â· provisional"}
               </span>
             </div>
           </div>
@@ -3475,7 +3519,7 @@ export default function Home() {
         {calendarStatus}
         <Button variant="ghost" onClick={() => setCalendarRetry(v => v + 1)}>Reintentar calendario oficial</Button>
       </div>
-      {isFullTime(profile) && <p className="mx-auto max-w-[1500px] px-4 pt-4 text-sm text-amber-200 md:px-8">Tiempo completo · previsión de horarios. Cómputo y conceptos retributivos pendientes de validar.{["T1", "T2"].includes(profileTurn(profile)) && " Sábados y non stop: horario histórico por confirmar."}</p>}
+      {isFullTime(profile) && <p className="mx-auto max-w-[1500px] px-4 pt-4 text-sm text-amber-200 md:px-8">Tiempo completo Â· previsiÃ³n de horarios. CÃ³mputo y conceptos retributivos pendientes de validar.{["T1", "T2"].includes(profileTurn(profile)) && " SÃ¡bados y non stop: horario histÃ³rico por confirmar."}</p>}
       <div className="mx-auto max-w-[1500px] px-4 pt-5 md:px-8">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex rounded-xl border border-white/10 bg-[#0b2029] p-1">
@@ -3485,7 +3529,7 @@ export default function Home() {
               onClick={() => setScreen("year")}
             >
               <CalendarRange size={16} />
-              Previsión anual
+              PrevisiÃ³n anual
             </Button>
             <Button
               size="sm"
@@ -3496,14 +3540,14 @@ export default function Home() {
               Detalle mensual
             </Button>
           </div>
-          <div className="year-selector" aria-label="Seleccionar año">
-            <span>Año</span>
+          <div className="year-selector" aria-label="Seleccionar aÃ±o">
+            <span>AÃ±o</span>
             <Button
               size="icon"
               variant="ghost"
               disabled={year <= 2000}
               onClick={() => loadYear(year - 1)}
-              aria-label="Año anterior"
+              aria-label="AÃ±o anterior"
             >
               <ChevronLeft size={24} strokeWidth={3.5} />
             </Button>
@@ -3513,7 +3557,7 @@ export default function Home() {
               variant="ghost"
               disabled={year >= 2035}
               onClick={() => loadYear(year + 1)}
-              aria-label="Año siguiente"
+              aria-label="AÃ±o siguiente"
             >
               <ChevronRight size={24} strokeWidth={3.5} />
             </Button>
@@ -3548,11 +3592,11 @@ export default function Home() {
                     disabled={busy}
                     className="bg-[#eeb64b] font-bold text-[#112128] hover:bg-[#ffd173]"
                   >
-                    {busy ? "Analizando…" : "Crear previsión"}
+                    {busy ? "Analizandoâ€¦" : "Crear previsiÃ³n"}
                   </Button>
                   <Button variant="outline" onClick={resetYear}>
                     <RotateCcw size={16} />
-                    Vaciar año
+                    Vaciar aÃ±o
                   </Button>
                 </div>
               </TabsContent>
@@ -3613,10 +3657,10 @@ export default function Home() {
               <CalendarRange className="text-[#71d7cc]" size={19} />
               <div>
                 <h2 className="font-semibold">
-                  {editingPeriodId ? "Editar periodo" : "Añadir periodo"}
+                  {editingPeriodId ? "Editar periodo" : "AÃ±adir periodo"}
                 </h2>
                 <p className="text-xs text-white/40">
-                  Vacaciones, mini o días pendientes
+                  Vacaciones, mini o dÃ­as pendientes
                 </p>
               </div>
             </div>
@@ -3634,14 +3678,14 @@ export default function Home() {
                     <SelectItem value="VACACIONES">Vacaciones</SelectItem>
                     <SelectItem value="MINI">Mini</SelectItem>
                     <SelectItem value="VAC_ANTERIOR">
-                      Año/s anterior/es
+                      AÃ±o/s anterior/es
                     </SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               {periodKind === "VAC_ANTERIOR" && (
                 <div>
-                  <Label>Origen del día pendiente</Label>
+                  <Label>Origen del dÃ­a pendiente</Label>
                   <Select
                     value={priorOrigin}
                     onValueChange={(v) => setPriorOrigin(v as PriorOrigin)}
@@ -3694,7 +3738,7 @@ export default function Home() {
               >
                 {editingPeriodId
                   ? "Actualizar periodo"
-                  : "Aplicar a días laborables"}
+                  : "Aplicar a dÃ­as laborables"}
               </Button>
               {editingPeriodId && (
                 <Button
@@ -3706,7 +3750,7 @@ export default function Home() {
                     setPeriodEnd("");
                   }}
                 >
-                  Cancelar edición
+                  Cancelar ediciÃ³n
                 </Button>
               )}
               <p className="text-xs leading-5 text-white/35">
@@ -3716,7 +3760,7 @@ export default function Home() {
             </div>
             {periods.length > 0 && (
               <div className="mt-5 border-t border-white/8 pt-4">
-                <p className="eyebrow mb-2">Periodos añadidos</p>
+                <p className="eyebrow mb-2">Periodos aÃ±adidos</p>
                 <div className="space-y-2">
                   {periods.map((p) => {
                     const applied = allCurrentDays.filter(
@@ -3731,7 +3775,7 @@ export default function Home() {
                           <div>
                             <b className="text-sm">{statusLabel[p.kind]}</b>
                             <p className="mt-1 text-xs text-white/45">
-                              {p.start.split("-").reverse().join("/")} –{" "}
+                              {p.start.split("-").reverse().join("/")} â€“{" "}
                               {p.end.split("-").reverse().join("/")}
                             </p>
                             {p.priorOrigin && (
@@ -3762,7 +3806,7 @@ export default function Home() {
                           </div>
                         </div>
                         <p className="mt-2 text-xs text-[#8ee9df]">
-                          {applied} días laborables asignados
+                          {applied} dÃ­as laborables asignados
                         </p>
                       </div>
                     );
@@ -3773,11 +3817,11 @@ export default function Home() {
           </section>
           <section className="panel overflow-hidden">
             <div className="border-b border-white/8 p-5">
-              <p className="eyebrow">Previsión cómputo anual</p>
+              <p className="eyebrow">PrevisiÃ³n cÃ³mputo anual</p>
               <div className="mt-2 flex items-end justify-between">
                 <div>
                   <p className="text-4xl font-black tabular-nums">
-                    {planReady ? balanceLabel(profile, annual) : "—"}
+                    {planReady ? balanceLabel(profile, annual) : "â€”"}
                   </p>
                   <p className="text-sm text-white/50">Total anual {year}</p>
                   {incomingPreviousCreditMinutes > 0 && (
@@ -3798,23 +3842,23 @@ export default function Home() {
                 <div
                   className={`score-ring ${annual >= 0 ? "positive" : "negative"}`}
                 >
-                  {planReady && !isFullTime(profile) ? "✓" : "?"}
+                  {planReady && !isFullTime(profile) ? "âœ“" : "?"}
                 </div>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-px bg-white/8">
               <Stat label="Meses confirmados" value={`${confirmed}/12`} />
               <Stat
-                label="Vacaciones del año"
+                label="Vacaciones del aÃ±o"
                 value={
                   vacationSatisfiedDays
-                    ? `${vacationSatisfiedDays}/22 · ${vacationOwed ? `Se te debe ${vacationOwed}` : "Completo"}${followingYearVacationUse ? ` · ${followingYearVacationUse} usados en ${year + 1}` : ""}`
+                    ? `${vacationSatisfiedDays}/22 Â· ${vacationOwed ? `Se te debe ${vacationOwed}` : "Completo"}${followingYearVacationUse ? ` Â· ${followingYearVacationUse} usados en ${year + 1}` : ""}`
                     : "Sin asignar"
                 }
               />
               <Stat
-                label="Años anteriores usados"
-                value={`${priorUsed} días`}
+                label="AÃ±os anteriores usados"
+                value={`${priorUsed} dÃ­as`}
               />
               <div className="bg-[#0c2028] p-4">
                 <Label
@@ -3899,7 +3943,7 @@ export default function Home() {
           }}
         >
           <DialogHeader>
-            <a href="https://roberfernandez.github.io/tmb-agent/" className="inline-flex min-h-11 items-center self-start text-sm text-white/80 hover:text-white">← TMB Agent</a>
+            <a href="https://roberfernandez.github.io/tmb-agent/" className="inline-flex min-h-11 items-center self-start text-sm text-white/80 hover:text-white">â† TMB Agent</a>
             <div className="profile-dialog-icon">
               <CalendarDays size={28} />
             </div>
@@ -3907,7 +3951,7 @@ export default function Home() {
               Configura tu perfil AAC
             </DialogTitle>
             <DialogDescription className="text-white/50">
-              Estos datos personalizan tus previsiones y se guardan únicamente
+              Estos datos personalizan tus previsiones y se guardan Ãºnicamente
               en este dispositivo.
             </DialogDescription>
           </DialogHeader>
@@ -3922,10 +3966,10 @@ export default function Home() {
                 </button>)}
               </div>
               {isFullTime(profileDraft) && <p className="mt-2 text-sm text-[#eeb64b]">
-                100 % · {theoreticalHours(year, profileDraft) === undefined ? "Horas por confirmar" : formatHours(theoreticalHours(year, profileDraft)!)} en {year}.
+                100 % Â· {theoreticalHours(year, profileDraft) === undefined ? "Horas por confirmar" : formatHours(theoreticalHours(year, profileDraft)!)} en {year}.
                 {profileTurn(profileDraft) === "T5" ? " Solo T5 normal; inversos no incluidos." : ""}
-                {" "}Horario ordinario {FULL_TIME_SHIFTS[profileTurn(profileDraft) as keyof typeof FULL_TIME_SHIFTS].start}–{FULL_TIME_SHIFTS[profileTurn(profileDraft) as keyof typeof FULL_TIME_SHIFTS].end}.
-                {" "}Cómputo y compensaciones pendientes de validar.
+                {" "}Horario ordinario {FULL_TIME_SHIFTS[profileTurn(profileDraft) as keyof typeof FULL_TIME_SHIFTS].start}â€“{FULL_TIME_SHIFTS[profileTurn(profileDraft) as keyof typeof FULL_TIME_SHIFTS].end}.
+                {" "}CÃ³mputo y compensaciones pendientes de validar.
               </p>}
             </div>
             <div className="sm:col-span-2">
@@ -3944,7 +3988,7 @@ export default function Home() {
               </div>
             </div>
             <div>
-              <Label htmlFor="profile-employee">Número de empleado</Label>
+              <Label htmlFor="profile-employee">NÃºmero de empleado</Label>
               <div className="profile-input">
                 <IdCard size={17} />
                 <Input
@@ -4013,7 +4057,7 @@ export default function Home() {
                 )}
               </div>
               <p className="mt-2 text-xs leading-5 text-white/35">
-                Los cómputos se calculan con el horario oficial correspondiente
+                Los cÃ³mputos se calculan con el horario oficial correspondiente
                 al contrato.
               </p>
             </div>}
@@ -4039,7 +4083,7 @@ export default function Home() {
                   ))}
                 </div>
                 <p className="mt-2 text-xs text-[#eeb64b]">
-                  El subturno determina la hora de entrada, salida, cómputo y
+                  El subturno determina la hora de entrada, salida, cÃ³mputo y
                   nocturnidad.
                 </p>
               </div>
@@ -4063,17 +4107,17 @@ export default function Home() {
               Editar {selected?.day} de {MONTHS[month - 1]}
             </DialogTitle>
             <DialogDescription className="text-white/50">
-              La planificación anual original se conserva y podrás restaurarla.
+              La planificaciÃ³n anual original se conserva y podrÃ¡s restaurarla.
             </DialogDescription>
           </DialogHeader>
           {selected && (
             <div className="space-y-4">
               <div className="rounded-xl border border-white/8 bg-white/4 p-3 text-sm">
-                <span className="text-white/45">Planificación original: </span>
+                <span className="text-white/45">PlanificaciÃ³n original: </span>
                 <b>{statusLabel[selected.baseStatus]}</b>
               </div>
               <div>
-                <Label>Situación actual</Label>
+                <Label>SituaciÃ³n actual</Label>
                 <Select
                   value={
                     selected.special !== "NINGUNA"
@@ -4149,10 +4193,10 @@ export default function Home() {
                         </SelectItem>
                       ))}
                     <SelectItem value="status:VACACIONES">
-                      Vacaciones año actual
+                      Vacaciones aÃ±o actual
                     </SelectItem>
                     <SelectItem value="prior:VACACIONES">
-                      Vacaciones año anterior
+                      Vacaciones aÃ±o anterior
                     </SelectItem>
                     {Object.entries(priorSituationLabel).map(
                       ([value, label]) =>
@@ -4172,36 +4216,36 @@ export default function Home() {
                 {selected.special !== "NINGUNA" && (
                   <div className="mt-2 rounded-lg border border-[#eeb64b]/20 bg-[#eeb64b]/7 px-3 py-2 text-xs">
                     <span className="text-white/45">
-                      Combinación aplicada:{" "}
+                      CombinaciÃ³n aplicada:{" "}
                     </span>
                     <b className="text-[#ffd173]">
-                      {statusLabel[selected.status]} ·{" "}
+                      {statusLabel[selected.status]} Â·{" "}
                       {specialLabel[selected.special]}
                     </b>
                   </div>
                 )}
                 <p className="mt-2 rounded-xl border border-[#eeb64b]/25 p-3 text-sm">
-                  Categoría oficial TMB: {officialCategory(year, month, selected.day)?.replaceAll("_", " ") || "No disponible · cómputo pendiente"}.
+                  CategorÃ­a oficial TMB: {officialCategory(year, month, selected.day)?.replaceAll("_", " ") || "No disponible Â· cÃ³mputo pendiente"}.
                   Se consulta por fecha y no se modifica desde el calendario personal.
                 </p>
               </div>
               {selected.status === "COMPUTO_ANTERIOR" && (
                 <div className="rounded-xl border border-[#eeb64b]/25 bg-[#eeb64b]/8 p-3 text-xs leading-5 text-white/65">
-                  <b className="text-[#ffd173]">Se aplicará a {year - 1}.</b> La
-                  jornada quedará a 0,00 en el cómputo de {year} y compensará el
+                  <b className="text-[#ffd173]">Se aplicarÃ¡ a {year - 1}.</b> La
+                  jornada quedarÃ¡ a 0,00 en el cÃ³mputo de {year} y compensarÃ¡ el
                   saldo anual anterior.
                 </div>
               )}
               {selected.status === "COMPUTO_ACTUAL" && (
                 <div className="rounded-xl border border-[#71d7cc]/25 bg-[#71d7cc]/8 p-3 text-xs leading-5 text-white/65">
-                  <b className="text-[#8ee9df]">Se aplicará a {year}.</b> La
-                  jornada completa se añadirá al cómputo anual actual.
+                  <b className="text-[#8ee9df]">Se aplicarÃ¡ a {year}.</b> La
+                  jornada completa se aÃ±adirÃ¡ al cÃ³mputo anual actual.
                 </div>
               )}
               {selected.special === "MODIFICACION" && (
                 <div className="space-y-3 rounded-xl border border-white/8 bg-white/3 p-3">
                   <div>
-                    <Label>Cómo se modifica</Label>
+                    <Label>CÃ³mo se modifica</Label>
                     <Select
                       value={selected.modificationPlacement || "FINAL"}
                       onValueChange={(value) =>
@@ -4258,7 +4302,7 @@ export default function Home() {
                     </div>
                   ) : (
                     <div>
-                      <Label>Variación de horas</Label>
+                      <Label>VariaciÃ³n de horas</Label>
                       <Input
                         className="compute-edit"
                         type="number"
@@ -4272,7 +4316,7 @@ export default function Home() {
                         }
                       />
                       <p className="mt-1 text-xs text-white/40">
-                        Positivo: trabajas más · negativo: trabajas menos.
+                        Positivo: trabajas mÃ¡s Â· negativo: trabajas menos.
                       </p>
                     </div>
                   )}
@@ -4285,7 +4329,7 @@ export default function Home() {
                   onChange={(e) =>
                     setSelected({ ...selected, note: e.target.value })
                   }
-                  placeholder="Permiso, incidencia, motivo…"
+                  placeholder="Permiso, incidencia, motivoâ€¦"
                 />
               </div>
               <div className="grid grid-cols-2 gap-2">
@@ -4358,10 +4402,10 @@ function UploadBox({
         </label>
         <label className="native-file-button">
           <Images size={17} />
-          <span>Galería</span>
+          <span>GalerÃ­a</span>
           <input
             className="native-file-input"
-            aria-label="Elegir de la galería"
+            aria-label="Elegir de la galerÃ­a"
             type="file"
             accept="image/*"
             onChange={choose}
@@ -4407,13 +4451,13 @@ function AnnualView({
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/8 px-5 py-4 md:px-6">
         <div>
-          <p className="eyebrow">Mapa del año</p>
+          <p className="eyebrow">Mapa del aÃ±o</p>
           <h2 className="mt-1 text-xl font-bold">
-            Previsión mensual de {year}
+            PrevisiÃ³n mensual de {year}
           </h2>
         </div>
         <Badge variant="outline" className="border-[#eeb64b]/30 text-[#ffd173]">
-          Previsión actualizada
+          PrevisiÃ³n actualizada
         </Badge>
       </div>
       {Object.keys(plan).length ? (
@@ -4439,19 +4483,19 @@ function AnnualView({
                         <PencilLine size={17} />
                       )}
                     </div>
-                    <strong>{p ? balanceLabel(profile, monthTotals[m]) : "—"}</strong>
+                    <strong>{p ? balanceLabel(profile, monthTotals[m]) : "â€”"}</strong>
                     {!!p && (!Number.isFinite(monthNightHours[m]) || showMonthlyConcept(monthNightHours[m])) && <div className="annual-night">
                       <span>
                         <Moon size={12} />
                         Nocturnidad variable
                       </span>
-                      <b>{p ? nightLabel(profile, monthNightHours[m]) : "—"}</b>
+                      <b>{p ? nightLabel(profile, monthNightHours[m]) : "â€”"}</b>
                     </div>}
                     {!!p && specialRetributiveDaysCount(p.days, year, m) > 0 && (
                       <div className="annual-night">
                         <span>
                           <CalendarDays size={12} />
-                          Días especiales:
+                          DÃ­as especiales:
                         </span>
                         <b>{specialRetributiveDaysCount(p.days, year, m)}</b>
                       </div>
@@ -4476,8 +4520,8 @@ function AnnualView({
               value={formatHours(annualOrdinaryHours)}
             />
             <AnnualStat
-              label="Porcentaje de contratación"
-              value={`${profileLabel(profile)}${!isFullTime(profile) && profile.contract === "75" && profile.subturn ? ` · ${profile.subturn}` : ""}`}
+              label="Porcentaje de contrataciÃ³n"
+              value={`${profileLabel(profile)}${!isFullTime(profile) && profile.contract === "75" && profile.subturn ? ` Â· ${profile.subturn}` : ""}`}
             />
             <AnnualStat
               label="Nocturnidad variable anual"
@@ -4495,9 +4539,9 @@ function AnnualView({
       ) : (
         <div className="empty-year">
           <CalendarRange size={48} />
-          <h3>Aún no hay una previsión anual</h3>
+          <h3>AÃºn no hay una previsiÃ³n anual</h3>
           <p>
-            Sube el calendario completo de TMB y la aplicación calculará los
+            Sube el calendario completo de TMB y la aplicaciÃ³n calcularÃ¡ los
             doce meses de una vez.
           </p>
         </div>
@@ -4556,7 +4600,7 @@ function MonthView({
     <>
       <div className="month-view-header">
         <div className="month-heading">
-          <p className="eyebrow">Previsión editable</p>
+          <p className="eyebrow">PrevisiÃ³n editable</p>
           <div className="month-navigation">
             <Button
               size="icon"
@@ -4569,7 +4613,7 @@ function MonthView({
               <ChevronLeft size={27} strokeWidth={3} />
             </Button>
             <h2>
-              {MONTHS[month - 1]} de {year} ·{" "}
+              {MONTHS[month - 1]} de {year} Â·{" "}
               <span className="text-[#eeb64b]">{balanceLabel(profile, monthTotal)}</span>
             </h2>
             <Button
@@ -4609,11 +4653,11 @@ function MonthView({
             <div className="month-kpi special">
               <span>
                 <CalendarDays size={13} />
-                Días especiales
+                DÃ­as especiales
               </span>
               <strong>
                 {monthSpecialRetributiveDays}{" "}
-                {monthSpecialRetributiveDays === 1 ? "día" : "días"}
+                {monthSpecialRetributiveDays === 1 ? "dÃ­a" : "dÃ­as"}
               </strong>
             </div>
           )}
@@ -4630,19 +4674,19 @@ function MonthView({
             </div>
           )}
           <div className="month-kpi payroll">
-            <span><CalendarDays size={13} /> Plus Convenio{isFullTime(profile) ? " · provisional" : ""}</span>
-            <strong>{monthPlusConvenio} {monthPlusConvenio === 1 ? "día" : "días"}</strong>
-            {review > 0 && <span>Provisional · hay días por revisar</span>}
+            <span><CalendarDays size={13} /> Plus Convenio{isFullTime(profile) ? " Â· provisional" : ""}</span>
+            <strong>{monthPlusConvenio} {monthPlusConvenio === 1 ? "dÃ­a" : "dÃ­as"}</strong>
+            {review > 0 && <span>Provisional Â· hay dÃ­as por revisar</span>}
           </div>
           <Badge variant="outline" className="whitespace-normal border-white/15 text-white/60">
-            {worked} trabajados · {review} pendientes de revisión
-            {isFullTime(profile) && ` · ${calculations.filter(({ c }) => c.scheduleReview).length} horarios por confirmar`}
+            {worked} trabajados Â· {review} pendientes de revisiÃ³n
+            {isFullTime(profile) && ` Â· ${calculations.filter(({ c }) => c.scheduleReview).length} horarios por confirmar`}
           </Badge>
         </div>
       </div>
       {isFullTime(profile) && <p className="mx-4 mt-4 rounded-lg border border-amber-400/30 p-3 text-sm text-amber-200" role="status">
-        {profileLabel(profile)} · Las horas son una previsión de horario. El saldo, la nocturnidad abonable, la Hora Nona y los abonos por ausencias están pendientes de validar.
-        {["T1", "T2"].includes(profileTurn(profile)) && " Los sábados y non stop usan un horario histórico por confirmar; puedes corregir la jornada en cada día."}
+        {profileLabel(profile)} Â· Las horas son una previsiÃ³n de horario. El saldo, la nocturnidad abonable, la Hora Nona y los abonos por ausencias estÃ¡n pendientes de validar.
+        {["T1", "T2"].includes(profileTurn(profile)) && " Los sÃ¡bados y non stop usan un horario histÃ³rico por confirmar; puedes corregir la jornada en cada dÃ­a."}
       </p>}
       <Tabs defaultValue="calendar" className="p-4 md:p-6">
         <TabsList className="mb-5 bg-[#0b2029]">
@@ -4699,8 +4743,8 @@ function MonthView({
           <p className="mt-4 text-xs text-white/38">
             La marca de festivo y NS proceden del calendario oficial TMB.
             Los colores personales siguen identificando trabajo, descanso y ausencias. El punto dorado
-            identifica días modificados. D.ESP marca un día especial
-            retributivo confirmado; es informativo y no altera el cómputo.
+            identifica dÃ­as modificados. D.ESP marca un dÃ­a especial
+            retributivo confirmado; es informativo y no altera el cÃ³mputo.
           </p>
         </TabsContent>
         <TabsContent value="table" className="overflow-x-auto">
@@ -4709,10 +4753,10 @@ function MonthView({
               <TableRow>
                 <TableHead>Fecha</TableHead>
                 <TableHead>Original</TableHead>
-                <TableHead>Situación actual</TableHead>
+                <TableHead>SituaciÃ³n actual</TableHead>
                 <TableHead>Jornada</TableHead>
                 <TableHead>Noct. variable</TableHead>
-                <TableHead className="text-right">Cómputo</TableHead>
+                <TableHead className="text-right">CÃ³mputo</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -4736,7 +4780,7 @@ function MonthView({
                     )}
                     {isConfirmedSpecialRetributiveDay(year, month, d.day) && (
                       <small className="ml-2 text-[#ffd173]">
-                        Día especial retributivo
+                        DÃ­a especial retributivo
                       </small>
                     )}
                   </TableCell>
@@ -4754,7 +4798,7 @@ function MonthView({
                   <TableCell
                     className={`text-right font-bold ${c.value > 0 ? "text-[#71d7cc]" : c.value < 0 ? "text-[#ff8d7c]" : "text-white/45"}`}
                   >
-                    {d.status === "REVISAR" ? "—" : balanceLabel(profile, c.value)}
+                    {d.status === "REVISAR" ? "â€”" : balanceLabel(profile, c.value)}
                   </TableCell>
                 </TableRow>
               ))}
@@ -4785,10 +4829,10 @@ function MonthView({
 }
 function Rules({ profile }: { profile: UserProfile }) {
   if (isFullTime(profile)) return <div className="grid gap-3 md:grid-cols-2">
-    <Rule n="01" title="Jornada completa" text="Las horas anuales corresponden al 100 % del año seleccionado. Las RJ ya están incluidas en esa base anual." />
-    <Rule n="02" title="Horarios" text={profileTurn(profile) === "T4" || profileTurn(profile) === "T5" ? "Horario fijo todos los días. T5 inverso no incluido." : "Horario ordinario incorporado. Sábados y non stop: referencia histórica pendiente de confirmación; revisa las horas de entrada y salida."} />
-    <Rule n="03" title="Compensaciones pendientes" text="Saldo, nocturnidad abonable, Hora Nona, abonos de formación y revisión médica y traspasos de cómputo pendientes de validar. No se aplican las reglas de T8." />
-    <Rule n="04" title="Horas previstas" text="Suma de las jornadas del calendario, incluidas las previstas. No acredita horas efectivamente realizadas ni sustituye el cómputo anual. Los contadores retributivos son informativos, pendientes de validar para tiempo completo." />
+    <Rule n="01" title="Jornada completa" text="Las horas anuales corresponden al 100 % del aÃ±o seleccionado. Las RJ ya estÃ¡n incluidas en esa base anual." />
+    <Rule n="02" title="Horarios" text={profileTurn(profile) === "T4" || profileTurn(profile) === "T5" ? "Horario fijo todos los dÃ­as. T5 inverso no incluido." : "Horario ordinario incorporado. SÃ¡bados y non stop: referencia histÃ³rica pendiente de confirmaciÃ³n; revisa las horas de entrada y salida."} />
+    <Rule n="03" title="Compensaciones pendientes" text="Saldo, nocturnidad abonable, Hora Nona, abonos de formaciÃ³n y revisiÃ³n mÃ©dica y traspasos de cÃ³mputo pendientes de validar. No se aplican las reglas de T8." />
+    <Rule n="04" title="Horas previstas" text="Suma de las jornadas del calendario, incluidas las previstas. No acredita horas efectivamente realizadas ni sustituye el cÃ³mputo anual. Los contadores retributivos son informativos, pendientes de validar para tiempo completo." />
   </div>;
 
   const normal = shiftFor(profile, "NORMAL", 0),
@@ -4799,12 +4843,12 @@ function Rules({ profile }: { profile: UserProfile }) {
       <Rule
         n="01"
         title="Lectura del calendario"
-        text="El fondo de cada casilla determina trabajo o fiesta; el ciclo de 28 días valida la lectura."
+        text="El fondo de cada casilla determina trabajo o fiesta; el ciclo de 28 dÃ­as valida la lectura."
       />
       <Rule
         n="02"
         title="Festivos oficiales"
-        text="La categoría operativa procede del calendario oficial TMB. Sin categoría disponible, el cómputo queda pendiente; no se deduce del número rojo ni del día siguiente."
+        text="La categorÃ­a operativa procede del calendario oficial TMB. Sin categorÃ­a disponible, el cÃ³mputo queda pendiente; no se deduce del nÃºmero rojo ni del dÃ­a siguiente."
       />
       <Rule
         n="03"
@@ -4814,57 +4858,57 @@ function Rules({ profile }: { profile: UserProfile }) {
       <Rule
         n="04"
         title="Non stop"
-        text={`23/6, 23/9 y 31/12 se aplican automáticamente con el horario oficial de ${profile.contract === "75" ? profile.subturn || "T8.1" : CONTRACT_LABELS[profile.contract]}; los otros dos se añaden manualmente.`}
+        text={`23/6, 23/9 y 31/12 se aplican automÃ¡ticamente con el horario oficial de ${profile.contract === "75" ? profile.subturn || "T8.1" : CONTRACT_LABELS[profile.contract]}; los otros dos se aÃ±aden manualmente.`}
       />
       <Rule
         n="05"
-        title="Víspera"
-        text={`${eve.start}–${eve.end} · ${balanceLabel(profile, eve.value)}. Tiene prioridad sobre el día de la semana.`}
+        title="VÃ­spera"
+        text={`${eve.start}â€“${eve.end} Â· ${balanceLabel(profile, eve.value)}. Tiene prioridad sobre el dÃ­a de la semana.`}
       />
       <Rule
         n="06"
         title="Fin de semana"
-        text={`Viernes ${balanceLabel(profile, eve.value)} · sábado ${balanceLabel(profile, saturday.value)}.`}
+        text={`Viernes ${balanceLabel(profile, eve.value)} Â· sÃ¡bado ${balanceLabel(profile, saturday.value)}.`}
       />
       <Rule
         n="07"
         title="Jornada normal"
-        text={`Domingo a jueves · ${normal.start}–${normal.end} · ${balanceLabel(profile, normal.value)}.`}
+        text={`Domingo a jueves Â· ${normal.start}â€“${normal.end} Â· ${balanceLabel(profile, normal.value)}.`}
       />
       <Rule
         n="08"
-        title="Formación y revisión"
+        title="FormaciÃ³n y revisiÃ³n"
         text="Computan como la jornada ordinaria que corresponda."
       />
       <Rule
         n="09"
-        title="Cómputo entre años"
-        text="Cómputo año anterior compensa el saldo previo; cómputo año actual incorpora la jornada completa al año seleccionado."
+        title="CÃ³mputo entre aÃ±os"
+        text="CÃ³mputo aÃ±o anterior compensa el saldo previo; cÃ³mputo aÃ±o actual incorpora la jornada completa al aÃ±o seleccionado."
       />
       <Rule
         n="10"
         title="Nocturnidad variable"
-        text="Se calcula cada jornada, se redondea diariamente a dos decimales y después se suman los totales mensual y anual."
+        text="Se calcula cada jornada, se redondea diariamente a dos decimales y despuÃ©s se suman los totales mensual y anual."
       />
       <Rule
         n="11"
-        title="Información retributiva"
-        text="Plus Festiu cuenta domingos efectivamente trabajados. D.ESP señala días especiales confirmados; ninguno de los dos modifica el cómputo ni calcula importes."
+        title="InformaciÃ³n retributiva"
+        text="Plus Festiu cuenta domingos efectivamente trabajados. D.ESP seÃ±ala dÃ­as especiales confirmados; ninguno de los dos modifica el cÃ³mputo ni calcula importes."
       />
       <Rule
         n="12"
         title="Horas ordinarias"
-        text="Cada jornada se convierte individualmente a horas decimales, se redondea a dos decimales y después se suman los totales mensual y anual. Este redondeo no modifica el cómputo."
+        text="Cada jornada se convierte individualmente a horas decimales, se redondea a dos decimales y despuÃ©s se suman los totales mensual y anual. Este redondeo no modifica el cÃ³mputo."
       />
       <Rule
         n="13"
         title="Prima Hora Nona"
-        text="El tiempo de cada jornada que exceda de ocho horas se cuenta por cuartos de hora iniciados y después se suma en el mes."
+        text="El tiempo de cada jornada que exceda de ocho horas se cuenta por cuartos de hora iniciados y despuÃ©s se suma en el mes."
       />
       <Rule
         n="14"
         title="Plus Convenio"
-        text="Cuenta todos los días del mes excepto los de tipo FEST, incluidos descansos DCOM, MINI, LAUDO y vacaciones. El resultado es provisional mientras queden días pendientes de revisión."
+        text="Cuenta todos los dÃ­as del mes excepto los de tipo FEST, incluidos descansos DCOM, MINI, LAUDO y vacaciones. El resultado es provisional mientras queden dÃ­as pendientes de revisiÃ³n."
       />
     </div>
   );
@@ -4881,3 +4925,4 @@ function Rule({ n, title, text }: { n: string; title: string; text: string }) {
     </div>
   );
 }
+
