@@ -1528,9 +1528,14 @@ async function loadAnnualCanvas(file: File) {
   bitmap.close();
   return canvas;
 }
-function detectModernAnnualPanels(canvas: HTMLCanvasElement, year: number, allowJoinedCells = false): AnnualPanel[] | null {
+function detectModernAnnualPanels(canvas: HTMLCanvasElement, year: number, allowJoinedCells = false, diagnostic?: string[]): AnnualPanel[] | null {
+  const mode = allowJoinedCells ? "moderno permisivo" : "moderno estricto";
+  const fail = (reason: string): null => {
+    diagnostic?.push(mode + ": " + reason);
+    return null;
+  };
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  if (!ctx) return null;
+  if (!ctx) return fail("sin contexto canvas");
   const { width, height } = canvas;
   const data = ctx.getImageData(0, 0, width, height).data;
   const mask = new Uint8Array(width * height);
@@ -1564,7 +1569,8 @@ function detectModernAnnualPanels(canvas: HTMLCanvasElement, year: number, allow
       cells.push({ x: (left + right) / 2, y: (top + bottom) / 2, w, h });
   }
   const middle = (values: number[]) => values.sort((a, b) => a - b)[Math.floor(values.length / 2)];
-  if (cells.length < (allowJoinedCells ? 280 : 350)) return null;
+  const minimumCells = allowJoinedCells ? 280 : 350;
+  if (cells.length < minimumCells) return fail(cells.length + " celdas candidatas; mínimo " + minimumCells);
   const cellWidth = middle(cells.map(c => c.w)), cellHeight = middle(cells.map(c => c.h));
   const cluster = (values: number[], tolerance: number) => {
     const groups: number[][] = [];
@@ -1576,23 +1582,23 @@ function detectModernAnnualPanels(canvas: HTMLCanvasElement, year: number, allow
   };
   const xs = cluster(cells.map(c => c.x), cellWidth * .2);
   const ys = cluster(cells.map(c => c.y), cellHeight * .2);
-  if (xs.length !== 28) return null;
+  if (xs.length !== 28) return fail(xs.length + " columnas detectadas; esperadas 28");
   const rowGroups: number[][] = [];
   for (const y of ys) {
     const last = rowGroups[rowGroups.length - 1];
     if (last && y - last[last.length - 1] < cellHeight * 1.8) last.push(y); else rowGroups.push([y]);
   }
-  if (rowGroups.length !== 3) return null;
+  if (rowGroups.length !== 3) return fail(rowGroups.length + " filas de meses detectadas; esperadas 3");
   if (allowJoinedCells) {
     // Joined JPEG cell backgrounds may lose individual components. Require
     // three separately observed regular lattices; never split one band.
     for (const rows of rowGroups) {
-      if (rows.length < 5 || rows.length > 6) return null;
+      if (rows.length < 5 || rows.length > 6) return fail("fila de meses con " + rows.length + " líneas de semanas; esperadas 5 o 6");
       const step = middle(rows.slice(1).map((y, i) => y - rows[i]));
-      if (rows.slice(1).some((y, i) => Math.abs(y - rows[i] - step) > step * .12)) return null;
+      if (rows.slice(1).some((y, i) => Math.abs(y - rows[i] - step) > step * .12)) return fail("separación vertical irregular entre semanas");
     }
     for (let r = 1; r < 3; r++)
-      if (rowGroups[r][0] - rowGroups[r - 1].at(-1)! < cellHeight * 2) return null;
+      if (rowGroups[r][0] - rowGroups[r - 1].at(-1)! < cellHeight * 2) return fail("separación insuficiente entre filas de meses");
   }
   const panels: AnnualPanel[] = [];
   for (let month = 1; month <= 12; month++) {
@@ -1602,7 +1608,7 @@ function detectModernAnnualPanels(canvas: HTMLCanvasElement, year: number, allow
     const cellH = middle(rows.slice(1).map((y, i) => y - rows[i]));
     const panel = { x: centers[0] - cellW / 2, length: cellW * 7, gridTop: rows[0] - cellH / 2, cellH };
     if (allowJoinedCells) {
-      if (centers.some((x, i) => Math.abs(x - centers[0] - i * cellW) > cellW * .08)) return null;
+      if (centers.some((x, i) => Math.abs(x - centers[0] - i * cellW) > cellW * .08)) return fail("mes " + month + ": columnas irregulares");
       // Validate filled dates AND empty leading/trailing slots from pixels.
       // Date placement is calendar geometry, not the worker's 28-day cycle.
       const first = weekdayMon(year, month, 1), count = daysInMonth(year, month);
@@ -1611,11 +1617,12 @@ function detectModernAnnualPanels(canvas: HTMLCanvasElement, year: number, allow
         let filled = 0, total = 0;
         for (let y = Math.ceil(cy - cellH * .28); y <= Math.floor(cy + cellH * .28); y++)
           for (let x = Math.ceil(cx - cellW * .30); x <= Math.floor(cx + cellW * .30); x++) {
-            if (x < 0 || y < 0 || x >= width || y >= height) return null;
+            if (x < 0 || y < 0 || x >= width || y >= height) return fail("mes " + month + ": cuadrícula fuera de los límites");
             total++; filled += originalMask[y * width + x];
           }
         const expectedDate = index >= first && index < first + count;
-        if (!total || (expectedDate ? filled / total < .70 : filled / total > .15)) return null;
+        if (!total || (expectedDate ? filled / total < .70 : filled / total > .15))
+          return fail("mes " + month + ", posición " + (index + 1) + ": ocupación " + (total ? Math.round(filled / total * 100) : 0) + "%; " + (expectedDate ? "esperaba fecha" : "esperaba hueco"));
       }
     }
     // Every actual date must have a rectangle at its expected grid position.
@@ -1623,7 +1630,7 @@ function detectModernAnnualPanels(canvas: HTMLCanvasElement, year: number, allow
     for (let day = 1; day <= daysInMonth(year, month); day++) {
       const index = weekdayMon(year, month, 1) + day - 1;
       if (!cells.some(c => Math.abs(c.x - centers[index % 7]) < cellW * .15 &&
-        Math.abs(c.y - (rows[0] + Math.floor(index / 7) * cellH)) < cellH * .15)) { if (!allowJoinedCells) return null; }
+        Math.abs(c.y - (rows[0] + Math.floor(index / 7) * cellH)) < cellH * .15)) { if (!allowJoinedCells) return fail("mes " + month + ": no se localiza la celda del día " + day); }
     }
     panels.push(panel);
   }
@@ -2235,9 +2242,15 @@ function auditCycle(
 
 // Geometry-only fallback for photographed annual calendars. Classification is
 // deliberately separate: no labour-cycle or colour-to-status rule is used here.
-function detectPhotographedAnnual(canvas: HTMLCanvasElement, year: number) {
+function detectPhotographedAnnual(canvas: HTMLCanvasElement, year: number, diagnostic?: string[]) {
+  const failures: string[] = [];
+  const reject = (reason: string) => failures.push(reason);
+  const fail = (reason: string): null => {
+    diagnostic?.push("fotográfico: " + reason);
+    return null;
+  };
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  if (!ctx) return null;
+  if (!ctx) return fail("sin contexto canvas");
   // Bound geometry-search cost independently of camera resolution. The final
   // sampling uses the original loaded canvas, not the small search image.
   const originalWidth = canvas.width, originalHeight = canvas.height;
@@ -2249,7 +2262,7 @@ function detectPhotographedAnnual(canvas: HTMLCanvasElement, year: number) {
     search.width = Math.round(originalWidth * searchScale);
     search.height = Math.round(originalHeight * searchScale);
     const searchContext = search.getContext("2d");
-    if (!searchContext) return null;
+    if (!searchContext) return fail("sin contexto canvas de búsqueda");
     searchContext.drawImage(canvas, 0, 0, search.width, search.height);
   }
   const W = search.width, H = search.height;
@@ -2309,7 +2322,7 @@ function detectPhotographedAnnual(canvas: HTMLCanvasElement, year: number) {
       const w=right-left+1,h=bottom-top+1;
       if(w>=10&&h>=4&&w<W*.12&&w/h>1.5&&w/h<4.5&&count/(w*h)>.5)cells.push({x:sx/count,y:sy/count,w,h});
     }
-    if(cells.length<100)continue;
+    if(cells.length<100){reject("escala " + scale + ": " + cells.length + " celdas candidatas; mínimo 100");continue;}
     const mw=median(cells.map(c=>c.w)),mh=median(cells.map(c=>c.h));
     const usable=cells.filter(c=>c.w>mw*.7&&c.w<mw*1.4&&c.h>mh*.65&&c.h<mh*1.7);
     const angles:number[]=[];
@@ -2317,7 +2330,7 @@ function detectPhotographedAnnual(canvas: HTMLCanvasElement, year: number) {
       let dx=usable[j].x-usable[i].x,dy=usable[j].y-usable[i].y;if(dx<0){dx=-dx;dy=-dy;}
       if(dx>mw*.8&&dx<mw*1.5&&Math.abs(dy)<mw*.35)angles.push(Math.atan2(dy,dx));
     }
-    if(angles.length<30)continue;
+    if(angles.length<30){reject("escala " + scale + ": " + angles.length + " relaciones angulares; mínimo 30");continue;}
     const bins=new Map<number,number[]>();for(const a of angles){const k=Math.round(a/(Math.PI/90));bins.set(k,[...(bins.get(k)||[]),a]);}
     const angle=median([...bins.values()].sort((a,b)=>b.length-a.length)[0]),cos=Math.cos(angle),sin=Math.sin(angle);
     const points=usable.map(c=>({x:c.x*cos+c.y*sin,y:-c.x*sin+c.y*cos})).sort((a,b)=>a.y-b.y);
@@ -2325,7 +2338,7 @@ function detectPhotographedAnnual(canvas: HTMLCanvasElement, year: number) {
     for(const p of points){const g=groups[groups.length-1];if(g&&p.y-g[g.length-1].y<mh*2.5)g.push(p);else groups.push([p]);}
     const rows=groups.filter(g=>g.length>=30);
     // Candidate layouts follow the observed row count, not image coordinates.
-    if(rows.length!==2&&rows.length!==3)continue;
+    if(rows.length!==2&&rows.length!==3){reject("escala " + scale + ": " + rows.length + " filas detectadas; esperadas 2 o 3");continue;}
     const columns=12/rows.length, ncols=columns*7, models:number[][][]=[], offsets:number[]=[];
     let failed=false,totalError=0;
     for(let row=0;row<rows.length;row++){
@@ -2340,7 +2353,7 @@ function detectPhotographedAnnual(canvas: HTMLCanvasElement, year: number) {
           if(score/g.length<bestX.score)bestX={score:score/g.length,step,indices};
         }
       }
-      if(bestX.score>.13){failed=true;break;}
+      if(bestX.score>.13){reject("escala " + scale + ", fila " + (row + 1) + ": geometría horizontal " + bestX.score.toFixed(3) + " > 0.130");failed=true;break;}
       const center=g.reduce((s,p)=>s+p.x,0)/g.length;
       let bestY={score:Infinity,step:0,weeks:[] as number[]};
       for(let hi=0;hi<=24;hi++)for(let si=-10;si<=10;si++){
@@ -2351,15 +2364,15 @@ function detectPhotographedAnnual(canvas: HTMLCanvasElement, year: number) {
           if(score/g.length<bestY.score)bestY={score:score/g.length,step,weeks};
         }
       }
-      if(bestY.score>.13){failed=true;break;}
+      if(bestY.score>.13){reject("escala " + scale + ", fila " + (row + 1) + ": geometría vertical " + bestY.score.toFixed(3) + " > 0.130");failed=true;break;}
       const A=g.map((_,i)=>[1,bestX.indices[i],Math.floor(bestX.indices[i]/7),bestY.weeks[i]]),B=g.map(p=>[p.x,p.y]);
       let keep=g.map(()=>true),coef:number[][]|null=null;
       for(let iter=0;iter<4;iter++){
         coef=solve(A.filter((_,i)=>keep[i]),B.filter((_,i)=>keep[i]));if(!coef)break;
         const model=coef;keep=A.map((a,i)=>{const px=a.reduce((s,v,k)=>s+v*model[k][0],0),py=a.reduce((s,v,k)=>s+v*model[k][1],0);return Math.hypot((g[i].x-px)/bestX.step,(g[i].y-py)/bestY.step)<.22;});
       }
-      if(!coef||keep.filter(Boolean).length<g.length*.75){failed=true;break;}
-      for(let m=0;m<columns;m++)if(keep.filter((v,i)=>v&&Math.floor(bestX.indices[i]/7)===m).length<8)failed=true;
+      if(!coef||keep.filter(Boolean).length<g.length*.75){reject("escala " + scale + ", fila " + (row + 1) + ": ajuste afín insuficiente (" + keep.filter(Boolean).length + "/" + g.length + " puntos)");failed=true;break;}
+      for(let m=0;m<columns;m++){const kept=keep.filter((v,i)=>v&&Math.floor(bestX.indices[i]/7)===m).length;if(kept<8){reject("escala " + scale + ", mes " + (row * columns + m + 1) + ": solo " + kept + " puntos válidos; mínimo 8");failed=true;}}
       if(failed)break;
       // Affine models per observed row handle skew, shear and changing scale.
       // Accept only if every actual date and every empty slot is supported.
@@ -2382,12 +2395,12 @@ function detectPhotographedAnnual(canvas: HTMLCanvasElement, year: number) {
         }
         if(!errors&&error<bestError){chosen=offset;bestError=error;}
       }
-      if(chosen===null){failed=true;break;}
+      if(chosen===null){reject("escala " + scale + ", fila " + (row + 1) + ": fechas y huecos no validan en ningún desplazamiento");failed=true;break;}
       models.push(coef);offsets.push(chosen);totalError+=bestError;
     }
     if(!failed)candidates.push({models,offsets,columns,angle,score:totalError});
   }
-  if(!candidates.length)return null;
+  if(!candidates.length)return fail(failures.length ? failures.join(" | ") : "ninguna geometría candidata válida");
   candidates.sort((a,b)=>a.score-b.score);const best=candidates[0];
   const point=(candidate:typeof best,month:number,x:number,y:number)=>{
     const row=Math.floor(month/candidate.columns),col=month%candidate.columns,c=candidate.models[row],a=[1,col*7+x,col,y+candidate.offsets[row]];
@@ -2397,11 +2410,11 @@ function detectPhotographedAnnual(canvas: HTMLCanvasElement, year: number) {
   // Conflicting independently valid layouts are not silently selected.
   for(const candidate of candidates.slice(1))for(let m=0;m<12;m++){
     const a=point(best,m,3,2),b=point(candidate,m,3,2);
-    if(Math.hypot(a.x-b.x,a.y-b.y)>Math.hypot(best.models[0][1][0],best.models[0][1][1])*.2)return null;
+    if(Math.hypot(a.x-b.x,a.y-b.y)>Math.hypot(best.models[0][1][0],best.models[0][1][1])*.2)return fail("dos geometrías válidas entran en conflicto");
   }
   const output=document.createElement("canvas"),cw=48,ch=24,gap=24;
   output.width=best.columns*(7*cw+gap);output.height=(12/best.columns)*(6*ch+gap);
-  const out=output.getContext("2d");if(!out)return null;
+  const out=output.getContext("2d");if(!out)return fail("no se pudo crear el canvas rectificado");
   const image=out.createImageData(output.width,output.height);image.data.fill(255);
   const panels:AnnualPanel[]=[];
   for(let m=0;m<12;m++){
@@ -2409,7 +2422,7 @@ function detectPhotographedAnnual(canvas: HTMLCanvasElement, year: number) {
     panels.push({x:left,length:7*cw,gridTop:top,cellH:ch});
     for(let y=0;y<6*ch;y++)for(let x=0;x<7*cw;x++){
       const p=point(best,m,(x+.5)/cw-.5,(y+.5)/ch-.5),sx=Math.round(p.x*originalWidth/W),sy=Math.round(p.y*originalHeight/H);
-      if(sx<0||sy<0||sx>=originalWidth||sy>=originalHeight)return null;
+      if(sx<0||sy<0||sx>=originalWidth||sy>=originalHeight)return fail("mes " + (m + 1) + ": remapeo fuera de los límites de la imagen");
       const from=(sy*originalWidth+sx)*4,to=((top+y)*output.width+left+x)*4;
       for(let k=0;k<4;k++)image.data[to+k]=originalPixels[from+k];
     }
@@ -2420,11 +2433,13 @@ function detectPhotographedAnnual(canvas: HTMLCanvasElement, year: number) {
 
 
 async function classifyAnnual(file: File, year: number) {
+  const diagnostic: string[] = [];
   let canvas = await loadAnnualCanvas(file);
   if (!canvas) return null;
-  let panels = detectModernAnnualPanels(canvas, year) || detectModernAnnualPanels(canvas, year, true);
-  if (!panels) { const photo = detectPhotographedAnnual(canvas, year); if (photo) { canvas = photo.canvas; panels = photo.panels; } }
-  if (!panels) throw new Error("No se han podido validar las 12 cuadrículas (7 columnas, fechas y huecos). Acerca el calendario y evita reflejos o una perspectiva pronunciada.");
+  const originalSize = canvas.width + "x" + canvas.height;
+  let panels = detectModernAnnualPanels(canvas, year, false, diagnostic) || detectModernAnnualPanels(canvas, year, true, diagnostic);
+  if (!panels) { const photo = detectPhotographedAnnual(canvas, year, diagnostic); if (photo) { canvas = photo.canvas; panels = photo.panels; } }
+  if (!panels) throw new Error("DIAGNÓSTICO " + originalSize + ". " + diagnostic.join(" · "));
   // Never silently apply a six-column coordinate template to an unknown layout.
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (!ctx || !panels) return null;
