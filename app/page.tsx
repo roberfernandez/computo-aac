@@ -4225,11 +4225,29 @@ function openCvGridForPanel(
     );
     if (confidence < 0.58) return null;
 
-    return {
+    const model: AnnualGridModel = {
       vertical: verticalFit.lines,
       horizontal: horizontalFit.lines,
       confidence,
     };
+    for (let row = 0; row < 6; row++)
+      for (let col = 0; col < 7; col++) {
+        const geometry = annualGridCellGeometry(model, col, row);
+        if (
+          !geometry ||
+          geometry.cellW < cellW * 0.55 ||
+          geometry.cellW > cellW * 1.45 ||
+          geometry.cellH < cellH * 0.5 ||
+          geometry.cellH > cellH * 1.55 ||
+          geometry.cx < x - cellW * 0.15 ||
+          geometry.cx > right + cellW * 0.15 ||
+          geometry.cy < y - cellH * 0.15 ||
+          geometry.cy > bottom + cellH * 0.15
+        )
+          return null;
+      }
+
+    return model;
   } finally {
     if (verticalKernel) verticalKernel.delete();
     if (horizontalKernel) horizontalKernel.delete();
