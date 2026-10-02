@@ -1048,11 +1048,38 @@ function retryUncertainAnnualCell(
   cellH: number,
   canvas: HTMLCanvasElement,
 ) {
-  // v17: lectura adaptativa SOLO para celdas que la primera pasada dejó
-  // en REVISAR. Muestreamos zonas pequeñas e independientes del fondo,
-  // evitando el número central y los bordes. Nunca usamos el ciclo para
-  // decidir el color: si no hay consenso suficiente, permanece REVISAR.
-  const regions = [
+  // v26: segunda lectura SOLO para celdas no azules que la primera pasada
+  // dejó en REVISAR. El azul marino se conserva como dato visual ambiguo:
+  // por color no se puede distinguir RJ, Mini y Paternidad.
+  const broadFallback = () => {
+      const broadRegions = [
+          [0, 0, 0.58, 0.54],
+          [-0.24, 0, 0.26, 0.56],
+          [0.24, 0, 0.26, 0.56],
+        ],
+        broadVotes = new Map<Status, number>();
+      for (const [dx, dy, rw, rh] of broadRegions) {
+        const sw = Math.max(3, Math.round(cellW * rw)),
+          sh = Math.max(3, Math.round(cellH * rh)),
+          sx = Math.max(0, Math.round(cx + cellW * dx - sw / 2)),
+          sy = Math.max(0, Math.round(cy + cellH * dy - sh / 2)),
+          status = dominantStatus(
+            ctx.getImageData(
+              sx,
+              sy,
+              Math.min(sw, canvas.width - sx),
+              Math.min(sh, canvas.height - sy),
+            ).data,
+          );
+        if (status !== "REVISAR")
+          broadVotes.set(status, (broadVotes.get(status) || 0) + 1);
+      }
+      const broad = [...broadVotes.entries()].sort((a, b) => b[1] - a[1]);
+      return broad[0]?.[1] >= 2 && (!broad[1] || broad[0][1] > broad[1][1])
+        ? { status: broad[0][0], confidence: 0.48 }
+        : null;
+    },
+    regions = [
       [-0.34, -0.27, 0.12, 0.16], [0.34, -0.27, 0.12, 0.16],
       [-0.34,  0.27, 0.12, 0.16], [0.34,  0.27, 0.12, 0.16],
       [-0.38,  0.00, 0.10, 0.22], [0.38,  0.00, 0.10, 0.22],
@@ -1076,17 +1103,17 @@ function retryUncertainAnnualCell(
         ).data,
       );
     if (evidence.status === "REVISAR" || evidence.confidence < 0.34) continue;
-    const current = votes.get(evidence.status) || { count: 0, weight: 0, strong: 0 };
+    const current = votes.get(evidence.status) || {
+      count: 0,
+      weight: 0,
+      strong: 0,
+    };
     current.count++;
     current.weight += evidence.confidence;
     if (evidence.confidence >= 0.58) current.strong++;
     votes.set(evidence.status, current);
   }
 
-  // v18: además del voto por clase, medimos el color dominante real de la
-  // celda dudosa. Esto permite recuperar tonos uniformes que no encajan bien
-  // en los umbrales históricos, comparándolos con el patrón cromático ya
-  // observado sin usar el ciclo de 28 días como respuesta.
   const ranked = [...votes.entries()].sort(
       (x, y) =>
         y[1].count - x[1].count ||
@@ -1095,15 +1122,12 @@ function retryUncertainAnnualCell(
     ),
     best = ranked[0],
     second = ranked[1];
-  if (!best) return null;
+  if (!best) return broadFallback();
 
   const totalVotes = ranked.reduce((n, [, v]) => n + v.count, 0),
     share = totalVotes ? best[1].count / totalVotes : 0,
     voteLead = second ? best[1].count - second[1].count : best[1].count,
     weightLead = second ? best[1].weight - second[1].weight : best[1].weight,
-    // Para una celda de color uniforme, 5 regiones coincidentes ya son
-    // evidencia fuerte. Para resultados más mezclados mantenemos el criterio
-    // estricto de v17. Así v18 gana sensibilidad sin convertir ruido en datos.
     uniformConsensus =
       best[1].count >= 5 &&
       share >= 0.72 &&
@@ -1115,34 +1139,7 @@ function retryUncertainAnnualCell(
         (!second || voteLead >= 2 || weightLead >= 1.10) &&
         (best[1].strong >= 2 || best[1].weight / best[1].count >= 0.52));
 
-  if (!consensus) {
-    const broadRegions = [
-        [0, 0, 0.58, 0.54],
-        [-0.24, 0, 0.26, 0.56],
-        [0.24, 0, 0.26, 0.56],
-      ],
-      broadVotes = new Map<Status, number>();
-    for (const [dx, dy, rw, rh] of broadRegions) {
-      const sw = Math.max(3, Math.round(cellW * rw)),
-        sh = Math.max(3, Math.round(cellH * rh)),
-        sx = Math.max(0, Math.round(cx + cellW * dx - sw / 2)),
-        sy = Math.max(0, Math.round(cy + cellH * dy - sh / 2)),
-        status = dominantStatus(
-          ctx.getImageData(
-            sx,
-            sy,
-            Math.min(sw, canvas.width - sx),
-            Math.min(sh, canvas.height - sy),
-          ).data,
-        );
-      if (status !== "REVISAR")
-        broadVotes.set(status, (broadVotes.get(status) || 0) + 1);
-    }
-    const broad = [...broadVotes.entries()].sort((a, b) => b[1] - a[1]);
-    if (broad[0]?.[1] >= 2 && (!broad[1] || broad[0][1] > broad[1][1]))
-      return { status: broad[0][0], confidence: 0.48 };
-    return null;
-  }
+  if (!consensus) return broadFallback();
   return {
     status: best[0],
     confidence: Math.min(
@@ -1151,7 +1148,6 @@ function retryUncertainAnnualCell(
     ),
   };
 }
-
 function monthlyColorMask(r: number, g: number, b: number) {
   const max = Math.max(r, g, b),
     min = Math.min(r, g, b);
@@ -3008,7 +3004,7 @@ async function classifyAnnual(file: File, year: number) {
         ),
         evidence = samples.sort((a, b) => b.confidence - a.confidence)[0],
         recovered =
-          evidence.status === "REVISAR"
+          evidence.status === "REVISAR" && evidence.detectedColour !== "BLUE"
             ? retryUncertainAnnualCell(
                 ctx,
                 cx,
