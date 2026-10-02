@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, @next/next/no-img-element, react-hooks/set-state-in-effect */
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CATEGORY_RULES, officialCalendar, officialCategory, officialHolidayFor } from "@/lib/official-calendar";
 import {
   UploadCloud,
@@ -3406,96 +3406,6 @@ function storedFollowingYearVacationUse(sourceYear: number) {
 }
 
 
-type BluePeriodResolution = "RJ" | "MINI" | "PATERNIDAD";
-type BluePeriodGroup = {
-  id: string;
-  start: string;
-  end: string;
-  label: string;
-  blueDays: number;
-};
-
-function bluePeriodGroups(plan: YearPlan, year: number): BluePeriodGroup[] {
-  const byOrdinal = new Map<number, { month: number; day: DayData }>(),
-    blue: { ordinal: number; month: number; day: DayData }[] = [];
-  for (let month = 1; month <= 12; month++) {
-    for (const day of plan[month]?.days || []) {
-      const ordinal = Math.floor(
-        Date.UTC(year, month - 1, day.day) / 86400000,
-      );
-      byOrdinal.set(ordinal, { month, day });
-      if (
-        day.status === "REVISAR" &&
-        day.detectedColour === "BLUE" &&
-        !day.periodId
-      )
-        blue.push({ ordinal, month, day });
-    }
-  }
-  blue.sort((a, b) => a.ordinal - b.ordinal);
-  if (!blue.length) return [];
-
-  const formatDate = (ordinal: number) => {
-      const date = new Date(ordinal * 86400000),
-        month = date.getUTCMonth(),
-        day = date.getUTCDate();
-      return `${day} ${MONTHS[month].slice(0, 3).toLowerCase()}.`;
-    },
-    isoDate = (ordinal: number) => {
-      const date = new Date(ordinal * 86400000);
-      return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
-    },
-    canBridge = (previous: number, next: number) => {
-      const gap = next - previous;
-      if (gap <= 1) return true;
-      if (gap > 5) return false;
-      for (let ordinal = previous + 1; ordinal < next; ordinal++) {
-        const entry = byOrdinal.get(ordinal)?.day;
-        if (!entry) return false;
-        const allowed =
-          entry.status === "DCOM" ||
-          entry.status === "FEST" ||
-          entry.status === "LAUDO" ||
-          (entry.status === "REVISAR" && entry.detectedColour === "BLUE");
-        if (!allowed) return false;
-      }
-      return true;
-    };
-
-  const groups: {
-      start: number;
-      end: number;
-      lastBlue: number;
-      blueDays: number;
-    }[] = [];
-  for (const entry of blue) {
-    const current = groups[groups.length - 1];
-    if (!current || !canBridge(current.lastBlue, entry.ordinal)) {
-      groups.push({
-        start: entry.ordinal,
-        end: entry.ordinal,
-        lastBlue: entry.ordinal,
-        blueDays: 1,
-      });
-      continue;
-    }
-    current.end = entry.ordinal;
-    current.lastBlue = entry.ordinal;
-    current.blueDays++;
-  }
-
-  return groups.map((group) => ({
-    id: `${group.start}-${group.end}`,
-    start: isoDate(group.start),
-    end: isoDate(group.end),
-    label:
-      group.start === group.end
-        ? formatDate(group.start)
-        : `${formatDate(group.start)} – ${formatDate(group.end)}`,
-    blueDays: group.blueDays,
-  }));
-}
-
 export default function Home() {
   const [year, setYear] = useState(INITIAL_YEAR),
     [month, setMonth] = useState(1),
@@ -3541,6 +3451,9 @@ export default function Home() {
       "Sube el calendario anual para crear la previsión completa.",
     );
   const [selected, setSelected] = useState<DayData | null>(null),
+    [multiSelectActive, setMultiSelectActive] = useState(false),
+    [multiSelectedDays, setMultiSelectedDays] = useState<number[]>([]),
+    [bulkSituation, setBulkSituation] = useState(""),
     [periodKind, setPeriodKind] = useState<PeriodKind>("VACACIONES"),
     [periodStart, setPeriodStart] = useState(""),
     [periodEnd, setPeriodEnd] = useState(""),
@@ -3554,6 +3467,9 @@ export default function Home() {
     [profileLoaded, setProfileLoaded] = useState(false);
   function loadYear(y: number) {
     setYear(y);
+    setMultiSelectActive(false);
+    setMultiSelectedDays([]);
+    setBulkSituation("");
     setEditingPeriodId(null);
     setPeriodStart("");
     setPeriodEnd("");
@@ -3733,6 +3649,9 @@ export default function Home() {
   }
   function openMonth(m: number) {
     setMonth(m);
+    setMultiSelectActive(false);
+    setMultiSelectedDays([]);
+    setBulkSituation("");
     setDays(plan[m]?.days || makeDays(year, m));
     setScreen("month");
   }
@@ -3779,7 +3698,7 @@ export default function Home() {
         0,
       );
       setMessage(
-        `Detector v${ANNUAL_DETECTOR_VERSION} · Previsión de ${year} creada: ${total} días. Calibración local recuperó ${found.calibrated} lecturas (por mes: ${found.calibratedByMonth.join(" · ")}). Lecturas realmente dudosas: ${found.uncertain} (por mes: ${found.uncertainByMonth.join(" · ")}).${found.uncertain ? ` Días dudosos: ${found.uncertainDaysByMonth.join(" · ")}.` : ""} Azul marino por identificar: ${found.blueAmbiguous} (por mes: ${found.blueByMonth.join(" · ")}).${found.blueAmbiguous ? ` Días azules: ${found.blueDaysByMonth.join(" · ")}. Los bloques azules se agrupan debajo para identificarlos como RJ, Mini o Paternidad sin cambiar DCOM/FEST.` : ""} Diferencias visibles respecto al ciclo base: ${found.cycleDifferences} (informativas; pueden ser vacaciones, permisos, festivos u otras excepciones reales).`,
+        `Detector v${ANNUAL_DETECTOR_VERSION} · Previsión de ${year} creada: ${total} días. Calibración local recuperó ${found.calibrated} lecturas (por mes: ${found.calibratedByMonth.join(" · ")}). Lecturas realmente dudosas: ${found.uncertain} (por mes: ${found.uncertainByMonth.join(" · ")}).${found.uncertain ? ` Días dudosos: ${found.uncertainDaysByMonth.join(" · ")}.` : ""} Azul marino por identificar: ${found.blueAmbiguous} (por mes: ${found.blueByMonth.join(" · ")}).${found.blueAmbiguous ? ` Días azules: ${found.blueDaysByMonth.join(" · ")}. Revísalos en Detalle mensual y usa la selección múltiple para asignar la categoría correcta.` : ""} Diferencias visibles respecto al ciclo base: ${found.cycleDifferences} (informativas; pueden ser vacaciones, permisos, festivos u otras excepciones reales).`,
       );
     } catch (error) {
       const detail =
@@ -3851,64 +3770,103 @@ export default function Home() {
       setBusy(false);
     }
   }
-  function resolveBlueGroup(
-    group: BluePeriodGroup,
-    kind: BluePeriodResolution,
-  ) {
-    const start = Math.floor(Date.parse(`${group.start}T00:00:00Z`) / 86400000),
-      end = Math.floor(Date.parse(`${group.end}T00:00:00Z`) / 86400000),
-      id = `blue-${kind.toLowerCase()}-${Date.now()}`,
-      next: YearPlan = { ...plan };
-    let applied = 0;
 
-    for (let m = 1; m <= 12; m++) {
-      if (!next[m]) continue;
-      const changed = next[m].days.map((day) => {
-        const ordinal = Math.floor(
-          Date.UTC(year, m - 1, day.day) / 86400000,
-        );
-        if (
-          ordinal < start ||
-          ordinal > end ||
-          day.status !== "REVISAR" ||
-          day.detectedColour !== "BLUE" ||
-          day.periodId
-        )
-          return day;
-        applied++;
+  function startMultiSelection(day?: number) {
+    setSelected(null);
+    setMultiSelectActive(true);
+    setMultiSelectedDays(day ? [day] : []);
+    setBulkSituation("");
+  }
+  function toggleMultiDay(day: number) {
+    setMultiSelectedDays((current) =>
+      current.includes(day)
+        ? current.filter((value) => value !== day)
+        : [...current, day].sort((a, b) => a - b),
+    );
+  }
+  function cancelMultiSelection() {
+    setMultiSelectActive(false);
+    setMultiSelectedDays([]);
+    setBulkSituation("");
+  }
+  function bulkSituationLabel(value: string) {
+    if (value.startsWith("prior:")) {
+      const origin = value.slice(6) as PriorOrigin;
+      return priorSituationLabel[origin];
+    }
+    if (value.startsWith("special:")) {
+      const special = value.slice(8) as Special;
+      return specialLabel[special];
+    }
+    const status = value.slice(7) as Status;
+    return statusLabel[status] || "categoría";
+  }
+  function applyBulkSituation() {
+    if (!multiSelectedDays.length || !bulkSituation) return;
+    const selectedDays = new Set(multiSelectedDays),
+      nextDays = days.map((day) => {
+        if (!selectedDays.has(day.day)) return day;
+
+        if (bulkSituation.startsWith("prior:")) {
+          const origin = bulkSituation.slice(6) as PriorOrigin;
+          return {
+            ...day,
+            status: "VAC_ANTERIOR" as Status,
+            special: "NINGUNA" as Special,
+            extraHours: 0,
+            priorOrigin: origin,
+            periodId: undefined,
+            manualEdited: true,
+            note: priorSituationLabel[origin],
+          };
+        }
+
+        if (bulkSituation.startsWith("special:")) {
+          const special = bulkSituation.slice(8) as Special,
+            status =
+              special === "NINGUNA"
+                ? day.status
+                : isWorking(day.status)
+                  ? day.status
+                  : ("AGCG" as Status);
+          return {
+            ...day,
+            status,
+            special,
+            extraHours: special === "MODIFICACION" ? day.extraHours : 0,
+            priorOrigin: undefined,
+            periodId: undefined,
+            manualEdited: true,
+            note:
+              special === "NINGUNA"
+                ? day.note
+                : specialLabel[special],
+          };
+        }
+
+        const status = bulkSituation.slice(7) as Status,
+          working = isWorking(status),
+          note =
+            status === "AGCG" || status === "DCOM" || status === "FEST"
+              ? ""
+              : statusLabel[status];
         return {
           ...day,
-          status: kind as Status,
-          baseStatus:
-            day.baseStatus === "REVISAR" ? ("AGCG" as BaseStatus) : day.baseStatus,
-          note:
-            kind === "PATERNIDAD"
-              ? "Permiso de paternidad"
-              : kind === "MINI"
-                ? "Miniperiodo"
-                : "RJ",
-          periodId: id,
+          status,
+          special: working ? day.special : ("NINGUNA" as Special),
+          extraHours: working ? day.extraHours : 0,
+          priorOrigin: undefined,
+          periodId: undefined,
           manualEdited: true,
+          note,
         };
-      });
-      next[m] = { ...next[m], days: changed };
-    }
-
-    if (!applied) {
-      setMessage("Ese bloque azul ya no contiene días pendientes de identificar.");
-      return;
-    }
-    const record: PeriodRecord = {
-      id,
-      kind,
-      start: group.start,
-      end: group.end,
-    };
-    persist(next);
-    persistPeriods([...periods, record]);
-    if (next[month]) setDays(next[month].days);
+      }),
+      count = multiSelectedDays.length,
+      label = bulkSituationLabel(bulkSituation);
+    commitMonth(nextDays);
+    cancelMultiSelection();
     setMessage(
-      `Bloque azul ${group.label} identificado como ${statusLabel[kind]}: ${applied} días. DCOM, FEST y Laudo intermedios se han conservado.`,
+      `${label} aplicado a ${count} ${count === 1 ? "día" : "días"} de ${MONTHS[month - 1]}.`,
     );
   }
 
@@ -4103,6 +4061,7 @@ export default function Home() {
     setMonthlyPreview("");
   }
   function resetMonth() {
+    cancelMultiSelection();
     const next = { ...plan };
     delete next[month];
     persist(next);
@@ -4114,6 +4073,7 @@ export default function Home() {
     );
   }
   function resetYear() {
+    cancelMultiSelection();
     setPlan({});
     setPeriods([]);
     setPriorEntitlement(0);
@@ -4140,11 +4100,6 @@ export default function Home() {
       "Previsión anual e imágenes cargadas vaciadas. Puedes volver a importar el calendario.",
     );
   }
-
-  const unresolvedBlueGroups = useMemo(
-    () => bluePeriodGroups(plan, year),
-    [plan, year],
-  );
 
   const calculations = useMemo(
       () => days.map((d) => ({ d, c: calcDay(d, days, year, month, profile) })),
@@ -4510,58 +4465,6 @@ export default function Home() {
               <span>{message}</span>
             </div>
           </section>
-          {unresolvedBlueGroups.length > 0 && (
-            <section className="panel p-5">
-              <div className="mb-3">
-                <h2 className="font-semibold text-[#71d7cc]">
-                  Azul marino por identificar
-                </h2>
-                <p className="mt-1 text-xs text-white/50">
-                  La app ha agrupado los días azules contiguos. Identifica cada
-                  bloque una sola vez; los DCOM, FEST y Laudo intermedios se
-                  conservan.
-                </p>
-              </div>
-              <div className="space-y-3">
-                {unresolvedBlueGroups.map((group) => (
-                  <div
-                    key={group.id}
-                    className="rounded-xl border border-[#71d7cc]/25 bg-[#0b2029] p-3"
-                  >
-                    <div className="mb-2 flex items-center justify-between gap-3">
-                      <b className="text-sm">{group.label}</b>
-                      <span className="text-xs text-white/50">
-                        {group.blueDays} {group.blueDays === 1 ? "día azul" : "días azules"}
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-3 gap-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => resolveBlueGroup(group, "RJ")}
-                      >
-                        RJ
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => resolveBlueGroup(group, "MINI")}
-                      >
-                        Mini
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => resolveBlueGroup(group, "PATERNIDAD")}
-                      >
-                        Paternidad
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
           <section className="panel p-5">
             <div className="mb-4 flex items-center gap-2">
               <CalendarRange className="text-[#71d7cc]" size={19} />
@@ -4832,6 +4735,14 @@ export default function Home() {
               monthPlusConvenio={currentMonthPlusConvenio}
               review={review}
               worked={worked}
+              multiSelectActive={multiSelectActive}
+              multiSelectedDays={multiSelectedDays}
+              bulkSituation={bulkSituation}
+              onBulkSituationChange={setBulkSituation}
+              onStartMultiSelect={startMultiSelection}
+              onToggleMultiDay={toggleMultiDay}
+              onCancelMultiSelect={cancelMultiSelection}
+              onApplyBulk={applyBulkSituation}
               onMonthChange={openMonth}
               onSelect={(d) => setSelected({ ...d })}
             />
@@ -5486,6 +5397,14 @@ function MonthView({
   review,
   monthPlusConvenio,
   worked,
+  multiSelectActive,
+  multiSelectedDays,
+  bulkSituation,
+  onBulkSituationChange,
+  onStartMultiSelect,
+  onToggleMultiDay,
+  onCancelMultiSelect,
+  onApplyBulk,
   onMonthChange,
   onSelect,
 }: {
@@ -5505,9 +5424,65 @@ function MonthView({
   review: number;
   monthPlusConvenio: number;
   worked: number;
+  multiSelectActive: boolean;
+  multiSelectedDays: number[];
+  bulkSituation: string;
+  onBulkSituationChange: (value: string) => void;
+  onStartMultiSelect: (day?: number) => void;
+  onToggleMultiDay: (day: number) => void;
+  onCancelMultiSelect: () => void;
+  onApplyBulk: () => void;
   onMonthChange: (m: number) => void;
   onSelect: (d: DayData) => void;
 }) {
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null),
+    longPressTriggered = useRef(false),
+    pointerStart = useRef<{ day: number; x: number; y: number } | null>(null),
+    selectedSet = useMemo(
+      () => new Set(multiSelectedDays),
+      [multiSelectedDays],
+    );
+  const clearLongPressTimer = () => {
+      if (longPressTimer.current) clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    },
+    startLongPress = (
+      day: number,
+      event: React.PointerEvent<HTMLButtonElement>,
+    ) => {
+      if (multiSelectActive || event.button !== 0) return;
+      clearLongPressTimer();
+      longPressTriggered.current = false;
+      pointerStart.current = { day, x: event.clientX, y: event.clientY };
+      longPressTimer.current = setTimeout(() => {
+        longPressTriggered.current = true;
+        onStartMultiSelect(day);
+      }, 450);
+    },
+    moveLongPress = (event: React.PointerEvent<HTMLButtonElement>) => {
+      const start = pointerStart.current;
+      if (
+        start &&
+        Math.hypot(event.clientX - start.x, event.clientY - start.y) > 10
+      )
+        clearLongPressTimer();
+    },
+    finishLongPress = () => {
+      clearLongPressTimer();
+      pointerStart.current = null;
+    },
+    activateDay = (day: DayData) => {
+      if (longPressTriggered.current) {
+        longPressTriggered.current = false;
+        return;
+      }
+      if (multiSelectActive) {
+        onToggleMultiDay(day.day);
+        return;
+      }
+      onSelect(day);
+    };
+
   return (
     <>
       <div className="month-view-header">
@@ -5539,6 +5514,19 @@ function MonthView({
               <ChevronRight size={27} strokeWidth={3} />
             </Button>
           </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant={multiSelectActive ? "default" : "outline"}
+            onClick={() =>
+              multiSelectActive
+                ? onCancelMultiSelect()
+                : onStartMultiSelect()
+            }
+          >
+            {multiSelectActive ? "Salir de selección" : "Seleccionar varios"}
+          </Button>
         </div>
         <div className="month-kpis">
           <div className="month-kpi">
@@ -5623,7 +5611,24 @@ function MonthView({
               <button
                 key={d.day}
                 className={`day ${d.status.toLowerCase()} ${dayColourClass(d)} ${officialHolidayFor(year, month, d.day) ? "official" : ""} ${d.status !== d.baseStatus ? "modified" : ""}`}
-                onClick={() => onSelect(d)}
+                style={
+                  selectedSet.has(d.day)
+                    ? {
+                        outline: "3px solid #eeb64b",
+                        outlineOffset: "2px",
+                      }
+                    : undefined
+                }
+                aria-pressed={multiSelectActive ? selectedSet.has(d.day) : undefined}
+                onPointerDown={(event) => startLongPress(d.day, event)}
+                onPointerMove={moveLongPress}
+                onPointerUp={finishLongPress}
+                onPointerCancel={finishLongPress}
+                onPointerLeave={clearLongPressTimer}
+                onContextMenu={(event) => {
+                  if (!multiSelectActive) event.preventDefault();
+                }}
+                onClick={() => activateDay(d)}
               >
                 <div className="day-top">
                   <b>{d.day}</b>
@@ -5652,8 +5657,86 @@ function MonthView({
               </button>
             ))}
           </div>
+          {multiSelectActive && (
+            <div className="sticky bottom-3 z-30 mt-4 rounded-xl border border-[#eeb64b]/35 bg-[#0d222b]/95 p-3 shadow-xl backdrop-blur">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div>
+                  <b className="text-[#ffd173]">
+                    {multiSelectedDays.length}{" "}
+                    {multiSelectedDays.length === 1
+                      ? "día seleccionado"
+                      : "días seleccionados"}
+                  </b>
+                  <p className="text-xs text-white/45">
+                    Toca días para añadirlos o quitarlos.
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={onCancelMultiSelect}
+                >
+                  Cancelar
+                </Button>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                <Select
+                  value={bulkSituation}
+                  onValueChange={onBulkSituationChange}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Asignar categoría…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(statusLabel)
+                      .filter(
+                        ([value]) =>
+                          value !== "VISPERA_FESTIVO" &&
+                          value !== "VACACIONES_PENDIENTES" &&
+                          value !== "VAC_ANTERIOR",
+                      )
+                      .map(([value, label]) => (
+                        <SelectItem value={`status:${value}`} key={value}>
+                          {label}
+                        </SelectItem>
+                      ))}
+                    <SelectItem value="prior:VACACIONES">
+                      Vacaciones año anterior
+                    </SelectItem>
+                    {Object.entries(priorSituationLabel).map(
+                      ([value, label]) =>
+                        value !== "VACACIONES" ? (
+                          <SelectItem value={`prior:${value}`} key={value}>
+                            {label}
+                          </SelectItem>
+                        ) : null,
+                    )}
+                    {Object.entries(specialLabel)
+                      .filter(([value]) => value !== "MODIFICACION")
+                      .map(([value, label]) => (
+                        <SelectItem value={`special:${value}`} key={value}>
+                          {label}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  className="bg-[#28a99c] hover:bg-[#39beb0]"
+                  disabled={!multiSelectedDays.length || !bulkSituation}
+                  onClick={onApplyBulk}
+                >
+                  Aplicar
+                </Button>
+              </div>
+              <p className="mt-2 text-[11px] leading-4 text-white/35">
+                La modificación de jornada sigue siendo individual porque
+                necesita horas y posición de la modificación.
+              </p>
+            </div>
+          )}
           <p className="mt-4 text-xs text-white/38">
-            La marca de festivo y NS proceden del calendario oficial TMB.
+            Mantén pulsado un día para iniciar selección múltiple, o usa
+            “Seleccionar varios”. La marca de festivo y NS proceden del calendario oficial TMB.
             Los colores personales siguen identificando trabajo, descanso y ausencias. El punto dorado
             identifica días modificados. D.ESP marca un día especial
             retributivo confirmado; es informativo y no altera el cómputo.
@@ -5675,8 +5758,10 @@ function MonthView({
               {calculations.map(({ d, c }) => (
                 <TableRow
                   key={d.day}
-                  className="cursor-pointer"
-                  onClick={() => onSelect(d)}
+                  className={`cursor-pointer ${multiSelectActive && selectedSet.has(d.day) ? "bg-[#eeb64b]/10" : ""}`}
+                  onClick={() =>
+                    multiSelectActive ? onToggleMultiDay(d.day) : onSelect(d)
+                  }
                 >
                   <TableCell className="font-semibold">
                     {String(d.day).padStart(2, "0")}/
