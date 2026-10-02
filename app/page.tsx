@@ -216,7 +216,7 @@ const CONFIRMED_SPECIAL_RETRIBUTIVE_DAYS = [
 // Incrementar esta versión cuando cambie la lógica de reconocimiento anual.
 // Los años analizados con una versión anterior se conservan, pero la interfaz
 // avisa de que conviene volver a leer su imagen.
-const ANNUAL_DETECTOR_VERSION = 32;
+const ANNUAL_DETECTOR_VERSION = 33;
 const statusLabel: Record<Status, string> = {
   REVISAR: "Revisar",
   AGCG: "Trabajo · AGCG",
@@ -3825,13 +3825,30 @@ function loadOpenCvRuntime(): Promise<any | null> {
       resolve(null);
       return;
     }
-    const globalWindow = window as any,
-      ready = async () => {
+
+    let finished = false;
+    const finish = (value: any | null) => {
+        if (finished) return;
+        finished = true;
+        resolve(value);
+      },
+      deadline = window.setTimeout(() => finish(null), 8000),
+      globalWindow = window as any,
+      tryReady = async () => {
         try {
           let cv = globalWindow.cv;
-          if (cv && typeof cv.then === "function") cv = await cv;
+          if (!cv) return false;
+          if (typeof cv.then === "function") {
+            cv = await Promise.race([
+              cv,
+              new Promise<null>((resolveWait) =>
+                window.setTimeout(() => resolveWait(null), 250),
+              ),
+            ]);
+          }
           if (cv?.Mat && cv?.HoughLinesP && cv?.adaptiveThreshold) {
-            resolve(cv);
+            window.clearTimeout(deadline);
+            finish(cv);
             return true;
           }
         } catch {}
@@ -3839,7 +3856,7 @@ function loadOpenCvRuntime(): Promise<any | null> {
       };
 
     void (async () => {
-      if (await ready()) return;
+      if (await tryReady()) return;
       let script = document.getElementById(
         "opencv-runtime",
       ) as HTMLScriptElement | null;
@@ -3850,16 +3867,16 @@ function loadOpenCvRuntime(): Promise<any | null> {
         script.async = true;
         document.head.appendChild(script);
       }
-      const started = Date.now(),
-        poll = async () => {
-          if (await ready()) return;
-          if (Date.now() - started > 20000) {
-            resolve(null);
-            return;
-          }
-          window.setTimeout(() => void poll(), 120);
-        };
-      script.addEventListener("error", () => resolve(null), { once: true });
+      script.addEventListener("error", () => {
+        window.clearTimeout(deadline);
+        finish(null);
+      }, { once: true });
+
+      const poll = async () => {
+        if (finished) return;
+        if (await tryReady()) return;
+        window.setTimeout(() => void poll(), 150);
+      };
       void poll();
     })();
   });
