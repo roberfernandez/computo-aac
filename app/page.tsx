@@ -216,7 +216,7 @@ const CONFIRMED_SPECIAL_RETRIBUTIVE_DAYS = [
 // Incrementar esta versión cuando cambie la lógica de reconocimiento anual.
 // Los años analizados con una versión anterior se conservan, pero la interfaz
 // avisa de que conviene volver a leer su imagen.
-const ANNUAL_DETECTOR_VERSION = 33;
+const ANNUAL_DETECTOR_VERSION = 34;
 const statusLabel: Record<Status, string> = {
   REVISAR: "Revisar",
   AGCG: "Trabajo · AGCG",
@@ -4290,12 +4290,75 @@ async function refineAnnualGridsOpenCv(
       error: "OpenCV.js no disponible",
     };
 
+  // v34: never run morphology/Hough on the full phone photo. OpenCV works on
+  // a reduced copy (enough resolution for grid lines) and the detected line
+  // equations are mapped back to the original canvas coordinates.
+  const maxCvWidth = 960,
+    maxCvHeight = 760,
+    scale = Math.min(
+      1,
+      maxCvWidth / canvas.width,
+      maxCvHeight / canvas.height,
+    ),
+    workCanvas = document.createElement("canvas");
+  workCanvas.width = Math.max(1, Math.round(canvas.width * scale));
+  workCanvas.height = Math.max(1, Math.round(canvas.height * scale));
+  const workContext = workCanvas.getContext("2d", {
+    willReadFrequently: true,
+  });
+  if (!workContext)
+    return {
+      models: panels.map(() => null),
+      available: true,
+      error: "sin contexto para reducir imagen OpenCV",
+    };
+  workContext.drawImage(
+    canvas,
+    0,
+    0,
+    workCanvas.width,
+    workCanvas.height,
+  );
+
+  const scaledPanels = panels.map((panel) => ({
+      x: panel.x * scale,
+      length: panel.length * scale,
+      gridTop: panel.gridTop * scale,
+      cellH: panel.cellH * scale,
+    })),
+    unscaleModel = (model: AnnualGridModel | null) => {
+      if (!model || scale === 1) return model;
+      return {
+        confidence: model.confidence,
+        vertical: model.vertical.map((line) => ({
+          a: line.a,
+          b: line.b / scale,
+        })),
+        horizontal: model.horizontal.map((line) => ({
+          a: line.a,
+          b: line.b / scale,
+        })),
+      };
+    };
+
   let source: any = null;
   try {
-    source = cv.imread(canvas);
-    const models = panels.map((panel) =>
-      openCvGridForPanel(cv, source, panel),
-    );
+    source = cv.imread(workCanvas);
+    const models: (AnnualGridModel | null)[] = [];
+    for (let index = 0; index < scaledPanels.length; index++) {
+      const model = openCvGridForPanel(
+        cv,
+        source,
+        scaledPanels[index],
+      );
+      models.push(unscaleModel(model));
+      // Give the browser a paint opportunity between months. This does not
+      // change the algorithm but prevents the UI from appearing frozen.
+      if (index < scaledPanels.length - 1)
+        await new Promise<void>((resolve) =>
+          window.setTimeout(resolve, 0),
+        );
+    }
     return { models, available: true };
   } catch (error) {
     return {
@@ -4874,7 +4937,7 @@ export default function Home() {
         0,
       );
       setMessage(
-        `Detector v${ANNUAL_DETECTOR_VERSION} · Previsión de ${year} creada: ${total} días. OpenCV ${found.openCvAvailable ? "activo" : "no disponible"}: cuadrícula física usada en ${found.openCvRefinedMonths}/12 meses.${found.openCvFallbackMonths.length ? ` Fallback geométrico en meses: ${found.openCvFallbackMonths.join(", ")}.` : ""}${found.openCvError ? ` ${found.openCvError}.` : ""} Lectura directa prioritaria. Paleta auxiliar de ${found.paletteClusters} grupos recuperó ${found.paletteChanged} lecturas dudosas. Calibración local recuperó ${found.calibrated} lecturas (por mes: ${found.calibratedByMonth.join(" · ")}). Lecturas realmente dudosas: ${found.uncertain} (por mes: ${found.uncertainByMonth.join(" · ")}).${found.uncertain ? ` Días dudosos: ${found.uncertainDaysByMonth.join(" · ")}.` : ""} Azul marino por identificar: ${found.blueAmbiguous} (por mes: ${found.blueByMonth.join(" · ")}).${found.blueAmbiguous ? ` Días azules: ${found.blueDaysByMonth.join(" · ")}. Revísalos en Detalle mensual y usa la selección múltiple para asignar la categoría correcta.` : ""} Diferencias visibles respecto al ciclo base: ${found.cycleDifferences} (informativas; pueden ser vacaciones, permisos, festivos u otras excepciones reales).`,
+        `Detector v${ANNUAL_DETECTOR_VERSION} · Previsión de ${year} creada: ${total} días. OpenCV ${found.openCvAvailable ? "activo" : "no disponible"} (v34 reducido): cuadrícula física usada en ${found.openCvRefinedMonths}/12 meses.${found.openCvFallbackMonths.length ? ` Fallback geométrico en meses: ${found.openCvFallbackMonths.join(", ")}.` : ""}${found.openCvError ? ` ${found.openCvError}.` : ""} Lectura directa prioritaria. Paleta auxiliar de ${found.paletteClusters} grupos recuperó ${found.paletteChanged} lecturas dudosas. Calibración local recuperó ${found.calibrated} lecturas (por mes: ${found.calibratedByMonth.join(" · ")}). Lecturas realmente dudosas: ${found.uncertain} (por mes: ${found.uncertainByMonth.join(" · ")}).${found.uncertain ? ` Días dudosos: ${found.uncertainDaysByMonth.join(" · ")}.` : ""} Azul marino por identificar: ${found.blueAmbiguous} (por mes: ${found.blueByMonth.join(" · ")}).${found.blueAmbiguous ? ` Días azules: ${found.blueDaysByMonth.join(" · ")}. Revísalos en Detalle mensual y usa la selección múltiple para asignar la categoría correcta.` : ""} Diferencias visibles respecto al ciclo base: ${found.cycleDifferences} (informativas; pueden ser vacaciones, permisos, festivos u otras excepciones reales).`,
       );
     } catch (error) {
       const detail =
