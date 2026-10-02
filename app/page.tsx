@@ -216,7 +216,7 @@ const CONFIRMED_SPECIAL_RETRIBUTIVE_DAYS = [
 // Incrementar esta versión cuando cambie la lógica de reconocimiento anual.
 // Los años analizados con una versión anterior se conservan, pero la interfaz
 // avisa de que conviene volver a leer su imagen.
-const ANNUAL_DETECTOR_VERSION = 27;
+const ANNUAL_DETECTOR_VERSION = 28;
 const statusLabel: Record<Status, string> = {
   REVISAR: "Revisar",
   AGCG: "Trabajo · AGCG",
@@ -1157,6 +1157,9 @@ type AnnualColourFeature = {
   blue: number;
   saturation: number;
   luma: number;
+  rawRed: number;
+  rawGreen: number;
+  rawBlue: number;
 };
 
 function annualCellColourFeature(
@@ -1195,7 +1198,7 @@ function annualCellColourFeature(
         g = data[p + 1],
         b = data[p + 2],
         sum = r + g + b;
-      if (sum < 180) continue;
+      if (sum < 60) continue;
       if (r > 247 && g > 247 && b > 247) continue;
       rs.push(r);
       gs.push(g);
@@ -1219,7 +1222,77 @@ function annualCellColourFeature(
     blue: b / sum,
     saturation: (max - min) / 255,
     luma: (r * 0.299 + g * 0.587 + b * 0.114) / 255,
+    rawRed: r,
+    rawGreen: g,
+    rawBlue: b,
   };
+}
+
+function annualFeatureEvidence(
+  feature: AnnualColourFeature,
+): { status: Status; confidence: number; detectedColour?: "BLUE" } | null {
+  const r = feature.red,
+    g = feature.green,
+    b = feature.blue,
+    saturation = feature.saturation,
+    luma = feature.luma;
+
+  // v28: classify the cell from its ROBUST MEDIAN colour, not from the
+  // proportion of individual pixels. This suppresses monitor moiré: a grey
+  // cell can contain many isolated blue-ish pixels while its median remains
+  // neutral. The rules use chromaticity plus brightness so that the pale
+  // brown cycle holiday and the much darker holiday/vacation brown remain
+  // distinct.
+  if (b > 0.52 && b - g > 0.18 && saturation > 0.28 && luma < 0.48)
+    return { status: "REVISAR", confidence: 0.93, detectedColour: "BLUE" };
+
+  if (
+    g > 0.36 &&
+    b > 0.34 &&
+    r < 0.27 &&
+    Math.abs(g - b) < 0.12 &&
+    saturation > 0.18
+  )
+    return { status: "DCOM", confidence: 0.89 };
+
+  if (g > 0.47 && r < 0.32 && b < 0.28 && saturation > 0.20)
+    return { status: "ENFERMEDAD", confidence: 0.88 };
+
+  if (r > 0.50 && b < 0.18 && saturation > 0.28)
+    return { status: "LAUDO", confidence: 0.90 };
+
+  if (r > 0.39 && b < 0.25 && luma < 0.30 && saturation > 0.10)
+    return { status: "VACACIONES_PENDIENTES", confidence: 0.88 };
+
+  if (r > 0.40 && b < 0.31 && saturation > 0.12 && luma >= 0.30)
+    return { status: "FEST", confidence: 0.84 };
+
+  if (
+    b > 0.38 &&
+    r > 0.20 &&
+    g > 0.20 &&
+    saturation > 0.12 &&
+    luma > 0.38
+  )
+    return { status: "FORMACION", confidence: 0.82 };
+
+  if (
+    g > 0.36 &&
+    r > 0.24 &&
+    b > 0.24 &&
+    g - r > 0.035 &&
+    g - b > 0.035 &&
+    saturation > 0.08
+  )
+    return { status: "REVISION_MEDICA", confidence: 0.76 };
+
+  if (
+    saturation < 0.16 &&
+    Math.max(Math.abs(r - g), Math.abs(g - b), Math.abs(r - b)) < 0.075
+  )
+    return { status: "AGCG", confidence: 0.82 };
+
+  return null;
 }
 
 function annualColourFeatureDistance(
@@ -1293,6 +1366,9 @@ function calibrateAnnualUncertainColours(
         blue: median(values.map((v) => v.blue)),
         saturation: median(values.map((v) => v.saturation)),
         luma: median(values.map((v) => v.luma)),
+        rawRed: median(values.map((v) => v.rawRed)),
+        rawGreen: median(values.map((v) => v.rawGreen)),
+        rawBlue: median(values.map((v) => v.rawBlue)),
       },
       distances = values.map((v) => annualColourFeatureDistance(v, center)),
       radius = Math.max(0.055, percentile(distances, 0.82) * 1.9);
@@ -3212,8 +3288,19 @@ async function classifyAnnual(file: File, year: number) {
           ),
         ),
         evidence = samples.sort((a, b) => b.confidence - a.confidence)[0],
+        feature = annualCellColourFeature(
+          ctx,
+          cx,
+          cy,
+          cellW,
+          cellH,
+          canvas,
+        ),
+        featureEvidence = feature ? annualFeatureEvidence(feature) : null,
         recovered =
-          evidence.status === "REVISAR" && evidence.detectedColour !== "BLUE"
+          !featureEvidence &&
+          evidence.status === "REVISAR" &&
+          evidence.detectedColour !== "BLUE"
             ? retryUncertainAnnualCell(
                 ctx,
                 cx,
@@ -3223,15 +3310,7 @@ async function classifyAnnual(file: File, year: number) {
                 canvas,
               )
             : null,
-        chosen = recovered || evidence,
-        feature = annualCellColourFeature(
-          ctx,
-          cx,
-          cy,
-          cellW,
-          cellH,
-          canvas,
-        );
+        chosen = featureEvidence || recovered || evidence;
       statuses.push({ ...chosen, feature });
     }
     raw[month] = makeDays(year, month).map((d, i) => ({
@@ -3699,7 +3778,7 @@ export default function Home() {
         0,
       );
       setMessage(
-        `Detector v${ANNUAL_DETECTOR_VERSION} · Previsión de ${year} creada: ${total} días. Calibración local recuperó ${found.calibrated} lecturas (por mes: ${found.calibratedByMonth.join(" · ")}). Lecturas realmente dudosas: ${found.uncertain} (por mes: ${found.uncertainByMonth.join(" · ")}).${found.uncertain ? ` Días dudosos: ${found.uncertainDaysByMonth.join(" · ")}.` : ""} Azul marino por identificar: ${found.blueAmbiguous} (por mes: ${found.blueByMonth.join(" · ")}).${found.blueAmbiguous ? ` Días azules: ${found.blueDaysByMonth.join(" · ")}. Revísalos en Detalle mensual y usa la selección múltiple para asignar la categoría correcta.` : ""} Diferencias visibles respecto al ciclo base: ${found.cycleDifferences} (informativas; pueden ser vacaciones, permisos, festivos u otras excepciones reales).`,
+        `Detector v${ANNUAL_DETECTOR_VERSION} · Previsión de ${year} creada: ${total} días. Mediana cromática robusta activa. Calibración local recuperó ${found.calibrated} lecturas (por mes: ${found.calibratedByMonth.join(" · ")}). Lecturas realmente dudosas: ${found.uncertain} (por mes: ${found.uncertainByMonth.join(" · ")}).${found.uncertain ? ` Días dudosos: ${found.uncertainDaysByMonth.join(" · ")}.` : ""} Azul marino por identificar: ${found.blueAmbiguous} (por mes: ${found.blueByMonth.join(" · ")}).${found.blueAmbiguous ? ` Días azules: ${found.blueDaysByMonth.join(" · ")}. Revísalos en Detalle mensual y usa la selección múltiple para asignar la categoría correcta.` : ""} Diferencias visibles respecto al ciclo base: ${found.cycleDifferences} (informativas; pueden ser vacaciones, permisos, festivos u otras excepciones reales).`,
       );
     } catch (error) {
       const detail =
