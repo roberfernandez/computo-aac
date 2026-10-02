@@ -4090,8 +4090,8 @@ function openCvGridForPanel(
       7,
     );
 
-    vertical.copyTo(horizontal);
     binary.copyTo(vertical);
+    binary.copyTo(horizontal);
     verticalKernel = cv.getStructuringElement(
       cv.MORPH_RECT,
       new cv.Size(
