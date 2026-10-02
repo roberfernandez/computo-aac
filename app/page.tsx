@@ -1429,7 +1429,7 @@ function stabilizeAnnualPalette(
 
     // The vacation fill is the very dark warm/brown family. It remains
     // recognisable even when a photograph changes white balance.
-    if (luma < 0.38 && b < 0.24 && r >= g - 0.03) return "VACATION";
+    if (luma < 0.40 && b < 0.16 && r >= g - 0.03) return "VACATION";
 
     // A strongly orange singleton/small cluster is normally Laudo. The AI
     // cleaned image can collapse Laudo and cycle holidays into the same warm
