@@ -2350,9 +2350,9 @@ function detectPhotographedAnnual(canvas: HTMLCanvasElement, year: number, diagn
       while(size){const i=stack[--size],x=i%W,y=Math.floor(i/W);count++;sx+=x;sy+=y;left=Math.min(left,x);right=Math.max(right,x);top=Math.min(top,y);bottom=Math.max(bottom,y);
         for(const next of [x?i-1:-1,x+1<W?i+1:-1,i-W,i+W])if(next>=0&&next<seen.length&&seen[next]){seen[next]=0;stack[size++]=next;}}
       const w=right-left+1,h=bottom-top+1;
-      components++; if(w<10)rejectWidth++; else if(h<4)rejectHeight++; else if(w>=W*.12)rejectHuge++; else if(w/h<=1.5||w/h>=4.5)rejectAspect++; else if(count/(w*h)<=.5)rejectDensity++; else cells.push({x:sx/count,y:sy/count,w,h});
+      components++; if(w<5)rejectWidth++; else if(h<4)rejectHeight++; else if(w>=W*.12)rejectHuge++; else if(w/h<=1.5||w/h>=4.5)rejectAspect++; else if(count/(w*h)<=.5)rejectDensity++; else cells.push({x:sx/count,y:sy/count,w,h});
     }
-    if(cells.length<100){reject("escala " + scale + ": máscara " + maskCount + " px, tras erosión " + erodedCount + " px, componentes " + components + " (ancho<10 " + rejectWidth + ", alto<4 " + rejectHeight + ", enorme " + rejectHuge + ", proporción " + rejectAspect + ", densidad " + rejectDensity + "), " + cells.length + " celdas candidatas; mínimo 100");continue;}
+    if(cells.length<100){reject("escala " + scale + ": máscara " + maskCount + " px, tras erosión " + erodedCount + " px, componentes " + components + " (ancho<5 " + rejectWidth + ", alto<4 " + rejectHeight + ", enorme " + rejectHuge + ", proporción " + rejectAspect + ", densidad " + rejectDensity + "), " + cells.length + " celdas candidatas; mínimo 100");continue;}
     const mw=median(cells.map(c=>c.w)),mh=median(cells.map(c=>c.h));
     const usable=cells.filter(c=>c.w>mw*.7&&c.w<mw*1.4&&c.h>mh*.65&&c.h<mh*1.7);
     const angles:number[]=[];
