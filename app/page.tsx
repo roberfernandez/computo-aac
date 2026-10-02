@@ -216,7 +216,7 @@ const CONFIRMED_SPECIAL_RETRIBUTIVE_DAYS = [
 // Incrementar esta versión cuando cambie la lógica de reconocimiento anual.
 // Los años analizados con una versión anterior se conservan, pero la interfaz
 // avisa de que conviene volver a leer su imagen.
-const ANNUAL_DETECTOR_VERSION = 28;
+const ANNUAL_DETECTOR_VERSION = 29;
 const statusLabel: Record<Status, string> = {
   REVISAR: "Revisar",
   AGCG: "Trabajo · AGCG",
@@ -1293,6 +1293,253 @@ function annualFeatureEvidence(
     return { status: "AGCG", confidence: 0.82 };
 
   return null;
+}
+
+
+type AnnualPaletteFamily =
+  | "BLUE"
+  | "CYAN"
+  | "GREEN"
+  | "PINK"
+  | "NEUTRAL"
+  | "VACATION"
+  | "LAUDO"
+  | "WARM"
+  | "MEDICAL"
+  | "UNKNOWN";
+
+function stabilizeAnnualPalette(
+  raw: Record<number, DayData[]>,
+  features: Record<number, (AnnualColourFeature | null)[]>,
+  year: number,
+) {
+  const entries: {
+      month: number;
+      index: number;
+      day: number;
+      feature: AnnualColourFeature;
+    }[] = [];
+  for (let month = 1; month <= 12; month++)
+    (raw[month] || []).forEach((day, index) => {
+      const feature = features[month]?.[index];
+      if (feature) entries.push({ month, index, day: day.day, feature });
+    });
+
+  if (entries.length < 30)
+    return { changed: 0, clusters: 0, families: [] as AnnualPaletteFamily[] };
+
+  const vector = (feature: AnnualColourFeature) => [
+      feature.red * 4,
+      feature.green * 4,
+      feature.blue * 4,
+      feature.saturation * 1.5,
+      feature.luma,
+    ],
+    vectors = entries.map((entry) => vector(entry.feature)),
+    distance2 = (a: number[], b: number[]) =>
+      a.reduce((sum, value, index) => {
+        const delta = value - b[index];
+        return sum + delta * delta;
+      }, 0),
+    k = Math.min(9, entries.length),
+    centers: number[][] = [];
+
+  // Deterministic farthest-point seeding. Unlike random k-means this produces
+  // exactly the same result on every phone/browser for the same calendar.
+  let seed = 0;
+  for (let i = 1; i < entries.length; i++)
+    if (entries[i].feature.luma < entries[seed].feature.luma) seed = i;
+  centers.push([...vectors[seed]]);
+  while (centers.length < k) {
+    let bestIndex = 0,
+      bestDistance = -1;
+    for (let i = 0; i < vectors.length; i++) {
+      const nearest = Math.min(
+        ...centers.map((center) => distance2(vectors[i], center)),
+      );
+      if (nearest > bestDistance) {
+        bestDistance = nearest;
+        bestIndex = i;
+      }
+    }
+    centers.push([...vectors[bestIndex]]);
+  }
+
+  let assignments = new Array(entries.length).fill(0);
+  for (let iteration = 0; iteration < 30; iteration++) {
+    const next = vectors.map((item) => {
+      let best = 0,
+        bestDistance = Infinity;
+      centers.forEach((center, index) => {
+        const distance = distance2(item, center);
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          best = index;
+        }
+      });
+      return best;
+    });
+    const sums = Array.from({ length: k }, () => Array(5).fill(0)),
+      counts = Array(k).fill(0);
+    next.forEach((cluster, index) => {
+      counts[cluster]++;
+      vectors[index].forEach((value, dimension) => {
+        sums[cluster][dimension] += value;
+      });
+    });
+    for (let cluster = 0; cluster < k; cluster++)
+      if (counts[cluster])
+        centers[cluster] = sums[cluster].map(
+          (value) => value / counts[cluster],
+        );
+    const stable = next.every((cluster, index) => cluster === assignments[index]);
+    assignments = next;
+    if (stable) break;
+  }
+
+  const clusterFeatures: AnnualColourFeature[] = centers.map((center) => ({
+      red: center[0] / 4,
+      green: center[1] / 4,
+      blue: center[2] / 4,
+      saturation: center[3] / 1.5,
+      luma: center[4],
+      rawRed: 0,
+      rawGreen: 0,
+      rawBlue: 0,
+    })),
+    counts = Array(k).fill(0);
+  assignments.forEach((cluster) => counts[cluster]++);
+
+  const familyFor = (
+    feature: AnnualColourFeature,
+    count: number,
+  ): AnnualPaletteFamily => {
+    const { red: r, green: g, blue: b, saturation: sat, luma } = feature;
+
+    if (b > 0.58 && b - g > 0.14 && sat > 0.22) return "BLUE";
+    if (
+      g > r + 0.12 &&
+      b > r + 0.12 &&
+      Math.abs(g - b) < 0.1 &&
+      sat > 0.16
+    )
+      return "CYAN";
+    if (g > r + 0.16 && g > b + 0.14 && sat > 0.18) return "GREEN";
+    if (r > g + 0.09 && b > g + 0.09 && sat > 0.12) return "PINK";
+
+    // The vacation fill is the very dark warm/brown family. It remains
+    // recognisable even when a photograph changes white balance.
+    if (luma < 0.40 && b < 0.16 && r >= g - 0.03) return "VACATION";
+
+    // A strongly orange singleton/small cluster is normally Laudo. The AI
+    // cleaned image can collapse Laudo and cycle holidays into the same warm
+    // family, so the broader WARM case below is resolved against the cycle.
+    if (
+      r > 0.55 &&
+      b < 0.15 &&
+      r > g + 0.18 &&
+      sat > 0.28 &&
+      count <= 6
+    )
+      return "LAUDO";
+
+    if (r > g + 0.10 && g > b + 0.04 && sat > 0.10) return "WARM";
+
+    if (
+      sat < 0.11 &&
+      Math.max(Math.abs(r - g), Math.abs(g - b), Math.abs(r - b)) < 0.07
+    )
+      return "NEUTRAL";
+
+    if (
+      g > r + 0.035 &&
+      g >= b - 0.02 &&
+      sat > 0.06 &&
+      luma > 0.42
+    )
+      return "MEDICAL";
+
+    return "UNKNOWN";
+  };
+
+  const families = clusterFeatures.map((feature, cluster) =>
+      familyFor(feature, counts[cluster]),
+    ),
+    confidenceByFamily: Record<AnnualPaletteFamily, number> = {
+      BLUE: 0.94,
+      CYAN: 0.9,
+      GREEN: 0.9,
+      PINK: 0.86,
+      NEUTRAL: 0.86,
+      VACATION: 0.9,
+      LAUDO: 0.9,
+      WARM: 0.82,
+      MEDICAL: 0.75,
+      UNKNOWN: 0,
+    };
+
+  let changed = 0;
+  // First pass gives the cycle inference stable cluster-level evidence.
+  entries.forEach((entry, flatIndex) => {
+    const family = families[assignments[flatIndex]],
+      current = raw[entry.month][entry.index];
+    let status: Status | null = null,
+      detectedColour: "BLUE" | undefined;
+    if (family === "BLUE") {
+      status = "REVISAR";
+      detectedColour = "BLUE";
+    } else if (family === "CYAN") status = "DCOM";
+    else if (family === "GREEN") status = "ENFERMEDAD";
+    else if (family === "PINK") status = "FORMACION";
+    else if (family === "NEUTRAL") status = "AGCG";
+    else if (family === "VACATION") status = "VACACIONES_PENDIENTES";
+    else if (family === "LAUDO") status = "LAUDO";
+    else if (family === "WARM") status = "FEST";
+    else if (family === "MEDICAL") status = "REVISION_MEDICA";
+    if (!status) return;
+
+    if (
+      current.status !== status ||
+      current.detectedColour !== detectedColour
+    )
+      changed++;
+    raw[entry.month][entry.index] = {
+      ...current,
+      status,
+      baseStatus: baseOf(status),
+      detectedColour,
+      confidence: Math.max(
+        current.confidence || 0,
+        confidenceByFamily[family],
+      ),
+      note: "Color estabilizado por la paleta relativa de la imagen",
+    };
+  });
+
+  const phase = inferCyclePhase(year, raw);
+
+  // Light warm fills are the one palette family whose semantic meaning cannot
+  // always be read from RGB alone: TMB's cycle holiday and Laudo can be very
+  // close after screenshots/AI cleanup. The 28-day cycle resolves that final
+  // ambiguity without changing any other colour family.
+  entries.forEach((entry, flatIndex) => {
+    if (families[assignments[flatIndex]] !== "WARM") return;
+    const current = raw[entry.month][entry.index],
+      expected = phaseStatus(year, entry.month, entry.day, phase),
+      status: Status = expected === "FEST" ? "FEST" : "LAUDO";
+    raw[entry.month][entry.index] = {
+      ...current,
+      status,
+      baseStatus: baseOf(status),
+      confidence: Math.max(current.confidence || 0, 0.84),
+      note:
+        expected === "FEST"
+          ? "Marrón claro validado como fiesta propia por el ciclo"
+          : "Naranja cálido interpretado como Laudo fuera de fiesta de ciclo",
+    };
+  });
+
+  return { changed, clusters: k, families };
 }
 
 function annualColourFeatureDistance(
@@ -3322,7 +3569,8 @@ async function classifyAnnual(file: File, year: number) {
     }));
     colourFeatures[month] = statuses.map((status) => status.feature);
   }
-  const calibration = calibrateAnnualUncertainColours(raw, colourFeatures),
+  const palette = stabilizeAnnualPalette(raw, colourFeatures, year),
+    calibration = calibrateAnnualUncertainColours(raw, colourFeatures),
     phase = inferCyclePhase(year, raw),
     result: YearPlan = {},
     cycleDifferenceByMonth: string[] = [],
@@ -3387,6 +3635,8 @@ async function classifyAnnual(file: File, year: number) {
     calibrated: calibration.total,
     calibratedByMonth: calibration.recoveredByMonth
       .map((count, index) => `${index + 1}:${count}`),
+    paletteChanged: palette.changed,
+    paletteClusters: palette.clusters,
   };
 }
 
@@ -3778,7 +4028,7 @@ export default function Home() {
         0,
       );
       setMessage(
-        `Detector v${ANNUAL_DETECTOR_VERSION} · Previsión de ${year} creada: ${total} días. Mediana cromática robusta activa. Calibración local recuperó ${found.calibrated} lecturas (por mes: ${found.calibratedByMonth.join(" · ")}). Lecturas realmente dudosas: ${found.uncertain} (por mes: ${found.uncertainByMonth.join(" · ")}).${found.uncertain ? ` Días dudosos: ${found.uncertainDaysByMonth.join(" · ")}.` : ""} Azul marino por identificar: ${found.blueAmbiguous} (por mes: ${found.blueByMonth.join(" · ")}).${found.blueAmbiguous ? ` Días azules: ${found.blueDaysByMonth.join(" · ")}. Revísalos en Detalle mensual y usa la selección múltiple para asignar la categoría correcta.` : ""} Diferencias visibles respecto al ciclo base: ${found.cycleDifferences} (informativas; pueden ser vacaciones, permisos, festivos u otras excepciones reales).`,
+        `Detector v${ANNUAL_DETECTOR_VERSION} · Previsión de ${year} creada: ${total} días. Paleta relativa de ${found.paletteClusters} grupos estabilizó ${found.paletteChanged} lecturas. Calibración local recuperó ${found.calibrated} lecturas (por mes: ${found.calibratedByMonth.join(" · ")}). Lecturas realmente dudosas: ${found.uncertain} (por mes: ${found.uncertainByMonth.join(" · ")}).${found.uncertain ? ` Días dudosos: ${found.uncertainDaysByMonth.join(" · ")}.` : ""} Azul marino por identificar: ${found.blueAmbiguous} (por mes: ${found.blueByMonth.join(" · ")}).${found.blueAmbiguous ? ` Días azules: ${found.blueDaysByMonth.join(" · ")}. Revísalos en Detalle mensual y usa la selección múltiple para asignar la categoría correcta.` : ""} Diferencias visibles respecto al ciclo base: ${found.cycleDifferences} (informativas; pueden ser vacaciones, permisos, festivos u otras excepciones reales).`,
       );
     } catch (error) {
       const detail =
