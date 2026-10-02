@@ -61,6 +61,7 @@ type Status =
   | "MINI"
   | "LAUDO"
   | "RJ"
+  | "PATERNIDAD"
   | "FORMACION"
   | "REVISION_MEDICA"
   | "ENFERMEDAD"
@@ -78,7 +79,7 @@ type Special =
   | "MODIFICACION";
 type ModificationPlacement = "FINAL" | "INICIO" | "PERSONALIZADO";
 type PriorOrigin = "VACACIONES" | "RJ" | "COMPUTO";
-type PeriodKind = "VACACIONES" | "MINI" | "VAC_ANTERIOR";
+type PeriodKind = "VACACIONES" | "MINI" | "RJ" | "PATERNIDAD" | "VAC_ANTERIOR";
 type PeriodRecord = {
   id: string;
   kind: PeriodKind;
@@ -215,7 +216,7 @@ const CONFIRMED_SPECIAL_RETRIBUTIVE_DAYS = [
 // Incrementar esta versión cuando cambie la lógica de reconocimiento anual.
 // Los años analizados con una versión anterior se conservan, pero la interfaz
 // avisa de que conviene volver a leer su imagen.
-const ANNUAL_DETECTOR_VERSION = 25;
+const ANNUAL_DETECTOR_VERSION = 26;
 const statusLabel: Record<Status, string> = {
   REVISAR: "Revisar",
   AGCG: "Trabajo · AGCG",
@@ -227,6 +228,7 @@ const statusLabel: Record<Status, string> = {
   MINI: "Mini",
   LAUDO: "Laudo",
   RJ: "RJ",
+  PATERNIDAD: "Paternidad",
   FORMACION: "Formación",
   REVISION_MEDICA: "Revisión médica",
   ENFERMEDAD: "Baja o enfermedad",
@@ -255,6 +257,7 @@ function dayColourClass(d: DayData) {
     (d.status === "REVISAR" ||
       d.status === "RJ" ||
       d.status === "MINI" ||
+      d.status === "PATERNIDAD" ||
       d.status === "COMPUTO_ANTERIOR" ||
       d.status === "COMPUTO_ACTUAL" ||
       (d.status === "VAC_ANTERIOR" &&
@@ -268,7 +271,7 @@ function dayColourClass(d: DayData) {
     AGCG: "tmb-grey", DCOM: "tmb-turquoise", FEST: "tmb-salmon",
     LAUDO: "tmb-orange", VACACIONES: "tmb-brown", VACACIONES_PENDIENTES: "tmb-brown",
     FORMACION: "tmb-pink", ENFERMEDAD: "tmb-green", REVISION_MEDICA: "tmb-sage",
-    RJ: "tmb-blue",
+    RJ: "tmb-blue", MINI: "tmb-blue", PATERNIDAD: "tmb-blue",
   };
   return colours[d.status] || "tmb-neutral";
 }
@@ -469,6 +472,7 @@ function applyCycleValidation(
       d.status === "MINI" ||
       d.status === "LAUDO" ||
       d.status === "RJ" ||
+      d.status === "PATERNIDAD" ||
       d.status === "FORMACION" ||
       d.status === "REVISION_MEDICA" ||
       d.status === "ENFERMEDAD" ||
@@ -1044,11 +1048,40 @@ function retryUncertainAnnualCell(
   cellH: number,
   canvas: HTMLCanvasElement,
 ) {
-  // v17: lectura adaptativa SOLO para celdas que la primera pasada dejó
-  // en REVISAR. Muestreamos zonas pequeñas e independientes del fondo,
-  // evitando el número central y los bordes. Nunca usamos el ciclo para
-  // decidir el color: si no hay consenso suficiente, permanece REVISAR.
-  const regions = [
+  // v26: segunda lectura SOLO para celdas no azules que la primera pasada
+  // dejó en REVISAR. El azul marino se conserva como dato visual ambiguo:
+  // por color no se puede distinguir RJ, Mini y Paternidad.
+  const broadFallback = () => {
+      const broadRegions = [
+          [0, 0, 0.58, 0.54],
+          [-0.24, 0, 0.26, 0.56],
+          [0.24, 0, 0.26, 0.56],
+        ],
+        broadVotes = new Map<Status, number>();
+      for (const [dx, dy, rw, rh] of broadRegions) {
+        const sw = Math.max(3, Math.round(cellW * rw)),
+          sh = Math.max(3, Math.round(cellH * rh)),
+          sx = Math.max(0, Math.round(cx + cellW * dx - sw / 2)),
+          sy = Math.max(0, Math.round(cy + cellH * dy - sh / 2)),
+          status = dominantStatus(
+            ctx.getImageData(
+              sx,
+              sy,
+              Math.min(sw, canvas.width - sx),
+              Math.min(sh, canvas.height - sy),
+            ).data,
+          );
+        if (status !== "REVISAR")
+          broadVotes.set(status, (broadVotes.get(status) || 0) + 1);
+      }
+      const broad = [...broadVotes.entries()].sort((a, b) => b[1] - a[1]),
+        winner = broad[0],
+        runnerUp = broad[1];
+      if (!winner || winner[1] < 2 || (runnerUp && winner[1] <= runnerUp[1]))
+        return null;
+      return { status: winner[0], confidence: 0.48 };
+    },
+    regions = [
       [-0.34, -0.27, 0.12, 0.16], [0.34, -0.27, 0.12, 0.16],
       [-0.34,  0.27, 0.12, 0.16], [0.34,  0.27, 0.12, 0.16],
       [-0.38,  0.00, 0.10, 0.22], [0.38,  0.00, 0.10, 0.22],
@@ -1072,17 +1105,17 @@ function retryUncertainAnnualCell(
         ).data,
       );
     if (evidence.status === "REVISAR" || evidence.confidence < 0.34) continue;
-    const current = votes.get(evidence.status) || { count: 0, weight: 0, strong: 0 };
+    const current = votes.get(evidence.status) || {
+      count: 0,
+      weight: 0,
+      strong: 0,
+    };
     current.count++;
     current.weight += evidence.confidence;
     if (evidence.confidence >= 0.58) current.strong++;
     votes.set(evidence.status, current);
   }
 
-  // v18: además del voto por clase, medimos el color dominante real de la
-  // celda dudosa. Esto permite recuperar tonos uniformes que no encajan bien
-  // en los umbrales históricos, comparándolos con el patrón cromático ya
-  // observado sin usar el ciclo de 28 días como respuesta.
   const ranked = [...votes.entries()].sort(
       (x, y) =>
         y[1].count - x[1].count ||
@@ -1091,15 +1124,12 @@ function retryUncertainAnnualCell(
     ),
     best = ranked[0],
     second = ranked[1];
-  if (!best) return null;
+  if (!best) return broadFallback();
 
   const totalVotes = ranked.reduce((n, [, v]) => n + v.count, 0),
     share = totalVotes ? best[1].count / totalVotes : 0,
     voteLead = second ? best[1].count - second[1].count : best[1].count,
     weightLead = second ? best[1].weight - second[1].weight : best[1].weight,
-    // Para una celda de color uniforme, 5 regiones coincidentes ya son
-    // evidencia fuerte. Para resultados más mezclados mantenemos el criterio
-    // estricto de v17. Así v18 gana sensibilidad sin convertir ruido en datos.
     uniformConsensus =
       best[1].count >= 5 &&
       share >= 0.72 &&
@@ -1111,7 +1141,7 @@ function retryUncertainAnnualCell(
         (!second || voteLead >= 2 || weightLead >= 1.10) &&
         (best[1].strong >= 2 || best[1].weight / best[1].count >= 0.52));
 
-  if (!consensus) return null;
+  if (!consensus) return broadFallback();
   return {
     status: best[0],
     confidence: Math.min(
@@ -1120,7 +1150,6 @@ function retryUncertainAnnualCell(
     ),
   };
 }
-
 function monthlyColorMask(r: number, g: number, b: number) {
   const max = Math.max(r, g, b),
     min = Math.min(r, g, b);
@@ -2977,7 +3006,7 @@ async function classifyAnnual(file: File, year: number) {
         ),
         evidence = samples.sort((a, b) => b.confidence - a.confidence)[0],
         recovered =
-          evidence.status === "REVISAR"
+          evidence.status === "REVISAR" && evidence.detectedColour !== "BLUE"
             ? retryUncertainAnnualCell(
                 ctx,
                 cx,
@@ -3001,23 +3030,41 @@ async function classifyAnnual(file: File, year: number) {
     result: YearPlan = {},
     cycleDifferenceByMonth: string[] = [],
     uncertainByMonth: string[] = [],
-    uncertainDaysByMonth: string[] = [];
+    uncertainDaysByMonth: string[] = [],
+    blueByMonth: string[] = [],
+    blueDaysByMonth: string[] = [];
   let cycleDifferences = 0,
-    uncertain = 0;
+    uncertain = 0,
+    blueAmbiguous = 0;
   for (let month = 1; month <= 12; month++) {
     const audited = auditCycle(raw[month], year, month, phase),
       monthCycleDifferences = audited.filter(
         (d) => d.status !== "REVISAR" && Boolean(d.note),
       ).length,
-      monthUncertain = raw[month].filter((d) => d.status === "REVISAR").length;
+      blueDays = raw[month].filter(
+        (d) => d.status === "REVISAR" && d.detectedColour === "BLUE",
+      ),
+      uncertainDays = raw[month].filter(
+        (d) => d.status === "REVISAR" && d.detectedColour !== "BLUE",
+      ),
+      monthBlue = blueDays.length,
+      monthUncertain = uncertainDays.length;
     cycleDifferences += monthCycleDifferences;
     uncertain += monthUncertain;
+    blueAmbiguous += monthBlue;
     cycleDifferenceByMonth.push(`${month}:${monthCycleDifferences}`);
     uncertainByMonth.push(`${month}:${monthUncertain}`);
+    blueByMonth.push(`${month}:${monthBlue}`);
     if (monthUncertain) {
       uncertainDaysByMonth.push(
-        `${MONTHS[month - 1].slice(0, 3)}: ${raw[month]
-          .filter((d) => d.status === "REVISAR")
+        `${MONTHS[month - 1].slice(0, 3)}: ${uncertainDays
+          .map((d) => d.day)
+          .join(", ")}`,
+      );
+    }
+    if (monthBlue) {
+      blueDaysByMonth.push(
+        `${MONTHS[month - 1].slice(0, 3)}: ${blueDays
           .map((d) => d.day)
           .join(", ")}`,
       );
@@ -3037,6 +3084,9 @@ async function classifyAnnual(file: File, year: number) {
     uncertain,
     uncertainByMonth,
     uncertainDaysByMonth,
+    blueAmbiguous,
+    blueByMonth,
+    blueDaysByMonth,
   };
 }
 
@@ -3417,7 +3467,7 @@ export default function Home() {
         0,
       );
       setMessage(
-        `Detector v${ANNUAL_DETECTOR_VERSION} · Previsión de ${year} creada: ${total} días. Lecturas dudosas: ${found.uncertain} (por mes: ${found.uncertainByMonth.join(" · ")}).${found.uncertain ? ` Días dudosos: ${found.uncertainDaysByMonth.join(" · ")}.` : ""} Diferencias visibles respecto al ciclo base: ${found.cycleDifferences} (informativas; pueden ser vacaciones, permisos, festivos u otras excepciones reales).`,
+        `Detector v${ANNUAL_DETECTOR_VERSION} · Previsión de ${year} creada: ${total} días. Lecturas realmente dudosas: ${found.uncertain} (por mes: ${found.uncertainByMonth.join(" · ")}).${found.uncertain ? ` Días dudosos: ${found.uncertainDaysByMonth.join(" · ")}.` : ""} Azul marino por identificar: ${found.blueAmbiguous} (por mes: ${found.blueByMonth.join(" · ")}).${found.blueAmbiguous ? ` Días azules: ${found.blueDaysByMonth.join(" · ")}. El color azul marino puede ser RJ, Mini o Paternidad; asígnalo como periodo sin cambiar DCOM/FEST.` : ""} Diferencias visibles respecto al ciclo base: ${found.cycleDifferences} (informativas; pueden ser vacaciones, permisos, festivos u otras excepciones reales).`,
       );
     } catch (error) {
       const detail =
@@ -3534,8 +3584,10 @@ export default function Home() {
                 d.status === "VACACIONES_PENDIENTES"
               : periodKind === "MINI"
                 ? d.status === "MINI" || d.status === "LAUDO"
-                : d.status === "VAC_ANTERIOR" ||
-                  d.status === "VACACIONES_PENDIENTES",
+                : periodKind === "VAC_ANTERIOR"
+                  ? d.status === "VAC_ANTERIOR" ||
+                    d.status === "VACACIONES_PENDIENTES"
+                  : d.status === periodKind,
           available =
             d.status === "AGCG" || d.status === "REVISAR" || sameDetectedPeriod;
         if (
@@ -3557,9 +3609,13 @@ export default function Home() {
               ? status === "LAUDO"
                 ? "Laudo ligado al miniperiodo"
                 : "Miniperiodo"
-              : periodKind === "VAC_ANTERIOR"
-                ? priorOriginLabel[priorOrigin]
-                : "Vacaciones";
+              : periodKind === "RJ"
+                ? "RJ"
+                : periodKind === "PATERNIDAD"
+                  ? "Permiso de paternidad"
+                  : periodKind === "VAC_ANTERIOR"
+                    ? priorOriginLabel[priorOrigin]
+                    : "Vacaciones";
           return {
             ...d,
             baseStatus: "AGCG",
@@ -4101,6 +4157,8 @@ export default function Home() {
                   <SelectContent>
                     <SelectItem value="VACACIONES">Vacaciones</SelectItem>
                     <SelectItem value="MINI">Mini</SelectItem>
+                    <SelectItem value="RJ">RJ</SelectItem>
+                    <SelectItem value="PATERNIDAD">Paternidad</SelectItem>
                     <SelectItem value="VAC_ANTERIOR">
                       Año/s anterior/es
                     </SelectItem>
