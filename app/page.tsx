@@ -216,7 +216,7 @@ const CONFIRMED_SPECIAL_RETRIBUTIVE_DAYS = [
 // Incrementar esta versión cuando cambie la lógica de reconocimiento anual.
 // Los años analizados con una versión anterior se conservan, pero la interfaz
 // avisa de que conviene volver a leer su imagen.
-const ANNUAL_DETECTOR_VERSION = 34;
+const ANNUAL_DETECTOR_VERSION = 35;
 const statusLabel: Record<Status, string> = {
   REVISAR: "Revisar",
   AGCG: "Trabajo · AGCG",
@@ -4391,11 +4391,18 @@ async function classifyAnnual(file: File, year: number) {
   // v32: OpenCV extracts the physical grid lines. A model is used only when
   // enough vertical/horizontal lines are detected with good regularity; otherwise
   // we keep the original detector coordinates rather than "optimising" them.
-  const openCvGrid = await refineAnnualGridsOpenCv(canvas, panels),
-    openCvRefinedMonths = openCvGrid.models.filter(Boolean).length,
-    openCvFallbackMonths = openCvGrid.models
-      .map((model, index) => (model ? 0 : index + 1))
-      .filter(Boolean);
+  // v35 hotfix: OpenCV queda temporalmente fuera de la ruta interactiva.
+  // En algunos móviles sus operaciones WASM bloquean el hilo principal durante
+  // minutos incluso sobre una imagen reducida. Hasta moverlo a un Web Worker,
+  // usamos la geometría base ya probada para que la creación de previsión no
+  // pueda quedarse congelada.
+  const openCvGrid: OpenCvGridResult = {
+      models: panels.map(() => null),
+      available: false,
+      error: "OpenCV desactivado temporalmente en la ruta interactiva",
+    },
+    openCvRefinedMonths = 0,
+    openCvFallbackMonths = panels.map((_, index) => index + 1);
 
   // Never silently apply a six-column coordinate template to an unknown layout.
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
@@ -4937,7 +4944,7 @@ export default function Home() {
         0,
       );
       setMessage(
-        `Detector v${ANNUAL_DETECTOR_VERSION} · Previsión de ${year} creada: ${total} días. OpenCV ${found.openCvAvailable ? "activo" : "no disponible"} (v34 reducido): cuadrícula física usada en ${found.openCvRefinedMonths}/12 meses.${found.openCvFallbackMonths.length ? ` Fallback geométrico en meses: ${found.openCvFallbackMonths.join(", ")}.` : ""}${found.openCvError ? ` ${found.openCvError}.` : ""} Lectura directa prioritaria. Paleta auxiliar de ${found.paletteClusters} grupos recuperó ${found.paletteChanged} lecturas dudosas. Calibración local recuperó ${found.calibrated} lecturas (por mes: ${found.calibratedByMonth.join(" · ")}). Lecturas realmente dudosas: ${found.uncertain} (por mes: ${found.uncertainByMonth.join(" · ")}).${found.uncertain ? ` Días dudosos: ${found.uncertainDaysByMonth.join(" · ")}.` : ""} Azul marino por identificar: ${found.blueAmbiguous} (por mes: ${found.blueByMonth.join(" · ")}).${found.blueAmbiguous ? ` Días azules: ${found.blueDaysByMonth.join(" · ")}. Revísalos en Detalle mensual y usa la selección múltiple para asignar la categoría correcta.` : ""} Diferencias visibles respecto al ciclo base: ${found.cycleDifferences} (informativas; pueden ser vacaciones, permisos, festivos u otras excepciones reales).`,
+        `Detector v${ANNUAL_DETECTOR_VERSION} · Previsión de ${year} creada: ${total} días. Geometría estable sin OpenCV interactivo: ${found.openCvFallbackMonths.length}/12 meses en modo base.${found.openCvFallbackMonths.length ? ` Fallback geométrico en meses: ${found.openCvFallbackMonths.join(", ")}.` : ""}${found.openCvError ? ` ${found.openCvError}.` : ""} Lectura directa prioritaria. Paleta auxiliar de ${found.paletteClusters} grupos recuperó ${found.paletteChanged} lecturas dudosas. Calibración local recuperó ${found.calibrated} lecturas (por mes: ${found.calibratedByMonth.join(" · ")}). Lecturas realmente dudosas: ${found.uncertain} (por mes: ${found.uncertainByMonth.join(" · ")}).${found.uncertain ? ` Días dudosos: ${found.uncertainDaysByMonth.join(" · ")}.` : ""} Azul marino por identificar: ${found.blueAmbiguous} (por mes: ${found.blueByMonth.join(" · ")}).${found.blueAmbiguous ? ` Días azules: ${found.blueDaysByMonth.join(" · ")}. Revísalos en Detalle mensual y usa la selección múltiple para asignar la categoría correcta.` : ""} Diferencias visibles respecto al ciclo base: ${found.cycleDifferences} (informativas; pueden ser vacaciones, permisos, festivos u otras excepciones reales).`,
       );
     } catch (error) {
       const detail =
