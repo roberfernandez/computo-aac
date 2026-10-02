@@ -215,7 +215,7 @@ const CONFIRMED_SPECIAL_RETRIBUTIVE_DAYS = [
 // Incrementar esta versión cuando cambie la lógica de reconocimiento anual.
 // Los años analizados con una versión anterior se conservan, pero la interfaz
 // avisa de que conviene volver a leer su imagen.
-const ANNUAL_DETECTOR_VERSION = 24;
+const ANNUAL_DETECTOR_VERSION = 25;
 const statusLabel: Record<Status, string> = {
   REVISAR: "Revisar",
   AGCG: "Trabajo · AGCG",
@@ -1815,6 +1815,412 @@ function detectAnnualPanelsByBands(
   return panels;
 }
 
+
+function detectProjectionAnnualPanels(
+  canvas: HTMLCanvasElement,
+  year: number,
+  diagnostic?: string[],
+): AnnualPanel[] | null {
+  const fail = (reason: string): null => {
+    diagnostic?.push("proyección: " + reason);
+    return null;
+  };
+  const sourceContext = canvas.getContext("2d", { willReadFrequently: true });
+  if (!sourceContext) return fail("sin contexto canvas");
+
+  const originalWidth = canvas.width,
+    originalHeight = canvas.height,
+    searchScale = Math.min(1, 1200 / originalWidth, 1000 / originalHeight);
+  let search = canvas;
+  if (searchScale < 1) {
+    search = document.createElement("canvas");
+    search.width = Math.max(1, Math.round(originalWidth * searchScale));
+    search.height = Math.max(1, Math.round(originalHeight * searchScale));
+    const searchContext = search.getContext("2d", { willReadFrequently: true });
+    if (!searchContext) return fail("sin contexto canvas de búsqueda");
+    searchContext.drawImage(canvas, 0, 0, search.width, search.height);
+  }
+
+  const W = search.width,
+    H = search.height,
+    searchContext = search.getContext("2d", { willReadFrequently: true });
+  if (!searchContext) return fail("sin contexto canvas de proyección");
+  const pixels = searchContext.getImageData(0, 0, W, H).data,
+    gray = new Float32Array(W * H),
+    chroma = new Float32Array(W * H);
+  for (let i = 0; i < gray.length; i++) {
+    const r = pixels[i * 4],
+      g = pixels[i * 4 + 1],
+      b = pixels[i * 4 + 2],
+      max = Math.max(r, g, b),
+      min = Math.min(r, g, b);
+    gray[i] = r * 0.299 + g * 0.587 + b * 0.114;
+    chroma[i] = max - min;
+  }
+
+  const satAt = (x: number, y: number) => {
+      const i = y * W + x,
+        p = i * 4,
+        max = Math.max(pixels[p], pixels[p + 1], pixels[p + 2]);
+      return chroma[i] > 35 && max > 70;
+    },
+    rowHistogram = new Float64Array(H),
+    scanTop = Math.max(0, Math.floor(H * 0.16)),
+    scanBottom = Math.min(H - 1, Math.ceil(H * 0.93));
+
+  for (let y = scanTop; y <= scanBottom; y++)
+    for (let x = 0; x < W; x += 2)
+      if (satAt(x, y)) rowHistogram[y]++;
+
+  const histogramTotal = (hist: Float64Array) => {
+      let total = 0;
+      for (const value of hist) total += value;
+      return total;
+    },
+    weightedQuantile = (hist: Float64Array, q: number) => {
+      const total = histogramTotal(hist);
+      if (!total) return 0;
+      const target = total * q;
+      let acc = 0;
+      for (let i = 0; i < hist.length; i++) {
+        acc += hist[i];
+        if (acc >= target) return i;
+      }
+      return hist.length - 1;
+    };
+
+  const totalSaturated = histogramTotal(rowHistogram);
+  if (totalSaturated < W * H * 0.002)
+    return fail("muy pocos píxeles de estructura coloreada");
+
+  let rowCenters = [
+    weightedQuantile(rowHistogram, 0.2),
+    weightedQuantile(rowHistogram, 0.5),
+    weightedQuantile(rowHistogram, 0.8),
+  ];
+  for (let iteration = 0; iteration < 24; iteration++) {
+    const sums = [0, 0, 0],
+      weights = [0, 0, 0];
+    for (let y = scanTop; y <= scanBottom; y++) {
+      const weight = rowHistogram[y];
+      if (!weight) continue;
+      let best = 0,
+        distance = Math.abs(y - rowCenters[0]);
+      for (let k = 1; k < 3; k++) {
+        const next = Math.abs(y - rowCenters[k]);
+        if (next < distance) {
+          distance = next;
+          best = k;
+        }
+      }
+      sums[best] += y * weight;
+      weights[best] += weight;
+    }
+    const next = rowCenters.map((center, k) =>
+      weights[k] ? sums[k] / weights[k] : center,
+    );
+    next.sort((a, b) => a - b);
+    if (next.every((value, k) => Math.abs(value - rowCenters[k]) < 0.05)) {
+      rowCenters = next;
+      break;
+    }
+    rowCenters = next;
+  }
+  if (
+    rowCenters[1] - rowCenters[0] < H * 0.08 ||
+    rowCenters[2] - rowCenters[1] < H * 0.08
+  )
+    return fail("las tres filas del calendario no quedan separadas");
+
+  const nearestRow = (y: number) => {
+    let best = 0,
+      distance = Math.abs(y - rowCenters[0]);
+    for (let k = 1; k < 3; k++) {
+      const next = Math.abs(y - rowCenters[k]);
+      if (next < distance) {
+        distance = next;
+        best = k;
+      }
+    }
+    return best;
+  };
+
+  const integralWidth = W + 1,
+    featureIntegral = new Float64Array((W + 1) * (H + 1));
+  for (let y = 0; y < H; y++) {
+    let rowSum = 0;
+    for (let x = 0; x < W; x++) {
+      const i = y * W + x;
+      rowSum += 255 - gray[i] + chroma[i] * 0.8;
+      featureIntegral[(y + 1) * integralWidth + x + 1] =
+        featureIntegral[y * integralWidth + x + 1] + rowSum;
+    }
+  }
+  const patchMean = (
+    cx: number,
+    cy: number,
+    radiusX: number,
+    radiusY: number,
+  ) => {
+    const left = Math.max(0, Math.floor(cx - radiusX)),
+      right = Math.min(W - 1, Math.ceil(cx + radiusX)),
+      top = Math.max(0, Math.floor(cy - radiusY)),
+      bottom = Math.min(H - 1, Math.ceil(cy + radiusY));
+    if (right < left || bottom < top) return 0;
+    const a = top * integralWidth + left,
+      b = top * integralWidth + right + 1,
+      c = (bottom + 1) * integralWidth + left,
+      d = (bottom + 1) * integralWidth + right + 1,
+      sum =
+        featureIntegral[d] -
+        featureIntegral[b] -
+        featureIntegral[c] +
+        featureIntegral[a];
+    return sum / ((right - left + 1) * (bottom - top + 1));
+  };
+
+  type GridFit = {
+    x0: number;
+    cellW: number;
+    gap: number;
+    score: number;
+    y0: number;
+    cellH: number;
+  };
+  const rowFits: GridFit[] = [];
+
+  for (let row = 0; row < 3; row++) {
+    const rowYHistogram = new Float64Array(H),
+      xHistogram = new Float64Array(W);
+    for (let y = scanTop; y <= scanBottom; y++) {
+      if (nearestRow(y) !== row) continue;
+      for (let x = 0; x < W; x += 2) {
+        if (!satAt(x, y)) continue;
+        rowYHistogram[y]++;
+        xHistogram[x]++;
+      }
+    }
+    const rowWeight = histogramTotal(rowYHistogram);
+    if (rowWeight < totalSaturated * 0.06)
+      return fail("fila " + (row + 1) + ": poca estructura visible");
+
+    const yLow = weightedQuantile(rowYHistogram, 0.03),
+      yHigh = weightedQuantile(rowYHistogram, 0.97),
+      xLow = weightedQuantile(xHistogram, 0.02),
+      xHigh = weightedQuantile(xHistogram, 0.98);
+    if (xHigh - xLow < W * 0.45)
+      return fail("fila " + (row + 1) + ": ancho útil insuficiente");
+
+    const edgeTop = Math.max(1, Math.floor(yLow - H * 0.01)),
+      edgeBottom = Math.min(H - 2, Math.ceil(yHigh + H * 0.01)),
+      verticalEdge = new Float64Array(W);
+    for (let x = 1; x < W - 1; x++) {
+      let hits = 0,
+        total = 0;
+      for (let y = edgeTop; y <= edgeBottom; y++) {
+        const left = gray[y * W + x - 1],
+          right = gray[y * W + x + 1];
+        if (Math.abs(right - left) > 25) hits++;
+        total++;
+      }
+      verticalEdge[x] = total ? hits / total : 0;
+    }
+    const smoothEdge = new Float64Array(W);
+    for (let x = 0; x < W; x++) {
+      let best = 0;
+      for (let xx = Math.max(0, x - 1); xx <= Math.min(W - 1, x + 1); xx++)
+        best = Math.max(best, verticalEdge[xx]);
+      smoothEdge[x] = best;
+    }
+
+    const roughCellW = (xHigh - xLow) / 26;
+    let bestX:
+      | { score: number; x0: number; cellW: number; gap: number }
+      | undefined;
+    for (
+      let cellW = Math.max(6, roughCellW * 0.65);
+      cellW <= roughCellW * 1.45;
+      cellW += 0.5
+    ) {
+      for (let gapRatio = 0; gapRatio <= 0.6001; gapRatio += 0.1) {
+        const gap = cellW * gapRatio,
+          span = 4 * 7 * cellW + 3 * gap;
+        if (span < W * 0.55 || span > W * 0.98) continue;
+        const start = Math.max(0, Math.floor(xLow - cellW * 2.2)),
+          end = Math.min(
+            Math.floor(W - span),
+            Math.floor(xLow + cellW * 0.8),
+          );
+        for (let x0 = start; x0 <= end; x0++) {
+          let score = 0,
+            samples = 0;
+          for (let month = 0; month < 4; month++) {
+            const base = x0 + month * (7 * cellW + gap);
+            for (let boundary = 0; boundary <= 7; boundary++) {
+              const x = Math.round(base + boundary * cellW);
+              if (x < 0 || x >= W) continue;
+              score += smoothEdge[x];
+              samples++;
+            }
+          }
+          if (!samples) continue;
+          score /= samples;
+          if (
+            x0 <= xLow + cellW * 0.7 &&
+            x0 + span >= xHigh - cellW * 0.7
+          )
+            score += 0.05;
+          if (!bestX || score > bestX.score)
+            bestX = { score, x0, cellW, gap };
+        }
+      }
+    }
+    if (!bestX || bestX.score < 0.16)
+      return fail(
+        "fila " +
+          (row + 1) +
+          ": cuadrícula vertical débil (" +
+          (bestX?.score ?? 0).toFixed(3) +
+          ")",
+      );
+
+    const geometryScore = (
+      y0: number,
+      cellH: number,
+      monthStart: number,
+      monthCount: number,
+    ) => {
+      let occupied = 0,
+        occupiedCount = 0,
+        empty = 0,
+        emptyCount = 0;
+      for (let localMonth = 0; localMonth < monthCount; localMonth++) {
+        const monthIndex = monthStart + localMonth,
+          month = row * 4 + monthIndex + 1,
+          first = weekdayMon(year, month, 1),
+          count = daysInMonth(year, month),
+          baseX =
+            bestX!.x0 + monthIndex * (7 * bestX!.cellW + bestX!.gap);
+        for (let slot = 0; slot < 42; slot++) {
+          const cx = baseX + (slot % 7 + 0.5) * bestX!.cellW,
+            cy = y0 + (Math.floor(slot / 7) + 0.5) * cellH,
+            value = patchMean(
+              cx,
+              cy,
+              bestX!.cellW * 0.2,
+              cellH * 0.18,
+            );
+          if (slot >= first && slot < first + count) {
+            occupied += value;
+            occupiedCount++;
+          } else {
+            empty += value;
+            emptyCount++;
+          }
+        }
+      }
+      return occupiedCount && emptyCount
+        ? occupied / occupiedCount - empty / emptyCount
+        : -Infinity;
+    };
+
+    let bestY:
+      | { score: number; y0: number; cellH: number }
+      | undefined;
+    for (
+      let cellH = bestX.cellW * 0.52;
+      cellH <= bestX.cellW * 0.72;
+      cellH += 0.5
+    ) {
+      const start = Math.max(0, Math.floor(rowCenters[row] - cellH * 4)),
+        end = Math.min(
+          Math.floor(H - cellH * 6),
+          Math.ceil(rowCenters[row] + cellH * 0.5),
+        );
+      for (let y0 = start; y0 <= end; y0++) {
+        const score = geometryScore(y0, cellH, 0, 4);
+        if (!bestY || score > bestY.score)
+          bestY = { score, y0, cellH };
+      }
+    }
+    if (!bestY || bestY.score < 12)
+      return fail(
+        "fila " +
+          (row + 1) +
+          ": fechas y huecos no separan la cuadrícula (" +
+          (bestY?.score ?? 0).toFixed(1) +
+          ")",
+      );
+
+    rowFits.push({ ...bestX, y0: bestY.y0, cellH: bestY.cellH });
+  }
+
+  const scaleBack = 1 / searchScale,
+    panels: AnnualPanel[] = [];
+  for (let row = 0; row < 3; row++) {
+    const fit = rowFits[row];
+    for (let column = 0; column < 4; column++) {
+      const month = row * 4 + column + 1,
+        first = weekdayMon(year, month, 1),
+        count = daysInMonth(year, month),
+        baseX = fit.x0 + column * (7 * fit.cellW + fit.gap);
+      let bestMonth = {
+        score: -Infinity,
+        y0: fit.y0,
+        cellH: fit.cellH,
+      };
+      for (
+        let cellH = fit.cellH * 0.9;
+        cellH <= fit.cellH * 1.1;
+        cellH += 0.5
+      ) {
+        const start = Math.max(0, Math.floor(fit.y0 - fit.cellH * 1.4)),
+          end = Math.min(
+            Math.floor(H - cellH * 6),
+            Math.ceil(fit.y0 + fit.cellH * 1.4),
+          );
+        for (let y0 = start; y0 <= end; y0++) {
+          let occupied = 0,
+            occupiedCount = 0,
+            empty = 0,
+            emptyCount = 0;
+          for (let slot = 0; slot < 42; slot++) {
+            const cx = baseX + (slot % 7 + 0.5) * fit.cellW,
+              cy = y0 + (Math.floor(slot / 7) + 0.5) * cellH,
+              value = patchMean(
+                cx,
+                cy,
+                fit.cellW * 0.2,
+                cellH * 0.18,
+              );
+            if (slot >= first && slot < first + count) {
+              occupied += value;
+              occupiedCount++;
+            } else {
+              empty += value;
+              emptyCount++;
+            }
+          }
+          const score =
+            occupiedCount && emptyCount
+              ? occupied / occupiedCount - empty / emptyCount
+              : -Infinity;
+          if (score > bestMonth.score)
+            bestMonth = { score, y0, cellH };
+        }
+      }
+      panels.push({
+        x: baseX * scaleBack,
+        length: 7 * fit.cellW * scaleBack,
+        gridTop: bestMonth.y0 * scaleBack,
+        cellH: bestMonth.cellH * scaleBack,
+      });
+    }
+  }
+
+  return panels.length === 12 ? panels : fail("paneles finales: " + panels.length);
+}
+
 function detectStraightAnnualPanels(
   canvas: HTMLCanvasElement,
   year: number,
@@ -2535,6 +2941,7 @@ async function classifyAnnual(file: File, year: number) {
   if (!canvas) return null;
   const originalSize = canvas.width + "x" + canvas.height;
   let panels =
+    detectProjectionAnnualPanels(canvas, year, diagnostic) ||
     detectModernAnnualPanels(canvas, year, false, diagnostic) ||
     detectModernAnnualPanels(canvas, year, true, diagnostic) ||
     detectStraightAnnualPanels(canvas, year);
