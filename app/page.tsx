@@ -2344,15 +2344,15 @@ function detectPhotographedAnnual(canvas: HTMLCanvasElement, year: number, diagn
       seen[i]=full;
       erodedCount+=full;
     }
-    const cells:Cell[]=[];
+    const cells:Cell[]=[]; let components=0,rejectSize=0,rejectAspect=0,rejectDensity=0;
     for(let seed=0;seed<seen.length;seed++){
       if(!seen[seed])continue;let size=1,count=0,sx=0,sy=0,left=W,right=0,top=H,bottom=0;stack[0]=seed;seen[seed]=0;
       while(size){const i=stack[--size],x=i%W,y=Math.floor(i/W);count++;sx+=x;sy+=y;left=Math.min(left,x);right=Math.max(right,x);top=Math.min(top,y);bottom=Math.max(bottom,y);
         for(const next of [x?i-1:-1,x+1<W?i+1:-1,i-W,i+W])if(next>=0&&next<seen.length&&seen[next]){seen[next]=0;stack[size++]=next;}}
       const w=right-left+1,h=bottom-top+1;
-      if(w>=10&&h>=4&&w<W*.12&&w/h>1.5&&w/h<4.5&&count/(w*h)>.5)cells.push({x:sx/count,y:sy/count,w,h});
+      components++; if(w<10||h<4||w>=W*.12)rejectSize++; else if(w/h<=1.5||w/h>=4.5)rejectAspect++; else if(count/(w*h)<=.5)rejectDensity++; else cells.push({x:sx/count,y:sy/count,w,h});
     }
-    if(cells.length<100){reject("escala " + scale + ": máscara " + maskCount + " px, tras erosión " + erodedCount + " px, " + cells.length + " celdas candidatas; mínimo 100");continue;}
+    if(cells.length<100){reject("escala " + scale + ": máscara " + maskCount + " px, tras erosión " + erodedCount + " px, componentes " + components + " (tamaño " + rejectSize + ", proporción " + rejectAspect + ", densidad " + rejectDensity + "), " + cells.length + " celdas candidatas; mínimo 100");continue;}
     const mw=median(cells.map(c=>c.w)),mh=median(cells.map(c=>c.h));
     const usable=cells.filter(c=>c.w>mw*.7&&c.w<mw*1.4&&c.h>mh*.65&&c.h<mh*1.7);
     const angles:number[]=[];
