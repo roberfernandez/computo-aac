@@ -3678,6 +3678,7 @@ export default function Home() {
       await officialCalendar.load(year).catch(() => undefined);
       const found = await classifyAnnual(annualFile, year);
       if (!found) throw new Error();
+      cancelMultiSelection();
       setCalendarRetry(v => v + 1);
       setProgress(100);
       persist(found.plan);
@@ -3743,6 +3744,7 @@ export default function Home() {
         cycled = applyCycleValidation(read, year, month, phase),
         next = copyRecognizedDays(cycled),
         existing = plan[month];
+      cancelMultiSelection();
       persist({
         ...plan,
         [month]: {
@@ -3834,7 +3836,8 @@ export default function Home() {
             status,
             special,
             extraHours: special === "MODIFICACION" ? day.extraHours : 0,
-            priorOrigin: undefined,
+            priorOrigin:
+              special === "NINGUNA" ? day.priorOrigin : undefined,
             periodId: undefined,
             manualEdited: true,
             note:
@@ -5450,9 +5453,9 @@ function MonthView({
       day: number,
       event: React.PointerEvent<HTMLButtonElement>,
     ) => {
+      longPressTriggered.current = false;
       if (multiSelectActive || event.button !== 0) return;
       clearLongPressTimer();
-      longPressTriggered.current = false;
       pointerStart.current = { day, x: event.clientX, y: event.clientY };
       longPressTimer.current = setTimeout(() => {
         longPressTriggered.current = true;
