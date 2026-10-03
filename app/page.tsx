@@ -848,7 +848,7 @@ function calcDay(
       d.modificationPlacement === "PERSONALIZADO" && d.customStart && d.customEnd;
     let start = "", end = "", minutes = NaN;
     if (fixed) {
-      const shift = shiftFor(profile, "NORMAL", 1);
+      const shift = shiftFor(profile, "NORMAL", 1, year, month);
       start = shift.start; end = shift.end; minutes = shift.minutes;
       if (d.special === "MODIFICACION" && !custom) {
         minutes = Math.max(0, minutes + Math.round(d.extraHours * 60));
@@ -7026,6 +7026,24 @@ function AnnualView({
   onOpen: (m: number) => void;
   onConfirm: (m: number) => void;
 }) {
+  const summer = summerContractFor(profile, year),
+    summerSpan = isSummer(profile) ? summerDetectedSpan(plan, year) : null,
+    summerTargetHours = isSummer(profile)
+      ? summerContractHours(plan, year, profile)
+      : undefined,
+    summerAssignmentSummary =
+      isSummer(profile) && summer.percentage === "75"
+        ? summerAssignmentMonths(plan)
+            .map((summerMonth) => {
+              const assignment = summer.assignments.find(
+                (item) => item.month === summerMonth,
+              );
+              return assignment
+                ? `${MONTHS[summerMonth - 1].slice(0, 3)} ${assignment.fiestaLetter}/${assignment.shift}`
+                : `${MONTHS[summerMonth - 1].slice(0, 3)} pendiente`;
+            })
+            .join(" · ")
+        : "";
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/8 px-5 py-4 md:px-6">
@@ -7094,25 +7112,66 @@ function AnnualView({
             })}
           </div>
           <div className="annual-summary">
-            <AnnualStat
-              label="Horas totales anuales"
-              value={formatHours(annualOrdinaryHours)}
-            />
-            <AnnualStat
-              label="Porcentaje de contratación"
-              value={`${profileLabel(profile, year)}${!isFullTime(profile) && profile.contract === "75" && profile.subturn ? ` · ${profile.subturn}` : ""}`}
-            />
-            <AnnualStat
-              label="Nocturnidad variable anual"
-              value={nightLabel(profile, annualNightHours)}
-            />
-            {annualPlusFestiu > 0 && (
-              <AnnualStat
-                label="Plus Festiu informativo"
-                value={`${annualPlusFestiu} domingos`}
-              />
+            {isSummer(profile) ? (
+              <>
+                <AnnualStat
+                  label="Horas reconocidas"
+                  value={formatHours(annualOrdinaryHours)}
+                />
+                <AnnualStat
+                  label="Horas del contrato"
+                  value={
+                    summerTargetHours === undefined
+                      ? "Pendiente de calendario"
+                      : formatHours(summerTargetHours)
+                  }
+                />
+                <AnnualStat
+                  label="Periodo detectado"
+                  value={
+                    summerSpan
+                      ? `${summerSpan.label} · ${summerSpan.naturalDays} días`
+                      : "Pendiente de calendario"
+                  }
+                />
+                <AnnualStat
+                  label="Modalidad"
+                  value={`Estiu ${summer.percentage} %`}
+                />
+                {summer.percentage === "75" && (
+                  <AnnualStat
+                    label="Letra + AT"
+                    value={summerAssignmentSummary || "Pendiente"}
+                  />
+                )}
+                <AnnualStat
+                  label="Nocturnidad variable"
+                  value={nightLabel(profile, annualNightHours)}
+                />
+              </>
+            ) : (
+              <>
+                <AnnualStat
+                  label="Horas totales anuales"
+                  value={formatHours(annualOrdinaryHours)}
+                />
+                <AnnualStat
+                  label="Porcentaje de contratación"
+                  value={`${profileLabel(profile, year)}${profileTurn(profile) === "T8" && profile.contract === "75" && profile.subturn ? ` · ${profile.subturn}` : ""}`}
+                />
+                <AnnualStat
+                  label="Nocturnidad variable anual"
+                  value={nightLabel(profile, annualNightHours)}
+                />
+                {annualPlusFestiu > 0 && (
+                  <AnnualStat
+                    label="Plus Festiu informativo"
+                    value={`${annualPlusFestiu} domingos`}
+                  />
+                )}
+                <AnnualStat label="Letra de fiesta" value={profile.fiestaLetter} />
+              </>
             )}
-            <AnnualStat label="Letra de fiesta" value={profile.fiestaLetter} />
           </div>
         </>
       ) : (
@@ -7120,8 +7179,9 @@ function AnnualView({
           <CalendarRange size={48} />
           <h3>Aún no hay una previsión anual</h3>
           <p>
-            Sube el calendario completo de TMB y la aplicación calculará los
-            doce meses de una vez.
+            {isSummer(profile)
+              ? "Sube el calendario del contrato de verano y la aplicación obtendrá el periodo y sus jornadas."
+              : "Sube el calendario completo de TMB y la aplicación calculará los doce meses de una vez."}
           </p>
         </div>
       )}
@@ -7507,7 +7567,9 @@ function MonthView({
                 <TableHead>Situación actual</TableHead>
                 <TableHead>Jornada</TableHead>
                 <TableHead>Noct. variable</TableHead>
-                <TableHead className="text-right">Cómputo</TableHead>
+                <TableHead className="text-right">
+                  {isSummer(profile) ? "Horas" : "Cómputo"}
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -7574,13 +7636,44 @@ function MonthView({
           </div>
         </TabsContent>
         <TabsContent value="rules">
-          <Rules profile={profile} />
+          <Rules profile={profile} year={year} />
         </TabsContent>
       </Tabs>
     </>
   );
 }
-function Rules({ profile }: { profile: UserProfile }) {
+function Rules({ profile, year }: { profile: UserProfile; year: number }) {
+  if (isSummer(profile)) {
+    const summer = summerContractFor(profile, year);
+    return (
+      <div className="grid gap-3 md:grid-cols-2">
+        <Rule
+          n="01"
+          title="Contrato proporcional"
+          text="Las horas del contrato se calculan con la jornada anual del año, el porcentaje del contrato y los días naturales detectados en el calendario. No se introducen fechas ni horas manualmente."
+        />
+        <Rule
+          n="02"
+          title="Formación"
+          text="Los días de formación forman parte del calendario reconocido. Se incorporan al cómputo cuando su jornada puede determinarse; si falta el horario, quedan marcados como pendientes."
+        />
+        <Rule
+          n="03"
+          title="Estiu 75 %"
+          text={
+            summer.percentage === "75"
+              ? "La letra de fiesta y el AT86/AT87 se configuran por mes. AT86: D-J 19:20–00:18; AT87: D-J 19:52–00:50; viernes/víspera 19:20–02:50; sábado/non stop 20:30–05:00; domingo/festivo 19:20–00:50."
+              : "La configuración de letra + AT se usa únicamente en los contratos Estiu al 75 %."
+          }
+        />
+        <Rule
+          n="04"
+          title="Estiu 100 %"
+          text="El objetivo contractual al 100 % se calcula desde el periodo reconocido. No se inventa un horario diario: queda pendiente hasta disponer de la asignación operativa correspondiente."
+        />
+      </div>
+    );
+  }
   if (isFullTime(profile)) return <div className="grid gap-3 md:grid-cols-2">
     <Rule n="01" title="Jornada completa" text="Las horas anuales corresponden al 100 % del año seleccionado. Las RJ ya están incluidas en esa base anual." />
     <Rule n="02" title="Horarios" text={profileTurn(profile) === "T4" || profileTurn(profile) === "T5" ? "Horario fijo todos los días. T5 inverso no incluido." : "Horario ordinario incorporado. Sábados y non stop: referencia histórica pendiente de confirmación; revisa las horas de entrada y salida."} />
