@@ -523,6 +523,9 @@ function baseOf(s: Status): BaseStatus {
 function periodUnderlyingWorkday(cycleBase: BaseStatus) {
   return cycleBase === "AGCG";
 }
+function periodDayAvailable(d: Pick<DayData, "periodId">, cycleBase: BaseStatus) {
+  return periodUnderlyingWorkday(cycleBase) && !d.periodId;
+}
 function makeDays(year: number, month: number, reviewing = true): DayData[] {
   return Array.from({ length: daysInMonth(year, month) }, (_, i) => ({
     day: i + 1,
@@ -5525,25 +5528,11 @@ export default function Home() {
             cyclePhase !== undefined
               ? phaseStatus(year, m, d.day, cyclePhase)
               : d.baseStatus,
-          underlyingWorkday = periodUnderlyingWorkday(cycleBase),
-          sameDetectedPeriod =
-            periodKind === "VACACIONES"
-              ? d.status === "VACACIONES" ||
-                d.status === "VACACIONES_PENDIENTES"
-              : periodKind === "MINI"
-                ? d.status === "MINI" || d.status === "LAUDO"
-                : periodKind === "VAC_ANTERIOR"
-                  ? d.status === "VAC_ANTERIOR" ||
-                    d.status === "VACACIONES_PENDIENTES"
-                  : d.status === periodKind,
-          available =
-            d.status === "AGCG" || d.status === "REVISAR" || sameDetectedPeriod;
+          canApplyPeriod = periodDayAvailable(d, cycleBase);
         if (
           date >= start &&
           date <= end &&
-          underlyingWorkday &&
-          !d.periodId &&
-          available
+          canApplyPeriod
         ) {
           applied++;
           let status: Status = periodKind;
