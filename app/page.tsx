@@ -520,6 +520,9 @@ function specialMark(s: Special) {
 function baseOf(s: Status): BaseStatus {
   return s === "DCOM" || s === "FEST" || s === "REVISAR" ? s : "AGCG";
 }
+function periodUnderlyingWorkday(cycleBase: BaseStatus) {
+  return cycleBase === "AGCG";
+}
 function makeDays(year: number, month: number, reviewing = true): DayData[] {
   return Array.from({ length: daysInMonth(year, month) }, (_, i) => ({
     day: i + 1,
@@ -5451,9 +5454,7 @@ export default function Home() {
             cyclePhase !== undefined
               ? phaseStatus(year, m, d.day, cyclePhase)
               : d.baseStatus,
-          underlyingWorkday =
-            d.baseStatus === "AGCG" ||
-            (d.status === "REVISAR" && cycleBase === "AGCG"),
+          underlyingWorkday = periodUnderlyingWorkday(cycleBase),
           sameDetectedPeriod =
             periodKind === "VACACIONES"
               ? d.status === "VACACIONES" ||
