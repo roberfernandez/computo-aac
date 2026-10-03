@@ -107,9 +107,22 @@ type DayData = {
 type MonthPlan = { original: DayData[]; days: DayData[]; confirmed: boolean };
 type YearPlan = Record<number, MonthPlan>;
 type FiestaLetter = "K" | "M" | "L" | "N";
+type SummerPercentage = "75" | "100";
+type SummerShift = "AT86" | "AT87";
+type SummerFullTimeTurn = "T1" | "T2";
+type SummerMonthAssignment = {
+  month: number;
+  fiestaLetter: FiestaLetter;
+  shift?: SummerShift;
+  fullTimeTurn?: SummerFullTimeTurn;
+};
+type SummerContract = {
+  percentage: SummerPercentage;
+  assignments: SummerMonthAssignment[];
+};
 type ContractType = "85.81" | "85" | "78.91" | "78.14" | "75";
 type Subturn = "T8.1" | "T8.2" | "T8.3" | "T8.4" | "T8.5";
-type Turn = "T1" | "T2" | "T4" | "T5" | "T8";
+type Turn = "T1" | "T2" | "T4" | "T5" | "T8" | "ESTIU";
 type UserProfile = {
   turn?: Turn;
   name: string;
@@ -117,6 +130,7 @@ type UserProfile = {
   fiestaLetter: FiestaLetter;
   contract: ContractType;
   subturn?: Subturn;
+  summer?: Record<string, SummerContract>;
 };
 type ShiftKind =
   "NORMAL" | "FRIDAY_EVE" | "SATURDAY" | "NON_STOP" | "LONG_SATURDAY";
@@ -158,7 +172,12 @@ const CONTRACT_LABELS: Record<ContractType, string> = {
   "78.14": "78,14 %",
   "75": "75 %",
 };
-const TURNS: Turn[] = ["T1", "T2", "T4", "T5", "T8"];
+const TURNS: Turn[] = ["T1", "T2", "T4", "T5", "T8", "ESTIU"];
+const DEFAULT_SUMMER_CONTRACT: SummerContract = {
+  percentage: "75",
+  assignments: [],
+};
+const SUMMER_SERVICE_MONTHS = [7, 8, 9, 10] as const;
 const FULL_TIME_HOURS: Record<number, number> = { 2020: 1666, 2021: 1666, 2022: 1658, 2023: 1658, 2024: 1650, 2025: 1642, 2026: 1634, 2027: 1618 };
 const FULL_TIME_SHIFTS = {
   T1: { start: "04:30", end: "12:19" },
@@ -169,16 +188,58 @@ const FULL_TIME_SHIFTS = {
 function profileTurn(profile: UserProfile): Turn {
   return profile.turn && TURNS.includes(profile.turn) ? profile.turn : "T8";
 }
-function isFullTime(profile: UserProfile) { return profileTurn(profile) !== "T8"; }
-function profileLabel(profile: UserProfile) {
+function isSummer(profile: UserProfile) { return profileTurn(profile) === "ESTIU"; }
+function isFullTime(profile: UserProfile) {
+  const turn = profileTurn(profile);
+  return turn !== "T8" && turn !== "ESTIU";
+}
+function summerContractFor(profile: UserProfile, year: number): SummerContract {
+  const stored = profile.summer?.[String(year)];
+  return stored
+    ? {
+        percentage: stored.percentage === "100" ? "100" : "75",
+        assignments: Array.isArray(stored.assignments)
+          ? stored.assignments.map((assignment) => ({
+              ...assignment,
+              fiestaLetter: (["K", "L", "M", "N"] as FiestaLetter[]).includes(
+                assignment.fiestaLetter,
+              )
+                ? assignment.fiestaLetter
+                : "M",
+              shift:
+                assignment.shift === "AT87" ? "AT87" : "AT86",
+              fullTimeTurn:
+                assignment.fullTimeTurn === "T2" ? "T2" : "T1",
+            }))
+          : [],
+      }
+    : DEFAULT_SUMMER_CONTRACT;
+}
+function summerAssignmentFor(profile: UserProfile, year: number, month: number) {
+  return summerContractFor(profile, year).assignments.find(
+    (assignment) => assignment.month === month,
+  );
+}
+function fiestaLetterForMonth(profile: UserProfile, year: number, month: number) {
+  return isSummer(profile)
+    ? summerAssignmentFor(profile, year, month)?.fiestaLetter || profile.fiestaLetter
+    : profile.fiestaLetter;
+}
+function profileLabel(profile: UserProfile, year?: number) {
+  if (isSummer(profile))
+    return year === undefined
+      ? "Estiu"
+      : `Estiu · ${summerContractFor(profile, year).percentage} %`;
   return isFullTime(profile) ? `${profileTurn(profile)} · 100 %` : `T8 · ${CONTRACT_LABELS[profile.contract]}`;
 }
 function theoreticalHours(year: number, profile: UserProfile) {
+  if (isSummer(profile)) return undefined;
   return isFullTime(profile) ? FULL_TIME_HOURS[year] : ANNUAL_THEORETICAL_HOURS[year]?.[profile.contract];
 }
 // Keep the existing T8 contract/subturn as inactive preferences when changing turn.
 // Legacy profiles without a turn remain T8. No stored calendar is rewritten.
 function balanceLabel(profile: UserProfile, value: number) {
+  if (isSummer(profile)) return formatHours(value);
   return isFullTime(profile) ? "Pendiente" : signed(value);
 }
 function nightLabel(profile: UserProfile, value: number) {
@@ -321,6 +382,52 @@ const CYCLE_PATTERN: BaseStatus[] = [
 
 function daysInMonth(year: number, month: number) {
   return new Date(year, month, 0).getDate();
+}
+function daysInYear(year: number) {
+  return new Date(year, 1, 29).getMonth() === 1 ? 366 : 365;
+}
+function summerAssignmentMonths(plan: YearPlan) {
+  const detected = SUMMER_SERVICE_MONTHS.filter(
+    (month) => (plan[month]?.days?.length || 0) > 0,
+  );
+  return detected.length ? [...detected] : [...SUMMER_SERVICE_MONTHS];
+}
+function summerDetectedSpan(plan: YearPlan, year: number) {
+  const dates = Object.entries(plan).flatMap(([monthKey, monthPlan]) => {
+    const month = Number(monthKey);
+    return (monthPlan?.days || [])
+      .filter((day) => day.day >= 1 && day.day <= daysInMonth(year, month))
+      .map((day) => new Date(year, month - 1, day.day, 12));
+  });
+  if (!dates.length) return null;
+  dates.sort((a, b) => a.getTime() - b.getTime());
+  const start = dates[0],
+    end = dates[dates.length - 1],
+    naturalDays =
+      Math.round((end.getTime() - start.getTime()) / 86400000) + 1;
+  return {
+    start,
+    end,
+    naturalDays,
+    label: `${String(start.getDate()).padStart(2, "0")}/${String(start.getMonth() + 1).padStart(2, "0")}–${String(end.getDate()).padStart(2, "0")}/${String(end.getMonth() + 1).padStart(2, "0")}`,
+  };
+}
+function summerContractHours(
+  plan: YearPlan,
+  year: number,
+  profile: UserProfile,
+) {
+  const span = summerDetectedSpan(plan, year),
+    annualReference = FULL_TIME_HOURS[year];
+  if (!span || annualReference === undefined) return undefined;
+  const percentage =
+    summerContractFor(profile, year).percentage === "100" ? 1 : 0.75;
+  return Number(
+    (
+      (annualReference * percentage * span.naturalDays) /
+      daysInYear(year)
+    ).toFixed(2),
+  );
 }
 function weekdayMon(year: number, month: number, day: number) {
   return (new Date(year, month - 1, day).getDay() + 6) % 7;
@@ -595,11 +702,70 @@ const SUBTURN_SHIFTS: Record<
     LONG_SATURDAY: { start: "21:10", end: "06:00" },
   },
 };
+const SUMMER_SHIFTS: Record<
+  SummerShift,
+  Record<Exclude<ShiftKind, "LONG_SATURDAY">, { start: string; end: string }>
+> = {
+  AT86: {
+    NORMAL: { start: "19:20", end: "00:18" },
+    FRIDAY_EVE: { start: "19:20", end: "02:50" },
+    SATURDAY: { start: "20:30", end: "05:00" },
+    NON_STOP: { start: "20:30", end: "05:00" },
+  },
+  AT87: {
+    NORMAL: { start: "19:52", end: "00:50" },
+    FRIDAY_EVE: { start: "19:20", end: "02:50" },
+    SATURDAY: { start: "20:30", end: "05:00" },
+    NON_STOP: { start: "20:30", end: "05:00" },
+  },
+};
 function shiftFor(
   profile: UserProfile,
   kind: ShiftKind,
   weekday: number,
+  year?: number,
+  month?: number,
 ): ShiftDefinition {
+  if (isSummer(profile)) {
+    if (year === undefined || month === undefined)
+      return { start: "", end: "", minutes: NaN, value: NaN };
+    const summer = summerContractFor(profile, year),
+      assignment = summerAssignmentFor(profile, year, month);
+    if (!assignment)
+      return { start: "", end: "", minutes: NaN, value: NaN };
+
+    if (summer.percentage === "100") {
+      const turn = assignment.fullTimeTurn || "T1";
+      let row: { start: string; end: string } = FULL_TIME_SHIFTS[turn];
+      if ((weekday === 5 || kind === "NON_STOP") && (turn === "T1" || turn === "T2")) {
+        // Misma referencia de horario que T1/T2. Los sábados/non stop
+        // conservan la marca de revisión ya usada para jornada completa.
+        row =
+          turn === "T1"
+            ? { start: "04:30", end: "13:00" }
+            : { start: "12:30", end: "21:00" };
+      }
+      return {
+        ...row,
+        minutes: elapsedMinutes(row.start, row.end),
+        value: 0,
+      };
+    }
+
+    const effectiveKind =
+        kind === "LONG_SATURDAY" ? "SATURDAY" : kind,
+      summerShift = assignment.shift || "AT86",
+      base = SUMMER_SHIFTS[summerShift][effectiveKind],
+      row =
+        effectiveKind === "NORMAL" && weekday === 6
+          ? { start: "19:20", end: "00:50" }
+          : base;
+    return {
+      ...row,
+      minutes: elapsedMinutes(row.start, row.end),
+      value: 0,
+    };
+  }
   if (isFullTime(profile)) {
     const turn = profileTurn(profile) as keyof typeof FULL_TIME_SHIFTS;
     let shift: { start: string; end: string } = FULL_TIME_SHIFTS[turn];
@@ -660,17 +826,21 @@ function nightMinutesForShift(start: string, end: string, total: number) {
   return overlap > 240 ? total : overlap;
 }
 function nightForDay(d: DayData, profile: UserProfile, code: string | null | undefined,
-  start: string, end: string, total: number, month: number) {
+  start: string, end: string, total: number, year: number, month: number) {
   const overlap = nightOverlapMinutesForShift(start, end);
   let reason = "";
-  if (isFullTime(profile)) reason = "Nocturnidad de tiempo completo pendiente de validar";
+  if (
+    isFullTime(profile) ||
+    (isSummer(profile) && summerContractFor(profile, year).percentage === "100")
+  )
+    reason = "Nocturnidad de tiempo completo pendiente de validar";
   else if (code?.includes("CANVI_HORA") && overlap > 0 && month === 10) reason = "Pendiente: duración nocturna en cambio de hora";
   else if (d.special === "NON_STOP_EXTRA") reason = "Pendiente: tratamiento de Non Stop extraordinario";
   let payable = reason ? NaN : nightMinutesForShift(start, end, total);
   if (!reason && code?.endsWith("_FINS_23H")) {
     // Nochebuena: la reducción de presencia no reduce la nocturnidad abonada.
     // Nómina 12/2025 confirma que T8 cobra la nocturnidad de la jornada normal.
-    const normal = shiftFor(profile, "NORMAL", 1);
+    const normal = shiftFor(profile, "NORMAL", 1, year, month);
     payable = nightMinutesForShift(normal.start, normal.end, normal.minutes);
   }
   if (!reason && !Number.isFinite(payable)) reason = "Pendiente: horario incompleto o duración distinta del intervalo";
@@ -715,7 +885,7 @@ function calcDay(
       d.modificationPlacement === "PERSONALIZADO" && d.customStart && d.customEnd;
     let start = "", end = "", minutes = NaN;
     if (fixed) {
-      const shift = shiftFor(profile, "NORMAL", 1);
+      const shift = shiftFor(profile, "NORMAL", 1, year, month);
       start = shift.start; end = shift.end; minutes = shift.minutes;
       if (d.special === "MODIFICACION" && !custom) {
         minutes = Math.max(0, minutes + Math.round(d.extraHours * 60));
@@ -727,7 +897,7 @@ function calcDay(
       start = d.customStart!; end = d.customEnd!;
       minutes = elapsedMinutes(start, end);
     }
-    const nightResult = nightForDay(d, profile, code, start, end, minutes, month);
+    const nightResult = nightForDay(d, profile, code, start, end, minutes, year, month);
     const night = fullTime ? 0 : nightResult.payable;
     return {
       scheduleReview: !Number.isFinite(minutes), compensationPending: fullTime,
@@ -752,7 +922,7 @@ function calcDay(
   // The event is the current date's official code. October only selects the
   // existing autumn tariff; spring keeps its previous schedule. No event date
   // is reconstructed from tomorrow or a last-Saturday formula.
-  if (code === "DISSABTE_CANVI_HORA" && profile.contract === "75" && month === 10) {
+  if (code === "DISSABTE_CANVI_HORA" && !isSummer(profile) && profile.contract === "75" && month === 10) {
     kind = "LONG_SATURDAY";
     reason = "Sábado largo · cambio de hora";
   }
@@ -762,13 +932,13 @@ function calcDay(
   } else if (d.special === "FESTIVO_ESPECIAL" || d.special === "VISPERA_MANUAL" || d.status === "VISPERA_FESTIVO") {
     kind = "FRIDAY_EVE"; reason = "Jornada especial · manual";
   }
-  let definition = shiftFor(profile, kind, wd),
+  let definition = shiftFor(profile, kind, wd, year, month),
     start = definition.start,
     end = definition.end,
     workedMinutes = definition.minutes,
     value = definition.value;
   if (!isFullTime(profile) && code.endsWith("_FINS_23H")) {
-    const normal = shiftFor(profile, "NORMAL", wd);
+    const normal = shiftFor(profile, "NORMAL", wd, year, month);
     definition = normal;
     start = normal.start;
     end = "23:50";
@@ -798,15 +968,25 @@ function calcDay(
     reason = "Modificación de jornada";
   }
   const actualWorkedMinutes = workedMinutes,
-    nightResult = nightForDay(d, profile, code, start, end, actualWorkedMinutes, month),
-    actualNightMinutes = isFullTime(profile) ? 0 : nightResult.payable,
-    actualNightHours = decimalHoursFromMinutes(actualNightMinutes),
-    actualOrdinaryHours = decimalHoursFromMinutes(actualWorkedMinutes),
+    nightResult = nightForDay(d, profile, code, start, end, actualWorkedMinutes, year, month),
+    actualNightMinutes = isFullTime(profile)
+      ? 0
+      : Number.isFinite(actualWorkedMinutes)
+        ? nightResult.payable
+        : NaN,
+    actualNightHours = Number.isFinite(actualNightMinutes)
+      ? decimalHoursFromMinutes(actualNightMinutes)
+      : NaN,
+    actualOrdinaryHours = Number.isFinite(actualWorkedMinutes)
+      ? decimalHoursFromMinutes(actualWorkedMinutes)
+      : NaN,
     actualHoraNona =
-      !isFullTime(profile) && actualWorkedMinutes > 480
+      !isFullTime(profile) && Number.isFinite(actualWorkedMinutes) && actualWorkedMinutes > 480
         ? Math.ceil((actualWorkedMinutes - 480) / 15) * 0.25
-        : 0,
-    hours = `${Math.floor(actualWorkedMinutes / 60)}:${String(actualWorkedMinutes % 60).padStart(2, "0")}`;
+        : Number.isFinite(actualWorkedMinutes) ? 0 : NaN,
+    hours = Number.isFinite(actualWorkedMinutes)
+      ? `${Math.floor(actualWorkedMinutes / 60)}:${String(actualWorkedMinutes % 60).padStart(2, "0")}`
+      : "Pendiente";
   if (toPreviousYear) {
     value = 0;
     reason = `Cómputo aplicado a ${year - 1}`;
@@ -814,15 +994,38 @@ function calcDay(
     value = actualWorkedMinutes / 60;
     reason = `Cómputo aplicado a ${year}`;
   }
-  const fullTime = isFullTime(profile);
-  const scheduleReview = fullTime && ["T1", "T2"].includes(profileTurn(profile)) && (wd === 5 || kind === "NON_STOP") && d.special !== "MODIFICACION";
+  const fullTime = isFullTime(profile),
+    summer = isSummer(profile),
+    summerAssignment = summer ? summerAssignmentFor(profile, year, month) : undefined;
+  const summerContract = summer ? summerContractFor(profile, year) : undefined,
+    summerTurn = summerAssignment?.fullTimeTurn || "T1";
+  const scheduleReview =
+    (fullTime && ["T1", "T2"].includes(profileTurn(profile)) && (wd === 5 || kind === "NON_STOP") && d.special !== "MODIFICACION") ||
+    (summer &&
+      summerContract?.percentage === "100" &&
+      ["T1", "T2"].includes(summerTurn) &&
+      (wd === 5 || kind === "NON_STOP") &&
+      d.special !== "MODIFICACION") ||
+    (summer && !Number.isFinite(actualWorkedMinutes));
   const absenceReview = fullTime && ["FORMACION", "REVISION_MEDICA", "COMPUTO_ANTERIOR", "COMPUTO_ACTUAL"].includes(d.status);
   if (fullTime) reason = `${profileTurn(profile)} · ${scheduleReview ? "horario histórico por confirmar" : reason}${absenceReview ? " · abono pendiente" : ""} · cómputo pendiente`;
+  if (summer && summerContract) {
+    reason =
+      summerContract.percentage === "75"
+        ? `Estiu 75 % · ${summerAssignment ? `${summerAssignment.fiestaLetter} · ${summerAssignment.shift || "AT86"}` : "letra/AT pendiente"} · ${reason}`
+        : `Estiu 100 % · ${summerAssignment ? `${summerAssignment.fiestaLetter} · ${summerAssignment.fullTimeTurn || "T1"}` : "letra/turno pendiente"} · ${scheduleReview ? "horario histórico por confirmar" : reason}`;
+  }
   return {
     scheduleReview,
     compensationPending: fullTime,
-    value: fullTime ? 0 : Number(value.toFixed(2)),
-    shift: `${start}–${end}`,
+    value: summer
+      ? toPreviousYear
+        ? 0
+        : actualOrdinaryHours
+      : fullTime
+        ? 0
+        : Number(value.toFixed(2)),
+    shift: Number.isFinite(actualWorkedMinutes) ? `${start}–${end}` : "Pendiente",
     hours,
     night: iso(actualNightHours),
     workedMinutes: toPreviousYear ? 0 : actualWorkedMinutes,
@@ -4841,12 +5044,51 @@ export default function Home() {
     const name = profileDraft.name.trim(),
       employeeNumber = profileDraft.employeeNumber.trim();
     if (!name || !employeeNumber) return;
+
+    let normalizedDraft = profileDraft;
+    if (isSummer(profileDraft)) {
+      const current = summerContractFor(profileDraft, year),
+        months = summerAssignmentMonths(plan),
+        first = current.assignments[0],
+        assignments = months.map((month) => {
+          const existing = current.assignments.find(
+            (assignment) => assignment.month === month,
+          );
+          return {
+            month,
+            fiestaLetter:
+              existing?.fiestaLetter ||
+              first?.fiestaLetter ||
+              profileDraft.fiestaLetter ||
+              "M",
+            shift:
+              existing?.shift ||
+              first?.shift ||
+              "AT86",
+            fullTimeTurn:
+              existing?.fullTimeTurn ||
+              first?.fullTimeTurn ||
+              "T1",
+          };
+        });
+      normalizedDraft = {
+        ...profileDraft,
+        summer: {
+          ...(profileDraft.summer || {}),
+          [String(year)]: {
+            ...current,
+            assignments,
+          },
+        },
+      };
+    }
+
     const next: UserProfile = {
-      ...profileDraft,
+      ...normalizedDraft,
       name,
       employeeNumber,
-      ...(profileDraft.contract === "75"
-        ? { subturn: profileDraft.subturn || "T8.1" }
+      ...(profileTurn(normalizedDraft) === "T8" && normalizedDraft.contract === "75"
+        ? { subturn: normalizedDraft.subturn || "T8.1" }
         : { subturn: undefined }),
     };
     setProfile(next);
@@ -4864,6 +5106,57 @@ export default function Home() {
   function editProfile() {
     setProfileDraft(profile);
     setProfileOpen(true);
+  }
+  function updateSummerConfig(patch: Partial<SummerContract>) {
+    setProfileDraft((currentProfile) => {
+      const current = summerContractFor(currentProfile, year);
+      return {
+        ...currentProfile,
+        summer: {
+          ...(currentProfile.summer || {}),
+          [String(year)]: { ...current, ...patch },
+        },
+      };
+    });
+  }
+  function updateSummerAssignment(
+    month: number,
+    field: "fiestaLetter" | "shift" | "fullTimeTurn",
+    value: FiestaLetter | SummerShift | SummerFullTimeTurn,
+  ) {
+    setProfileDraft((currentProfile) => {
+      const current = summerContractFor(currentProfile, year),
+        existing = current.assignments.find(
+          (assignment) => assignment.month === month,
+        ),
+        first = current.assignments[0],
+        fallback: SummerMonthAssignment = {
+          month,
+          fiestaLetter:
+            first?.fiestaLetter || currentProfile.fiestaLetter || "M",
+          shift: first?.shift || "AT86",
+          fullTimeTurn: first?.fullTimeTurn || "T1",
+        },
+        next = {
+          ...(existing || fallback),
+          [field]: value,
+        } as SummerMonthAssignment;
+      return {
+        ...currentProfile,
+        summer: {
+          ...(currentProfile.summer || {}),
+          [String(year)]: {
+            ...current,
+            assignments: [
+              ...current.assignments.filter(
+                (assignment) => assignment.month !== month,
+              ),
+              next,
+            ].sort((a, b) => a.month - b.month),
+          },
+        },
+      };
+    });
   }
   function withoutPeriod(source: YearPlan, id: string) {
     const next: YearPlan = { ...source };
@@ -4933,10 +5226,12 @@ export default function Home() {
         String(ANNUAL_DETECTOR_VERSION),
       );
       setDetectorVersion(ANNUAL_DETECTOR_VERSION);
-      localStorage.setItem(
-        `metro-cycle-phase-${year}-${profile.fiestaLetter}`,
-        String(found.phase),
-      );
+      if (!isSummer(profile)) {
+        localStorage.setItem(
+          `metro-cycle-phase-${year}-${profile.fiestaLetter}`,
+          String(found.phase),
+        );
+      }
       setDays(found.plan[1].days);
       setMonth(1);
       const total = Object.values(found.plan).reduce(
@@ -4979,7 +5274,7 @@ export default function Home() {
         }),
         storedPhase = Number(
           localStorage.getItem(
-            `metro-cycle-phase-${year}-${profile.fiestaLetter}`,
+            `metro-cycle-phase-${year}-${fiestaLetterForMonth(profile, year, month)}`,
           ) ?? localStorage.getItem(`metro-cycle-phase-${year}`),
         ),
         phase =
@@ -5133,11 +5428,13 @@ export default function Home() {
     }
     let applied = 0,
       miniLaudoAssigned = false;
-    const storedPhase = Number(
-        localStorage.getItem(
-          `metro-cycle-phase-${year}-${profile.fiestaLetter}`,
-        ) ?? localStorage.getItem(`metro-cycle-phase-${year}`),
-      ),
+    const storedPhase = isSummer(profile)
+        ? NaN
+        : Number(
+            localStorage.getItem(
+              `metro-cycle-phase-${year}-${profile.fiestaLetter}`,
+            ) ?? localStorage.getItem(`metro-cycle-phase-${year}`),
+          ),
       cyclePhase =
         Number.isInteger(storedPhase) && storedPhase >= 0 && storedPhase < 28
           ? storedPhase
@@ -5445,13 +5742,18 @@ export default function Home() {
         .reduce((a: number, b: any) => a + Number(b), 0)
         .toFixed(2),
     ),
-    outgoingPreviousCreditMinutes = previousYearCreditMinutes(
-      plan,
-      year,
-      profile,
-    ),
+    outgoingPreviousCreditMinutes = isSummer(profile)
+      ? 0
+      : previousYearCreditMinutes(
+          plan,
+          year,
+          profile,
+        ),
     incomingPreviousCreditMinutes = useMemo(
-      () => storedPreviousYearCreditMinutes(year + 1, profile),
+      () =>
+        isSummer(profile)
+          ? 0
+          : storedPreviousYearCreditMinutes(year + 1, profile),
       [year, plan, profile, officialRevision],
     ),
     incomingPreviousCredit = Number(
@@ -5468,6 +5770,27 @@ export default function Home() {
         .reduce((a: number, b: any) => a + Number(b), 0)
         .toFixed(2),
     ),
+    summerSpan = isSummer(profile) ? summerDetectedSpan(plan, year) : null,
+    activeSummerContract = summerContractFor(profile, year),
+    summerTargetHours = isSummer(profile)
+      ? summerContractHours(plan, year, profile)
+      : undefined,
+    summerRemainingHours =
+      summerTargetHours !== undefined && Number.isFinite(annualOrdinaryHours)
+        ? Number((summerTargetHours - annualOrdinaryHours).toFixed(2))
+        : undefined,
+    activeSummerMonths = isSummer(profile)
+      ? summerAssignmentMonths(plan)
+      : [],
+    summerMissingAssignmentMonths =
+      isSummer(profile) && activeSummerContract.percentage === "75"
+        ? activeSummerMonths.filter(
+            (summerMonth) =>
+              !activeSummerContract.assignments.some(
+                (assignment) => assignment.month === summerMonth,
+              ),
+          )
+        : [],
     annualPlusFestiu = Object.values(monthPlusFestiuByMonth).reduce(
       (a: number, b: any) => a + Number(b),
       0,
@@ -5479,7 +5802,8 @@ export default function Home() {
     ).length,
     priorRemaining = Math.max(0, priorEntitlement - priorUsed),
     confirmed = Object.values(plan).filter((p) => p.confirmed).length,
-    planReady = Object.keys(plan).length === 12,
+    planMonthCount = Object.keys(plan).length,
+    planReady = isSummer(profile) ? planMonthCount > 0 : planMonthCount === 12,
     detectorIsCurrent =
       planReady && detectorVersion === ANNUAL_DETECTOR_VERSION;
   const weeks = useMemo(() => {
@@ -5531,12 +5855,13 @@ export default function Home() {
             </div>
             <div className="min-w-0">
               <p className="text-xs font-semibold uppercase tracking-[.22em] text-[#71d7cc]">
-                Ciclo {profile.fiestaLetter} · {" "}
-                {profileLabel(profile)} · versión {APP_BUILD} ·{" "}
+                {isSummer(profile)
+                  ? profileLabel(profile, year)
+                  : `Ciclo ${profile.fiestaLetter} · ${profileLabel(profile, year)}`} · versión {APP_BUILD} ·{" "}
                 <span className={syncState === "syncing" ? "text-[#eeb64b]" : ""}>
                   {syncState === "synced" ? "☁ sincronizado" : syncState === "syncing" ? "☁ sincronizando…" : syncState === "offline" ? "☁ sin conexión" : syncState === "error" ? "☁ pendiente" : "☁ local"}
                 </span>
-                {!isFullTime(profile) && profile.contract === "75" && profile.subturn
+                {profileTurn(profile) === "T8" && profile.contract === "75" && profile.subturn
                   ? ` · ${profile.subturn}`
                   : ""}
               </p>
@@ -5560,18 +5885,47 @@ export default function Home() {
               <span className="hidden sm:inline">Perfil</span>
             </Button>
             <Badge className="border border-white/15 bg-white/5 px-3 py-1.5 text-white/70">
-              {annualWorkdays
-                ? `${annualWorkdays} días · ${year}`
-                : `Días por definir · ${year}`}
+              {isSummer(profile)
+                ? summerSpan
+                  ? `${summerSpan.label} · ${summerSpan.naturalDays} días · ${year}`
+                  : `Periodo desde calendario · ${year}`
+                : annualWorkdays
+                  ? `${annualWorkdays} días · ${year}`
+                  : `Días por definir · ${year}`}
             </Badge>
-            <div className="annual-hours" aria-label={`Horas anuales de ${year}`}>
-              <span>
-                Teóricas · {profileLabel(profile)}: <b>{annualTheoreticalHours === undefined ? "por confirmar" : formatHours(annualTheoreticalHours)}</b>
-              </span>
-              <span title="Suma de Horas ordinarias de los meses cargados, incluidos los futuros.">
-                Horas previstas · calendario {year}: <b>{Object.keys(plan).length ? formatHours(annualOrdinaryHours) : "sin calendario"}</b>
-                {Object.keys(plan).length > 0 && (!planReady || allCurrentDays.some((d) => needsReview(d.status))) && " · provisional"}
-              </span>
+            <div className="annual-hours" aria-label={`Horas de ${year}`}>
+              {isSummer(profile) ? (
+                <>
+                  <span>
+                    Contrato · {activeSummerContract.percentage} %:{" "}
+                    <b>
+                      {summerTargetHours === undefined
+                        ? "pendiente de calendario"
+                        : formatHours(summerTargetHours)}
+                    </b>
+                  </span>
+                  <span title="Horas reconocidas en el calendario del contrato, incluida la formación cuando el calendario permita computarla.">
+                    Horas reconocidas:{" "}
+                    <b>
+                      {Object.keys(plan).length
+                        ? formatHours(annualOrdinaryHours)
+                        : "sin calendario"}
+                    </b>
+                    {summerRemainingHours !== undefined &&
+                      ` · pendientes ${formatHours(summerRemainingHours)}`}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span>
+                    Teóricas · {profileLabel(profile, year)}: <b>{annualTheoreticalHours === undefined ? "por confirmar" : formatHours(annualTheoreticalHours)}</b>
+                  </span>
+                  <span title="Suma de Horas ordinarias de los meses cargados, incluidos los futuros.">
+                    Horas previstas · calendario {year}: <b>{Object.keys(plan).length ? formatHours(annualOrdinaryHours) : "sin calendario"}</b>
+                    {Object.keys(plan).length > 0 && (!planReady || allCurrentDays.some((d) => needsReview(d.status))) && " · provisional"}
+                  </span>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -5581,6 +5935,16 @@ export default function Home() {
         <Button variant="ghost" onClick={() => setCalendarRetry(v => v + 1)}>Reintentar calendario oficial</Button>
       </div>
       {isFullTime(profile) && <p className="mx-auto max-w-[1500px] px-4 pt-4 text-sm text-amber-200 md:px-8">Tiempo completo · previsión de horarios. Cómputo y conceptos retributivos pendientes de validar.{["T1", "T2"].includes(profileTurn(profile)) && " Sábados y non stop: horario histórico por confirmar."}</p>}
+      {isSummer(profile) && activeSummerContract.percentage === "75" && summerMissingAssignmentMonths.length > 0 && Object.keys(plan).length > 0 && (
+        <p className="mx-auto max-w-[1500px] px-4 pt-4 text-sm text-amber-200 md:px-8">
+          Estiu 75 % · completa letra y AT para {summerMissingAssignmentMonths.map((m) => MONTHS[m - 1]).join(", ")} desde Perfil.
+        </p>
+      )}
+      {isSummer(profile) && activeSummerContract.percentage === "100" && (
+        <p className="mx-auto max-w-[1500px] px-4 pt-4 text-sm text-amber-200 md:px-8">
+          Estiu 100 % · jornada completa T1/T2 según la asignación mensual. Sábados y non stop mantienen la misma referencia histórica pendiente de confirmar que T1/T2.
+        </p>
+      )}
       <div className="mx-auto max-w-[1500px] px-4 pt-5 md:px-8">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex rounded-xl border border-white/10 bg-[#0b2029] p-1">
@@ -5884,9 +6248,19 @@ export default function Home() {
               <div className="mt-2 flex items-end justify-between">
                 <div>
                   <p className="text-4xl font-black tabular-nums">
-                    {planReady ? balanceLabel(profile, annual) : "—"}
+                    {planReady
+                      ? isSummer(profile)
+                        ? summerRemainingHours === undefined
+                          ? "Pendiente"
+                          : formatHours(summerRemainingHours)
+                        : balanceLabel(profile, annual)
+                      : "—"}
                   </p>
-                  <p className="text-sm text-white/50">Total anual {year}</p>
+                  <p className="text-sm text-white/50">
+                    {isSummer(profile)
+                      ? "Horas pendientes del contrato"
+                      : `Total anual ${year}`}
+                  </p>
                   {incomingPreviousCreditMinutes > 0 && (
                     <p className="mt-2 text-xs text-[#8ee9df]">
                       Incluye {balanceLabel(profile, incomingPreviousCredit)} compensado en{" "}
@@ -5903,48 +6277,101 @@ export default function Home() {
                   )}
                 </div>
                 <div
-                  className={`score-ring ${annual >= 0 ? "positive" : "negative"}`}
+                  className={`score-ring ${
+                    isSummer(profile)
+                      ? summerRemainingHours !== undefined &&
+                        Math.abs(summerRemainingHours) <= 0.02
+                        ? "positive"
+                        : "negative"
+                      : annual >= 0
+                        ? "positive"
+                        : "negative"
+                  }`}
                 >
-                  {planReady && !isFullTime(profile) ? "✓" : "?"}
+                  {planReady
+                    ? isSummer(profile)
+                      ? summerRemainingHours !== undefined &&
+                        Math.abs(summerRemainingHours) <= 0.02
+                        ? "✓"
+                        : "…"
+                      : !isFullTime(profile)
+                        ? "✓"
+                        : "?"
+                    : "?"}
                 </div>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-px bg-white/8">
-              <Stat label="Meses confirmados" value={`${confirmed}/12`} />
-              <Stat
-                label="Vacaciones del año"
-                value={
-                  vacationSatisfiedDays
-                    ? `${vacationSatisfiedDays}/22 · ${vacationOwed ? `Se te debe ${vacationOwed}` : "Completo"}${followingYearVacationUse ? ` · ${followingYearVacationUse} usados en ${year + 1}` : ""}`
-                    : "Sin asignar"
-                }
-              />
-              <Stat
-                label="Años anteriores usados"
-                value={`${priorUsed} días`}
-              />
-              <div className="bg-[#0c2028] p-4">
-                <Label
-                  htmlFor="prior-entitlement"
-                  className="text-xs text-white/40"
-                >
-                  Pendientes al empezar
-                </Label>
-                <Input
-                  id="prior-entitlement"
-                  className="mt-2 h-8"
-                  type="number"
-                  min="0"
-                  step="1"
-                  value={priorEntitlement}
-                  onChange={(e) => savePriorEntitlement(+e.target.value)}
-                />
-                <p className="mt-2 text-xs text-[#eeb64b]">
-                  {priorEntitlement
-                    ? `Quedan ${priorRemaining}`
-                    : "Indica el saldo inicial"}
-                </p>
-              </div>
+              {isSummer(profile) ? (
+                <>
+                  <Stat
+                    label="Modalidad"
+                    value={`Estiu ${activeSummerContract.percentage} %`}
+                  />
+                  <Stat
+                    label="Periodo detectado"
+                    value={
+                      summerSpan
+                        ? `${summerSpan.label} · ${summerSpan.naturalDays} días`
+                        : "Pendiente de calendario"
+                    }
+                  />
+                  <Stat
+                    label="Horas del contrato"
+                    value={
+                      summerTargetHours === undefined
+                        ? "Pendiente"
+                        : formatHours(summerTargetHours)
+                    }
+                  />
+                  <Stat
+                    label="Horas reconocidas"
+                    value={
+                      Object.keys(plan).length
+                        ? formatHours(annualOrdinaryHours)
+                        : "Sin calendario"
+                    }
+                  />
+                </>
+              ) : (
+                <>
+                  <Stat label="Meses confirmados" value={`${confirmed}/12`} />
+                  <Stat
+                    label="Vacaciones del año"
+                    value={
+                      vacationSatisfiedDays
+                        ? `${vacationSatisfiedDays}/22 · ${vacationOwed ? `Se te debe ${vacationOwed}` : "Completo"}${followingYearVacationUse ? ` · ${followingYearVacationUse} usados en ${year + 1}` : ""}`
+                        : "Sin asignar"
+                    }
+                  />
+                  <Stat
+                    label="Años anteriores usados"
+                    value={`${priorUsed} días`}
+                  />
+                  <div className="bg-[#0c2028] p-4">
+                    <Label
+                      htmlFor="prior-entitlement"
+                      className="text-xs text-white/40"
+                    >
+                      Pendientes al empezar
+                    </Label>
+                    <Input
+                      id="prior-entitlement"
+                      className="mt-2 h-8"
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={priorEntitlement}
+                      onChange={(e) => savePriorEntitlement(+e.target.value)}
+                    />
+                    <p className="mt-2 text-xs text-[#eeb64b]">
+                      {priorEntitlement
+                        ? `Quedan ${priorRemaining}`
+                        : "Indica el saldo inicial"}
+                    </p>
+                  </div>
+                </>
+              )}
             </div>
           </section>
         </aside>
@@ -6033,7 +6460,7 @@ export default function Home() {
                 {TURNS.map((turn) => <button type="button" key={turn} aria-pressed={profileTurn(profileDraft) === turn}
                   className={profileTurn(profileDraft) === turn ? "selected" : ""}
                   onClick={() => setProfileDraft({ ...profileDraft, turn })}>
-                  <span>{turn}</span><small>{turn === "T8" ? "Tiempo parcial" : "Tiempo completo"}</small>
+                  <span>{turn}</span><small>{turn === "ESTIU" ? "Contrato de verano" : turn === "T8" ? "Tiempo parcial" : "Tiempo completo"}</small>
                 </button>)}
               </div>
               {isFullTime(profileDraft) && <p className="mt-2 text-sm text-[#eeb64b]">
@@ -6076,30 +6503,32 @@ export default function Home() {
                 />
               </div>
             </div>
-            <div>
-              <Label>Letra de fiesta</Label>
-              <Select
-                value={profileDraft.fiestaLetter}
-                onValueChange={(value) =>
-                  setProfileDraft({
-                    ...profileDraft,
-                    fiestaLetter: value as FiestaLetter,
-                  })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {(["K", "M", "L", "N"] as FiestaLetter[]).map((letter) => (
-                    <SelectItem key={letter} value={letter}>
-                      Letra {letter}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            {!isFullTime(profileDraft) && <div className="sm:col-span-2">
+            {!isSummer(profileDraft) && (
+              <div>
+                <Label>Letra de fiesta</Label>
+                <Select
+                  value={profileDraft.fiestaLetter}
+                  onValueChange={(value) =>
+                    setProfileDraft({
+                      ...profileDraft,
+                      fiestaLetter: value as FiestaLetter,
+                    })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(["K", "M", "L", "N"] as FiestaLetter[]).map((letter) => (
+                      <SelectItem key={letter} value={letter}>
+                        Letra {letter}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {profileTurn(profileDraft) === "T8" && <div className="sm:col-span-2">
               <Label>Tipo de contrato T8</Label>
               <div className="contract-options">
                 {(Object.keys(CONTRACT_LABELS) as ContractType[]).map(
@@ -6132,7 +6561,7 @@ export default function Home() {
                 al contrato.
               </p>
             </div>}
-            {!isFullTime(profileDraft) && profileDraft.contract === "75" && (
+            {profileTurn(profileDraft) === "T8" && profileDraft.contract === "75" && (
               <div className="sm:col-span-2">
                 <Label>Subturno del 75 %</Label>
                 <div className="subturn-options">
@@ -6159,6 +6588,159 @@ export default function Home() {
                 </p>
               </div>
             )}
+            {isSummer(profileDraft) && (() => {
+              const summer = summerContractFor(profileDraft, year),
+                months = summerAssignmentMonths(plan);
+              return (
+                <div className="sm:col-span-2 rounded-xl border border-[#eeb64b]/20 bg-[#eeb64b]/5 p-4">
+                  <Label>Contrato de verano</Label>
+                  <div className="contract-options mt-2">
+                    {(["75", "100"] as SummerPercentage[]).map((percentage) => (
+                      <button
+                        type="button"
+                        key={percentage}
+                        className={summer.percentage === percentage ? "selected" : ""}
+                        onClick={() =>
+                          updateSummerConfig({
+                            percentage,
+                            assignments: summer.assignments,
+                          })
+                        }
+                      >
+                        <span>{percentage} %</span>
+                        <small>
+                          {percentage === "75"
+                            ? "T8 · letra + AT por mes"
+                            : "T1/T2 · jornada completa"}
+                        </small>
+                      </button>
+                    ))}
+                  </div>
+                  <p className="mt-3 text-xs leading-5 text-white/45">
+                    El periodo, los días de formación y las horas del contrato se
+                    obtienen del calendario reconocido. No tienes que introducir
+                    fechas ni horas manualmente.
+                  </p>
+
+                  <div className="mt-4 space-y-3">
+                    <p className="text-xs leading-5 text-[#eeb64b]">
+                      {summer.percentage === "75"
+                        ? "En Estiu 75 % se trabaja como T8: indica la letra de fiesta y el AT86/AT87 de cada mes."
+                        : "En Estiu 100 % se trabaja a jornada completa: indica la letra de fiesta y si el mes corresponde a T1 o T2."}
+                    </p>
+                    {months.map((summerMonth) => {
+                      const assignment =
+                          summer.assignments.find(
+                            (item) => item.month === summerMonth,
+                          ) || {
+                            month: summerMonth,
+                            fiestaLetter:
+                              summer.assignments[0]?.fiestaLetter ||
+                              profileDraft.fiestaLetter ||
+                              "M",
+                            shift:
+                              summer.assignments[0]?.shift || "AT86",
+                            fullTimeTurn:
+                              summer.assignments[0]?.fullTimeTurn || "T1",
+                          };
+                      return (
+                        <div
+                          key={summerMonth}
+                          className="grid gap-2 rounded-lg border border-white/10 bg-black/10 p-3 sm:grid-cols-[1fr_150px_150px] sm:items-end"
+                        >
+                          <div>
+                            <span className="text-sm font-semibold">
+                              {MONTHS[summerMonth - 1]}
+                            </span>
+                            <small className="block text-white/35">
+                              Asignación mensual
+                            </small>
+                          </div>
+                          <div>
+                            <Label>Letra</Label>
+                            <Select
+                              value={assignment.fiestaLetter}
+                              onValueChange={(value) =>
+                                updateSummerAssignment(
+                                  summerMonth,
+                                  "fiestaLetter",
+                                  value as FiestaLetter,
+                                )
+                              }
+                            >
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {(["K", "L", "M", "N"] as FiestaLetter[]).map(
+                                  (letter) => (
+                                    <SelectItem key={letter} value={letter}>
+                                      {letter}
+                                    </SelectItem>
+                                  ),
+                                )}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div>
+                            <Label>{summer.percentage === "75" ? "AT" : "Turno"}</Label>
+                            {summer.percentage === "75" ? (
+                              <Select
+                                value={assignment.shift || "AT86"}
+                                onValueChange={(value) =>
+                                  updateSummerAssignment(
+                                    summerMonth,
+                                    "shift",
+                                    value as SummerShift,
+                                  )
+                                }
+                              >
+                                <SelectTrigger>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {(["AT86", "AT87"] as SummerShift[]).map(
+                                    (shift) => (
+                                      <SelectItem key={shift} value={shift}>
+                                        {shift}
+                                      </SelectItem>
+                                    ),
+                                  )}
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              <Select
+                                value={assignment.fullTimeTurn || "T1"}
+                                onValueChange={(value) =>
+                                  updateSummerAssignment(
+                                    summerMonth,
+                                    "fullTimeTurn",
+                                    value as SummerFullTimeTurn,
+                                  )
+                                }
+                              >
+                                <SelectTrigger>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {(["T1", "T2"] as SummerFullTimeTurn[]).map(
+                                    (turn) => (
+                                      <SelectItem key={turn} value={turn}>
+                                        {turn}
+                                      </SelectItem>
+                                    ),
+                                  )}
+                                </SelectContent>
+                              </Select>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
           <Button
             className="w-full bg-[#eeb64b] font-bold text-[#112128] hover:bg-[#ffd173]"
@@ -6518,6 +7100,25 @@ function AnnualView({
   onOpen: (m: number) => void;
   onConfirm: (m: number) => void;
 }) {
+  const summer = summerContractFor(profile, year),
+    summerSpan = isSummer(profile) ? summerDetectedSpan(plan, year) : null,
+    summerTargetHours = isSummer(profile)
+      ? summerContractHours(plan, year, profile)
+      : undefined,
+    summerAssignmentSummary = isSummer(profile)
+      ? summerAssignmentMonths(plan)
+          .map((summerMonth) => {
+            const assignment = summer.assignments.find(
+              (item) => item.month === summerMonth,
+            );
+            if (!assignment)
+              return `${MONTHS[summerMonth - 1].slice(0, 3)} pendiente`;
+            return summer.percentage === "75"
+              ? `${MONTHS[summerMonth - 1].slice(0, 3)} ${assignment.fiestaLetter}/${assignment.shift || "AT86"}`
+              : `${MONTHS[summerMonth - 1].slice(0, 3)} ${assignment.fiestaLetter}/${assignment.fullTimeTurn || "T1"}`;
+          })
+          .join(" · ")
+      : "";
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/8 px-5 py-4 md:px-6">
@@ -6586,25 +7187,64 @@ function AnnualView({
             })}
           </div>
           <div className="annual-summary">
-            <AnnualStat
-              label="Horas totales anuales"
-              value={formatHours(annualOrdinaryHours)}
-            />
-            <AnnualStat
-              label="Porcentaje de contratación"
-              value={`${profileLabel(profile)}${!isFullTime(profile) && profile.contract === "75" && profile.subturn ? ` · ${profile.subturn}` : ""}`}
-            />
-            <AnnualStat
-              label="Nocturnidad variable anual"
-              value={nightLabel(profile, annualNightHours)}
-            />
-            {annualPlusFestiu > 0 && (
-              <AnnualStat
-                label="Plus Festiu informativo"
-                value={`${annualPlusFestiu} domingos`}
-              />
+            {isSummer(profile) ? (
+              <>
+                <AnnualStat
+                  label="Horas reconocidas"
+                  value={formatHours(annualOrdinaryHours)}
+                />
+                <AnnualStat
+                  label="Horas del contrato"
+                  value={
+                    summerTargetHours === undefined
+                      ? "Pendiente de calendario"
+                      : formatHours(summerTargetHours)
+                  }
+                />
+                <AnnualStat
+                  label="Periodo detectado"
+                  value={
+                    summerSpan
+                      ? `${summerSpan.label} · ${summerSpan.naturalDays} días`
+                      : "Pendiente de calendario"
+                  }
+                />
+                <AnnualStat
+                  label="Modalidad"
+                  value={`Estiu ${summer.percentage} %`}
+                />
+                <AnnualStat
+                  label={summer.percentage === "75" ? "Letra + AT" : "Letra + turno"}
+                  value={summerAssignmentSummary || "Pendiente"}
+                />
+                <AnnualStat
+                  label="Nocturnidad variable"
+                  value={nightLabel(profile, annualNightHours)}
+                />
+              </>
+            ) : (
+              <>
+                <AnnualStat
+                  label="Horas totales anuales"
+                  value={formatHours(annualOrdinaryHours)}
+                />
+                <AnnualStat
+                  label="Porcentaje de contratación"
+                  value={`${profileLabel(profile, year)}${profileTurn(profile) === "T8" && profile.contract === "75" && profile.subturn ? ` · ${profile.subturn}` : ""}`}
+                />
+                <AnnualStat
+                  label="Nocturnidad variable anual"
+                  value={nightLabel(profile, annualNightHours)}
+                />
+                {annualPlusFestiu > 0 && (
+                  <AnnualStat
+                    label="Plus Festiu informativo"
+                    value={`${annualPlusFestiu} domingos`}
+                  />
+                )}
+                <AnnualStat label="Letra de fiesta" value={profile.fiestaLetter} />
+              </>
             )}
-            <AnnualStat label="Letra de fiesta" value={profile.fiestaLetter} />
           </div>
         </>
       ) : (
@@ -6612,8 +7252,9 @@ function AnnualView({
           <CalendarRange size={48} />
           <h3>Aún no hay una previsión anual</h3>
           <p>
-            Sube el calendario completo de TMB y la aplicación calculará los
-            doce meses de una vez.
+            {isSummer(profile)
+              ? "Sube el calendario del contrato de verano y la aplicación obtendrá el periodo y sus jornadas."
+              : "Sube el calendario completo de TMB y la aplicación calculará los doce meses de una vez."}
           </p>
         </div>
       )}
@@ -6833,7 +7474,7 @@ function MonthView({
         </div>
       </div>
       {isFullTime(profile) && <p className="mx-4 mt-4 rounded-lg border border-amber-400/30 p-3 text-sm text-amber-200" role="status">
-        {profileLabel(profile)} · Las horas son una previsión de horario. El saldo, la nocturnidad abonable, la Hora Nona y los abonos por ausencias están pendientes de validar.
+        {profileLabel(profile, year)} · Las horas son una previsión de horario. El saldo, la nocturnidad abonable, la Hora Nona y los abonos por ausencias están pendientes de validar.
         {["T1", "T2"].includes(profileTurn(profile)) && " Los sábados y non stop usan un horario histórico por confirmar; puedes corregir la jornada en cada día."}
       </p>}
       <Tabs defaultValue="calendar" className="p-4 md:p-6">
@@ -6999,7 +7640,9 @@ function MonthView({
                 <TableHead>Situación actual</TableHead>
                 <TableHead>Jornada</TableHead>
                 <TableHead>Noct. variable</TableHead>
-                <TableHead className="text-right">Cómputo</TableHead>
+                <TableHead className="text-right">
+                  {isSummer(profile) ? "Horas" : "Cómputo"}
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -7066,13 +7709,44 @@ function MonthView({
           </div>
         </TabsContent>
         <TabsContent value="rules">
-          <Rules profile={profile} />
+          <Rules profile={profile} year={year} />
         </TabsContent>
       </Tabs>
     </>
   );
 }
-function Rules({ profile }: { profile: UserProfile }) {
+function Rules({ profile, year }: { profile: UserProfile; year: number }) {
+  if (isSummer(profile)) {
+    const summer = summerContractFor(profile, year);
+    return (
+      <div className="grid gap-3 md:grid-cols-2">
+        <Rule
+          n="01"
+          title="Contrato proporcional"
+          text="Las horas del contrato se calculan con la jornada anual del año, el porcentaje del contrato y los días naturales detectados en el calendario. No se introducen fechas ni horas manualmente."
+        />
+        <Rule
+          n="02"
+          title="Formación"
+          text="Los días de formación forman parte del calendario reconocido. Se incorporan al cómputo cuando su jornada puede determinarse; si falta el horario, quedan marcados como pendientes."
+        />
+        <Rule
+          n="03"
+          title="Estiu 75 %"
+          text={
+            summer.percentage === "75"
+              ? "La letra de fiesta y el AT86/AT87 se configuran por mes. AT86: D-J 19:20–00:18; AT87: D-J 19:52–00:50; viernes/víspera 19:20–02:50; sábado/non stop 20:30–05:00; domingo/festivo 19:20–00:50."
+              : "La configuración de letra + AT se usa únicamente en los contratos Estiu al 75 %."
+          }
+        />
+        <Rule
+          n="04"
+          title="Estiu 100 %"
+          text="El objetivo contractual al 100 % se calcula desde el periodo reconocido. La asignación mensual puede ser T1 o T2 y usa el mismo horario de ese turno; sábados y non stop conservan la referencia histórica pendiente de confirmar de T1/T2."
+        />
+      </div>
+    );
+  }
   if (isFullTime(profile)) return <div className="grid gap-3 md:grid-cols-2">
     <Rule n="01" title="Jornada completa" text="Las horas anuales corresponden al 100 % del año seleccionado. Las RJ ya están incluidas en esa base anual." />
     <Rule n="02" title="Horarios" text={profileTurn(profile) === "T4" || profileTurn(profile) === "T5" ? "Horario fijo todos los días. T5 inverso no incluido." : "Horario ordinario incorporado. Sábados y non stop: referencia histórica pendiente de confirmación; revisa las horas de entrada y salida."} />
