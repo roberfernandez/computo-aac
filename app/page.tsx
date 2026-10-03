@@ -205,6 +205,11 @@ function summerAssignmentFor(profile: UserProfile, year: number, month: number) 
     (assignment) => assignment.month === month,
   );
 }
+function fiestaLetterForMonth(profile: UserProfile, year: number, month: number) {
+  return isSummer(profile)
+    ? summerAssignmentFor(profile, year, month)?.fiestaLetter || profile.fiestaLetter
+    : profile.fiestaLetter;
+}
 function profileLabel(profile: UserProfile, year?: number) {
   if (isSummer(profile))
     return year === undefined
@@ -5172,10 +5177,12 @@ export default function Home() {
         String(ANNUAL_DETECTOR_VERSION),
       );
       setDetectorVersion(ANNUAL_DETECTOR_VERSION);
-      localStorage.setItem(
-        `metro-cycle-phase-${year}-${profile.fiestaLetter}`,
-        String(found.phase),
-      );
+      if (!isSummer(profile)) {
+        localStorage.setItem(
+          `metro-cycle-phase-${year}-${profile.fiestaLetter}`,
+          String(found.phase),
+        );
+      }
       setDays(found.plan[1].days);
       setMonth(1);
       const total = Object.values(found.plan).reduce(
@@ -5218,7 +5225,7 @@ export default function Home() {
         }),
         storedPhase = Number(
           localStorage.getItem(
-            `metro-cycle-phase-${year}-${profile.fiestaLetter}`,
+            `metro-cycle-phase-${year}-${fiestaLetterForMonth(profile, year, month)}`,
           ) ?? localStorage.getItem(`metro-cycle-phase-${year}`),
         ),
         phase =
@@ -5372,11 +5379,13 @@ export default function Home() {
     }
     let applied = 0,
       miniLaudoAssigned = false;
-    const storedPhase = Number(
-        localStorage.getItem(
-          `metro-cycle-phase-${year}-${profile.fiestaLetter}`,
-        ) ?? localStorage.getItem(`metro-cycle-phase-${year}`),
-      ),
+    const storedPhase = isSummer(profile)
+        ? NaN
+        : Number(
+            localStorage.getItem(
+              `metro-cycle-phase-${year}-${profile.fiestaLetter}`,
+            ) ?? localStorage.getItem(`metro-cycle-phase-${year}`),
+          ),
       cyclePhase =
         Number.isInteger(storedPhase) && storedPhase >= 0 && storedPhase < 28
           ? storedPhase
@@ -5684,13 +5693,18 @@ export default function Home() {
         .reduce((a: number, b: any) => a + Number(b), 0)
         .toFixed(2),
     ),
-    outgoingPreviousCreditMinutes = previousYearCreditMinutes(
-      plan,
-      year,
-      profile,
-    ),
+    outgoingPreviousCreditMinutes = isSummer(profile)
+      ? 0
+      : previousYearCreditMinutes(
+          plan,
+          year,
+          profile,
+        ),
     incomingPreviousCreditMinutes = useMemo(
-      () => storedPreviousYearCreditMinutes(year + 1, profile),
+      () =>
+        isSummer(profile)
+          ? 0
+          : storedPreviousYearCreditMinutes(year + 1, profile),
       [year, plan, profile, officialRevision],
     ),
     incomingPreviousCredit = Number(
@@ -5707,6 +5721,27 @@ export default function Home() {
         .reduce((a: number, b: any) => a + Number(b), 0)
         .toFixed(2),
     ),
+    summerSpan = isSummer(profile) ? summerDetectedSpan(plan, year) : null,
+    activeSummerContract = summerContractFor(profile, year),
+    summerTargetHours = isSummer(profile)
+      ? summerContractHours(plan, year, profile)
+      : undefined,
+    summerRemainingHours =
+      summerTargetHours !== undefined && Number.isFinite(annualOrdinaryHours)
+        ? Number((summerTargetHours - annualOrdinaryHours).toFixed(2))
+        : undefined,
+    activeSummerMonths = isSummer(profile)
+      ? summerAssignmentMonths(plan)
+      : [],
+    summerMissingAssignmentMonths =
+      isSummer(profile) && activeSummerContract.percentage === "75"
+        ? activeSummerMonths.filter(
+            (summerMonth) =>
+              !activeSummerContract.assignments.some(
+                (assignment) => assignment.month === summerMonth,
+              ),
+          )
+        : [],
     annualPlusFestiu = Object.values(monthPlusFestiuByMonth).reduce(
       (a: number, b: any) => a + Number(b),
       0,
@@ -5718,7 +5753,8 @@ export default function Home() {
     ).length,
     priorRemaining = Math.max(0, priorEntitlement - priorUsed),
     confirmed = Object.values(plan).filter((p) => p.confirmed).length,
-    planReady = Object.keys(plan).length === 12,
+    planMonthCount = Object.keys(plan).length,
+    planReady = isSummer(profile) ? planMonthCount > 0 : planMonthCount === 12,
     detectorIsCurrent =
       planReady && detectorVersion === ANNUAL_DETECTOR_VERSION;
   const weeks = useMemo(() => {
@@ -5770,12 +5806,13 @@ export default function Home() {
             </div>
             <div className="min-w-0">
               <p className="text-xs font-semibold uppercase tracking-[.22em] text-[#71d7cc]">
-                Ciclo {profile.fiestaLetter} · {" "}
-                {profileLabel(profile)} · versión {APP_BUILD} ·{" "}
+                {isSummer(profile)
+                  ? profileLabel(profile, year)
+                  : `Ciclo ${profile.fiestaLetter} · ${profileLabel(profile, year)}`} · versión {APP_BUILD} ·{" "}
                 <span className={syncState === "syncing" ? "text-[#eeb64b]" : ""}>
                   {syncState === "synced" ? "☁ sincronizado" : syncState === "syncing" ? "☁ sincronizando…" : syncState === "offline" ? "☁ sin conexión" : syncState === "error" ? "☁ pendiente" : "☁ local"}
                 </span>
-                {!isFullTime(profile) && profile.contract === "75" && profile.subturn
+                {profileTurn(profile) === "T8" && profile.contract === "75" && profile.subturn
                   ? ` · ${profile.subturn}`
                   : ""}
               </p>
@@ -5799,18 +5836,47 @@ export default function Home() {
               <span className="hidden sm:inline">Perfil</span>
             </Button>
             <Badge className="border border-white/15 bg-white/5 px-3 py-1.5 text-white/70">
-              {annualWorkdays
-                ? `${annualWorkdays} días · ${year}`
-                : `Días por definir · ${year}`}
+              {isSummer(profile)
+                ? summerSpan
+                  ? `${summerSpan.label} · ${summerSpan.naturalDays} días · ${year}`
+                  : `Periodo desde calendario · ${year}`
+                : annualWorkdays
+                  ? `${annualWorkdays} días · ${year}`
+                  : `Días por definir · ${year}`}
             </Badge>
-            <div className="annual-hours" aria-label={`Horas anuales de ${year}`}>
-              <span>
-                Teóricas · {profileLabel(profile)}: <b>{annualTheoreticalHours === undefined ? "por confirmar" : formatHours(annualTheoreticalHours)}</b>
-              </span>
-              <span title="Suma de Horas ordinarias de los meses cargados, incluidos los futuros.">
-                Horas previstas · calendario {year}: <b>{Object.keys(plan).length ? formatHours(annualOrdinaryHours) : "sin calendario"}</b>
-                {Object.keys(plan).length > 0 && (!planReady || allCurrentDays.some((d) => needsReview(d.status))) && " · provisional"}
-              </span>
+            <div className="annual-hours" aria-label={`Horas de ${year}`}>
+              {isSummer(profile) ? (
+                <>
+                  <span>
+                    Contrato · {activeSummerContract.percentage} %:{" "}
+                    <b>
+                      {summerTargetHours === undefined
+                        ? "pendiente de calendario"
+                        : formatHours(summerTargetHours)}
+                    </b>
+                  </span>
+                  <span title="Horas reconocidas en el calendario del contrato, incluida la formación cuando el calendario permita computarla.">
+                    Horas reconocidas:{" "}
+                    <b>
+                      {Object.keys(plan).length
+                        ? formatHours(annualOrdinaryHours)
+                        : "sin calendario"}
+                    </b>
+                    {summerRemainingHours !== undefined &&
+                      ` · pendientes ${formatHours(summerRemainingHours)}`}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span>
+                    Teóricas · {profileLabel(profile, year)}: <b>{annualTheoreticalHours === undefined ? "por confirmar" : formatHours(annualTheoreticalHours)}</b>
+                  </span>
+                  <span title="Suma de Horas ordinarias de los meses cargados, incluidos los futuros.">
+                    Horas previstas · calendario {year}: <b>{Object.keys(plan).length ? formatHours(annualOrdinaryHours) : "sin calendario"}</b>
+                    {Object.keys(plan).length > 0 && (!planReady || allCurrentDays.some((d) => needsReview(d.status))) && " · provisional"}
+                  </span>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -5820,6 +5886,16 @@ export default function Home() {
         <Button variant="ghost" onClick={() => setCalendarRetry(v => v + 1)}>Reintentar calendario oficial</Button>
       </div>
       {isFullTime(profile) && <p className="mx-auto max-w-[1500px] px-4 pt-4 text-sm text-amber-200 md:px-8">Tiempo completo · previsión de horarios. Cómputo y conceptos retributivos pendientes de validar.{["T1", "T2"].includes(profileTurn(profile)) && " Sábados y non stop: horario histórico por confirmar."}</p>}
+      {isSummer(profile) && activeSummerContract.percentage === "75" && summerMissingAssignmentMonths.length > 0 && Object.keys(plan).length > 0 && (
+        <p className="mx-auto max-w-[1500px] px-4 pt-4 text-sm text-amber-200 md:px-8">
+          Estiu 75 % · completa letra y AT para {summerMissingAssignmentMonths.map((m) => MONTHS[m - 1]).join(", ")} desde Perfil.
+        </p>
+      )}
+      {isSummer(profile) && activeSummerContract.percentage === "100" && (
+        <p className="mx-auto max-w-[1500px] px-4 pt-4 text-sm text-amber-200 md:px-8">
+          Estiu 100 % · el objetivo contractual se calcula desde el calendario. El horario diario queda pendiente hasta disponer de su asignación operativa.
+        </p>
+      )}
       <div className="mx-auto max-w-[1500px] px-4 pt-5 md:px-8">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex rounded-xl border border-white/10 bg-[#0b2029] p-1">
@@ -6123,9 +6199,19 @@ export default function Home() {
               <div className="mt-2 flex items-end justify-between">
                 <div>
                   <p className="text-4xl font-black tabular-nums">
-                    {planReady ? balanceLabel(profile, annual) : "—"}
+                    {planReady
+                      ? isSummer(profile)
+                        ? summerRemainingHours === undefined
+                          ? "Pendiente"
+                          : formatHours(summerRemainingHours)
+                        : balanceLabel(profile, annual)
+                      : "—"}
                   </p>
-                  <p className="text-sm text-white/50">Total anual {year}</p>
+                  <p className="text-sm text-white/50">
+                    {isSummer(profile)
+                      ? "Horas pendientes del contrato"
+                      : `Total anual ${year}`}
+                  </p>
                   {incomingPreviousCreditMinutes > 0 && (
                     <p className="mt-2 text-xs text-[#8ee9df]">
                       Incluye {balanceLabel(profile, incomingPreviousCredit)} compensado en{" "}
@@ -6142,48 +6228,101 @@ export default function Home() {
                   )}
                 </div>
                 <div
-                  className={`score-ring ${annual >= 0 ? "positive" : "negative"}`}
+                  className={`score-ring ${
+                    isSummer(profile)
+                      ? summerRemainingHours !== undefined &&
+                        Math.abs(summerRemainingHours) <= 0.02
+                        ? "positive"
+                        : "negative"
+                      : annual >= 0
+                        ? "positive"
+                        : "negative"
+                  }`}
                 >
-                  {planReady && !isFullTime(profile) ? "✓" : "?"}
+                  {planReady
+                    ? isSummer(profile)
+                      ? summerRemainingHours !== undefined &&
+                        Math.abs(summerRemainingHours) <= 0.02
+                        ? "✓"
+                        : "…"
+                      : !isFullTime(profile)
+                        ? "✓"
+                        : "?"
+                    : "?"}
                 </div>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-px bg-white/8">
-              <Stat label="Meses confirmados" value={`${confirmed}/12`} />
-              <Stat
-                label="Vacaciones del año"
-                value={
-                  vacationSatisfiedDays
-                    ? `${vacationSatisfiedDays}/22 · ${vacationOwed ? `Se te debe ${vacationOwed}` : "Completo"}${followingYearVacationUse ? ` · ${followingYearVacationUse} usados en ${year + 1}` : ""}`
-                    : "Sin asignar"
-                }
-              />
-              <Stat
-                label="Años anteriores usados"
-                value={`${priorUsed} días`}
-              />
-              <div className="bg-[#0c2028] p-4">
-                <Label
-                  htmlFor="prior-entitlement"
-                  className="text-xs text-white/40"
-                >
-                  Pendientes al empezar
-                </Label>
-                <Input
-                  id="prior-entitlement"
-                  className="mt-2 h-8"
-                  type="number"
-                  min="0"
-                  step="1"
-                  value={priorEntitlement}
-                  onChange={(e) => savePriorEntitlement(+e.target.value)}
-                />
-                <p className="mt-2 text-xs text-[#eeb64b]">
-                  {priorEntitlement
-                    ? `Quedan ${priorRemaining}`
-                    : "Indica el saldo inicial"}
-                </p>
-              </div>
+              {isSummer(profile) ? (
+                <>
+                  <Stat
+                    label="Modalidad"
+                    value={`Estiu ${activeSummerContract.percentage} %`}
+                  />
+                  <Stat
+                    label="Periodo detectado"
+                    value={
+                      summerSpan
+                        ? `${summerSpan.label} · ${summerSpan.naturalDays} días`
+                        : "Pendiente de calendario"
+                    }
+                  />
+                  <Stat
+                    label="Horas del contrato"
+                    value={
+                      summerTargetHours === undefined
+                        ? "Pendiente"
+                        : formatHours(summerTargetHours)
+                    }
+                  />
+                  <Stat
+                    label="Horas reconocidas"
+                    value={
+                      Object.keys(plan).length
+                        ? formatHours(annualOrdinaryHours)
+                        : "Sin calendario"
+                    }
+                  />
+                </>
+              ) : (
+                <>
+                  <Stat label="Meses confirmados" value={`${confirmed}/12`} />
+                  <Stat
+                    label="Vacaciones del año"
+                    value={
+                      vacationSatisfiedDays
+                        ? `${vacationSatisfiedDays}/22 · ${vacationOwed ? `Se te debe ${vacationOwed}` : "Completo"}${followingYearVacationUse ? ` · ${followingYearVacationUse} usados en ${year + 1}` : ""}`
+                        : "Sin asignar"
+                    }
+                  />
+                  <Stat
+                    label="Años anteriores usados"
+                    value={`${priorUsed} días`}
+                  />
+                  <div className="bg-[#0c2028] p-4">
+                    <Label
+                      htmlFor="prior-entitlement"
+                      className="text-xs text-white/40"
+                    >
+                      Pendientes al empezar
+                    </Label>
+                    <Input
+                      id="prior-entitlement"
+                      className="mt-2 h-8"
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={priorEntitlement}
+                      onChange={(e) => savePriorEntitlement(+e.target.value)}
+                    />
+                    <p className="mt-2 text-xs text-[#eeb64b]">
+                      {priorEntitlement
+                        ? `Quedan ${priorRemaining}`
+                        : "Indica el saldo inicial"}
+                    </p>
+                  </div>
+                </>
+              )}
             </div>
           </section>
         </aside>
@@ -6961,7 +7100,7 @@ function AnnualView({
             />
             <AnnualStat
               label="Porcentaje de contratación"
-              value={`${profileLabel(profile)}${!isFullTime(profile) && profile.contract === "75" && profile.subturn ? ` · ${profile.subturn}` : ""}`}
+              value={`${profileLabel(profile, year)}${!isFullTime(profile) && profile.contract === "75" && profile.subturn ? ` · ${profile.subturn}` : ""}`}
             />
             <AnnualStat
               label="Nocturnidad variable anual"
@@ -7202,7 +7341,7 @@ function MonthView({
         </div>
       </div>
       {isFullTime(profile) && <p className="mx-4 mt-4 rounded-lg border border-amber-400/30 p-3 text-sm text-amber-200" role="status">
-        {profileLabel(profile)} · Las horas son una previsión de horario. El saldo, la nocturnidad abonable, la Hora Nona y los abonos por ausencias están pendientes de validar.
+        {profileLabel(profile, year)} · Las horas son una previsión de horario. El saldo, la nocturnidad abonable, la Hora Nona y los abonos por ausencias están pendientes de validar.
         {["T1", "T2"].includes(profileTurn(profile)) && " Los sábados y non stop usan un horario histórico por confirmar; puedes corregir la jornada en cada día."}
       </p>}
       <Tabs defaultValue="calendar" className="p-4 md:p-6">
