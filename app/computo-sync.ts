@@ -1,7 +1,7 @@
 import { authenticatedUserId, readSharedSession, SUPABASE_PUBLIC_KEY, SUPABASE_URL } from "./tmb-session";
 
 export type SyncState = "local" | "syncing" | "synced" | "offline" | "error";
-const PREFIXES = ["metro-year-", "metro-periods-", "metro-prior-", "metro-detector-version-", "metro-cycle-phase-"];
+const PREFIXES = ["metro-payroll-facts-v1-", "metro-year-", "metro-periods-", "metro-prior-", "metro-detector-version-", "metro-cycle-phase-"];
 const EXACT = new Set(["metro-profile-v1", "metro-profile-v2"]);
 const PENDING_KEY = "computo-sync-pending-v1";
 const PENDING_DELETE_KEY = "computo-sync-pending-delete-v1";
@@ -26,7 +26,7 @@ function decodePayload(payload:unknown){
   return JSON.stringify(payload);
 }
 
-export async function pushStorageKey(key:string){
+async function pushStorageKeyNow(key:string){
   if(!isComputoStorageKey(key)) return false;
   const session=readSharedSession(), raw=localStorage.getItem(key);
   if(raw===null) return false;
@@ -38,9 +38,22 @@ export async function pushStorageKey(key:string){
   return true;
 }
 
+// Payroll snapshots are whole-year replacements. Serialize their writes so an
+// older response cannot overwrite a later manual correction on another device.
+const payrollWrites = new Map<string, Promise<boolean>>();
+export function pushStorageKey(key:string): Promise<boolean> {
+  if (!key.startsWith("metro-payroll-facts-v1-")) return pushStorageKeyNow(key);
+  const previous = payrollWrites.get(key) || Promise.resolve(false);
+  const next = previous.catch(() => false).then(() => pushStorageKeyNow(key));
+  payrollWrites.set(key, next);
+  void next.finally(() => { if (payrollWrites.get(key) === next) payrollWrites.delete(key); }).catch(() => {});
+  return next;
+}
+
 export async function deleteStorageKeys(keys:string[]){
   const valid=keys.filter(isComputoStorageKey);
   valid.forEach(key=>{ localStorage.removeItem(key); markPendingDelete(key); });
+  await Promise.all(valid.map(key => payrollWrites.get(key)?.catch(() => false)));
   const session=readSharedSession(); if(!session) return false;
   const userId=await authenticatedUserId(session); if(!userId) return false;
   for(const key of valid){

@@ -1114,6 +1114,38 @@ function specialRetributiveDaysCount(days: DayData[], year: number, month: numbe
   ).length;
 }
 
+// Versioned payroll output: serialize existing resolved results, never infer from images.
+function payrollFactsFor(plan: YearPlan, year: number, profile: UserProfile) {
+  const percent = isSummer(profile) ? Number(summerContractFor(profile, year).percentage) : isFullTime(profile) ? 100 : Number(profile.contract);
+  const resolvedProfile = { percent: Number.isFinite(percent) ? percent : null, turn: profileTurn(profile), subturn: profileTurn(profile) === "T8" ? profile.subturn || null : null, summerPercentage: isSummer(profile) ? percent : null };
+  const metric = (value: number, unit: string) => Number.isFinite(value) ? { state: "known", value, unit } : { state: "pending", value: null, unit };
+  const months = Object.fromEntries(Object.entries(plan).map(([key, stored]) => {
+    const month = Number(key), period = `${year}-${String(month).padStart(2, "0")}`;
+    const days = stored.days.map(d => {
+      const c = calcDay(d, stored.days, year, month, profile), uncertain = needsReview(d.status);
+      const schedulePending = uncertain || c.scheduleReview;
+      return { date: `${period}-${String(d.day).padStart(2, "0")}`, schedule: c.shift,
+        metrics: {
+          ordinaryHours: metric(schedulePending ? NaN : c.ordinaryHours, "h"),
+          nightPayableMinutes: metric(schedulePending || c.nightReason ? NaN : c.nightPayableMinutes, "min"),
+          horaNonaHours: metric(schedulePending ? NaN : c.horaNona, "h"),
+          // This is the existing Plus Festiu counter, not an invented second economic entitlement.
+          plusFestiuDays: metric(uncertain ? NaN : plusFestiuCount([d], year, month), "day"),
+          specialRetributiveDays: metric(uncertain ? NaN : specialRetributiveDaysCount([d], year, month), "day"),
+          plusConveniDays: metric(uncertain ? NaN : plusConvenioCount([d]), "day"),
+          workedHolidayDays: metric(NaN, "day"),
+        } };
+    });
+    const totals = Object.fromEntries(["ordinaryHours", "nightPayableMinutes", "horaNonaHours", "plusFestiuDays", "specialRetributiveDays", "plusConveniDays", "workedHolidayDays"].map(key => {
+      const values = days.map(d => d.metrics[key as keyof typeof d.metrics]);
+      const known = values.filter(v => v.state === "known"), missing = daysInMonth(year, month) - days.length;
+      return [key, { unit: values[0]?.unit ?? (key === "nightPayableMinutes" ? "min" : key.endsWith("Days") ? "day" : "h"), value: known.length ? known.reduce((sum, v) => sum + (v.value ?? 0), 0) : null, known: known.length, pending: values.length - known.length, missing }];
+    }));
+    return [month, { schema: "computo-economic-facts-v1", producer: "computo-aac", version: "1", year, period, profile: resolvedProfile, days, totals }];
+  }));
+  return { schema: "metro-payroll-facts-v1", year, profile: resolvedProfile, months };
+}
+
 function copyRecognizedDays(input: DayData[]) {
   return input.map((d) => ({ ...d }));
 }
@@ -5012,10 +5044,47 @@ export default function Home() {
     },
     [monthlyPreview],
   );
+  // Write the new snapshot synchronously before navigation can interrupt an edit.
+  function refreshPayrollExports(activeProfile: UserProfile = profile) {
+    const years = Array.from({length: localStorage.length}, (_, i) => localStorage.key(i))
+      .filter((k): k is string => !!k && /^metro-year-\d{4}$/.test(k));
+    for (const key of years) {
+      const y = Number(key.slice(-4)), exportKey = `metro-payroll-facts-v1-${y}`;
+      try {
+        const saved = JSON.parse(localStorage.getItem(key) || "{}");
+        const output = JSON.stringify(payrollFactsFor(saved, y, activeProfile));
+        if (localStorage.getItem(exportKey) !== output) {
+          localStorage.setItem(exportKey, output);
+          markStorageKeyPending(exportKey);
+          void pushStorageKey(exportKey).catch(() => setSyncState(navigator.onLine ? "error" : "offline"));
+        }
+      } catch {
+        // Do not leave an obsolete, apparently valid snapshot after a failed export.
+        void deleteStorageKeys([exportKey]).catch(() => setSyncState("error"));
+      }
+    }
+  }
+  // Hydration and official-calendar availability may resolve previously pending units.
+  useEffect(() => {
+    if (!profileLoaded) return;
+    let cancelled = false;
+    refreshPayrollExports();
+    const years = Array.from({length: localStorage.length}, (_, i) => localStorage.key(i))
+      .filter((k): k is string => !!k && /^metro-year-\d{4}$/.test(k));
+    void (async () => {
+      for (const key of years) {
+        try { await officialCalendar.load(Number(key.slice(-4))); } catch { /* Keep dependent units pending. */ }
+        if (cancelled) return;
+        refreshPayrollExports();
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [profileLoaded, profile, plan, periods, year, officialRevision]);
   function persist(next: YearPlan) {
     setPlan(next);
     const key = `metro-year-${year}`;
     localStorage.setItem(key, JSON.stringify(next));
+    refreshPayrollExports();
     markStorageKeyPending(key);
     setSyncState("syncing");
     pushStorageKey(key)
@@ -5026,6 +5095,7 @@ export default function Home() {
     setPeriods(next);
     const key = `metro-periods-${year}`;
     localStorage.setItem(key, JSON.stringify(next));
+    refreshPayrollExports();
     markStorageKeyPending(key);
     setSyncState("syncing");
     pushStorageKey(key)
@@ -5098,6 +5168,7 @@ export default function Home() {
     setProfileDraft(next);
     localStorage.setItem("metro-profile-v1", JSON.stringify(next));
     localStorage.setItem("metro-profile-v2", JSON.stringify(next));
+    refreshPayrollExports(next);
     markStorageKeyPending("metro-profile-v1");
     markStorageKeyPending("metro-profile-v2");
     setSyncState("syncing");
@@ -5631,6 +5702,7 @@ export default function Home() {
     clearMonthlyImage();
     const keysToDelete = [
       `metro-year-${year}`,
+      `metro-payroll-facts-v1-${year}`,
       `metro-periods-${year}`,
       `metro-prior-${year}`,
       `metro-detector-version-${year}`,

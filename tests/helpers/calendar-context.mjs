@@ -11,5 +11,5 @@ export function calendarModule(request = async url => ({ok:true, json:async () =
 export async function calendarContext() {
   const module = calendarModule();
   await Promise.all([2024,2025,2026].map(y => module.officialCalendar.load(y)));
-  return vm.createContext({...module});
+  return vm.createContext({...module, process:{env:{}}});
 }
