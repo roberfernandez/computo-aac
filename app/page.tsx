@@ -4996,12 +4996,46 @@ export default function Home() {
     const name = profileDraft.name.trim(),
       employeeNumber = profileDraft.employeeNumber.trim();
     if (!name || !employeeNumber) return;
+
+    let normalizedDraft = profileDraft;
+    if (isSummer(profileDraft)) {
+      const current = summerContractFor(profileDraft, year),
+        months = summerAssignmentMonths(plan),
+        first = current.assignments[0],
+        assignments =
+          current.percentage === "75"
+            ? months.map((month) => {
+                const existing = current.assignments.find(
+                  (assignment) => assignment.month === month,
+                );
+                return (
+                  existing || {
+                    month,
+                    fiestaLetter:
+                      first?.fiestaLetter || profileDraft.fiestaLetter || "M",
+                    shift: first?.shift || "AT86",
+                  }
+                );
+              })
+            : [];
+      normalizedDraft = {
+        ...profileDraft,
+        summer: {
+          ...(profileDraft.summer || {}),
+          [String(year)]: {
+            ...current,
+            assignments,
+          },
+        },
+      };
+    }
+
     const next: UserProfile = {
-      ...profileDraft,
+      ...normalizedDraft,
       name,
       employeeNumber,
-      ...(profileDraft.contract === "75"
-        ? { subturn: profileDraft.subturn || "T8.1" }
+      ...(profileTurn(normalizedDraft) === "T8" && normalizedDraft.contract === "75"
+        ? { subturn: normalizedDraft.subturn || "T8.1" }
         : { subturn: undefined }),
     };
     setProfile(next);
@@ -5019,6 +5053,56 @@ export default function Home() {
   function editProfile() {
     setProfileDraft(profile);
     setProfileOpen(true);
+  }
+  function updateSummerConfig(patch: Partial<SummerContract>) {
+    setProfileDraft((currentProfile) => {
+      const current = summerContractFor(currentProfile, year);
+      return {
+        ...currentProfile,
+        summer: {
+          ...(currentProfile.summer || {}),
+          [String(year)]: { ...current, ...patch },
+        },
+      };
+    });
+  }
+  function updateSummerAssignment(
+    month: number,
+    field: "fiestaLetter" | "shift",
+    value: FiestaLetter | SummerShift,
+  ) {
+    setProfileDraft((currentProfile) => {
+      const current = summerContractFor(currentProfile, year),
+        existing = current.assignments.find(
+          (assignment) => assignment.month === month,
+        ),
+        first = current.assignments[0],
+        fallback: SummerMonthAssignment = {
+          month,
+          fiestaLetter:
+            first?.fiestaLetter || currentProfile.fiestaLetter || "M",
+          shift: first?.shift || "AT86",
+        },
+        next = {
+          ...(existing || fallback),
+          [field]: value,
+        } as SummerMonthAssignment;
+      return {
+        ...currentProfile,
+        summer: {
+          ...(currentProfile.summer || {}),
+          [String(year)]: {
+            ...current,
+            assignments: [
+              ...current.assignments.filter(
+                (assignment) => assignment.month !== month,
+              ),
+              next,
+            ].sort((a, b) => a.month - b.month),
+          },
+        },
+      };
+    });
   }
   function withoutPeriod(source: YearPlan, id: string) {
     const next: YearPlan = { ...source };
@@ -6188,7 +6272,7 @@ export default function Home() {
                 {TURNS.map((turn) => <button type="button" key={turn} aria-pressed={profileTurn(profileDraft) === turn}
                   className={profileTurn(profileDraft) === turn ? "selected" : ""}
                   onClick={() => setProfileDraft({ ...profileDraft, turn })}>
-                  <span>{turn}</span><small>{turn === "T8" ? "Tiempo parcial" : "Tiempo completo"}</small>
+                  <span>{turn}</span><small>{turn === "ESTIU" ? "Contrato de verano" : turn === "T8" ? "Tiempo parcial" : "Tiempo completo"}</small>
                 </button>)}
               </div>
               {isFullTime(profileDraft) && <p className="mt-2 text-sm text-[#eeb64b]">
@@ -6231,30 +6315,32 @@ export default function Home() {
                 />
               </div>
             </div>
-            <div>
-              <Label>Letra de fiesta</Label>
-              <Select
-                value={profileDraft.fiestaLetter}
-                onValueChange={(value) =>
-                  setProfileDraft({
-                    ...profileDraft,
-                    fiestaLetter: value as FiestaLetter,
-                  })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {(["K", "M", "L", "N"] as FiestaLetter[]).map((letter) => (
-                    <SelectItem key={letter} value={letter}>
-                      Letra {letter}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            {!isFullTime(profileDraft) && <div className="sm:col-span-2">
+            {!isSummer(profileDraft) && (
+              <div>
+                <Label>Letra de fiesta</Label>
+                <Select
+                  value={profileDraft.fiestaLetter}
+                  onValueChange={(value) =>
+                    setProfileDraft({
+                      ...profileDraft,
+                      fiestaLetter: value as FiestaLetter,
+                    })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(["K", "M", "L", "N"] as FiestaLetter[]).map((letter) => (
+                      <SelectItem key={letter} value={letter}>
+                        Letra {letter}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {profileTurn(profileDraft) === "T8" && <div className="sm:col-span-2">
               <Label>Tipo de contrato T8</Label>
               <div className="contract-options">
                 {(Object.keys(CONTRACT_LABELS) as ContractType[]).map(
@@ -6287,7 +6373,7 @@ export default function Home() {
                 al contrato.
               </p>
             </div>}
-            {!isFullTime(profileDraft) && profileDraft.contract === "75" && (
+            {profileTurn(profileDraft) === "T8" && profileDraft.contract === "75" && (
               <div className="sm:col-span-2">
                 <Label>Subturno del 75 %</Label>
                 <div className="subturn-options">
@@ -6314,6 +6400,134 @@ export default function Home() {
                 </p>
               </div>
             )}
+            {isSummer(profileDraft) && (() => {
+              const summer = summerContractFor(profileDraft, year),
+                months = summerAssignmentMonths(plan);
+              return (
+                <div className="sm:col-span-2 rounded-xl border border-[#eeb64b]/20 bg-[#eeb64b]/5 p-4">
+                  <Label>Contrato de verano</Label>
+                  <div className="contract-options mt-2">
+                    {(["75", "100"] as SummerPercentage[]).map((percentage) => (
+                      <button
+                        type="button"
+                        key={percentage}
+                        className={summer.percentage === percentage ? "selected" : ""}
+                        onClick={() =>
+                          updateSummerConfig({
+                            percentage,
+                            assignments:
+                              percentage === "75" ? summer.assignments : [],
+                          })
+                        }
+                      >
+                        <span>{percentage} %</span>
+                        <small>
+                          {percentage === "75"
+                            ? "Letra + AT por mes"
+                            : "Jornada completa"}
+                        </small>
+                      </button>
+                    ))}
+                  </div>
+                  <p className="mt-3 text-xs leading-5 text-white/45">
+                    El periodo, los días de formación y las horas del contrato se
+                    obtienen del calendario reconocido. No tienes que introducir
+                    fechas ni horas manualmente.
+                  </p>
+
+                  {summer.percentage === "75" && (
+                    <div className="mt-4 space-y-3">
+                      <p className="text-xs leading-5 text-[#eeb64b]">
+                        Para el 75 %, indica la letra de fiesta y el AT de cada mes
+                        de servicio. La app usará únicamente los meses presentes en
+                        el calendario cuando estén disponibles.
+                      </p>
+                      {months.map((summerMonth) => {
+                        const assignment =
+                            summer.assignments.find(
+                              (item) => item.month === summerMonth,
+                            ) || {
+                              month: summerMonth,
+                              fiestaLetter:
+                                summer.assignments[0]?.fiestaLetter ||
+                                profileDraft.fiestaLetter ||
+                                "M",
+                              shift:
+                                summer.assignments[0]?.shift || "AT86",
+                            };
+                        return (
+                          <div
+                            key={summerMonth}
+                            className="grid gap-2 rounded-lg border border-white/10 bg-black/10 p-3 sm:grid-cols-[1fr_150px_150px] sm:items-end"
+                          >
+                            <div>
+                              <span className="text-sm font-semibold">
+                                {MONTHS[summerMonth - 1]}
+                              </span>
+                              <small className="block text-white/35">
+                                Asignación mensual
+                              </small>
+                            </div>
+                            <div>
+                              <Label>Letra</Label>
+                              <Select
+                                value={assignment.fiestaLetter}
+                                onValueChange={(value) =>
+                                  updateSummerAssignment(
+                                    summerMonth,
+                                    "fiestaLetter",
+                                    value as FiestaLetter,
+                                  )
+                                }
+                              >
+                                <SelectTrigger>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {(["K", "L", "M", "N"] as FiestaLetter[]).map(
+                                    (letter) => (
+                                      <SelectItem key={letter} value={letter}>
+                                        {letter}
+                                      </SelectItem>
+                                    ),
+                                  )}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div>
+                              <Label>AT</Label>
+                              <Select
+                                value={assignment.shift}
+                                onValueChange={(value) =>
+                                  updateSummerAssignment(
+                                    summerMonth,
+                                    "shift",
+                                    value as SummerShift,
+                                  )
+                                }
+                              >
+                                <SelectTrigger>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {(["AT86", "AT87"] as SummerShift[]).map(
+                                    (shift) => (
+                                      <SelectItem key={shift} value={shift}>
+                                        {shift}
+                                      </SelectItem>
+                                    ),
+                                  )}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
           <Button
             className="w-full bg-[#eeb64b] font-bold text-[#112128] hover:bg-[#ffd173]"
