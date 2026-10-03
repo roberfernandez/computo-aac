@@ -277,7 +277,7 @@ const CONFIRMED_SPECIAL_RETRIBUTIVE_DAYS = [
 // Incrementar esta versión cuando cambie la lógica de reconocimiento anual.
 // Los años analizados con una versión anterior se conservan, pero la interfaz
 // avisa de que conviene volver a leer su imagen.
-const ANNUAL_DETECTOR_VERSION = 35;
+const ANNUAL_DETECTOR_VERSION = 36;
 const statusLabel: Record<Status, string> = {
   REVISAR: "Revisar",
   AGCG: "Trabajo · AGCG",
@@ -1209,11 +1209,33 @@ function annualBlockEvidence(data: Uint8ClampedArray): { status: Status; confide
     else if (g > r + 14 && g > b + 14 && r > 75 && b > 75) medical++;
     else if (r < 150 && g > 125 && b > 125 && g - r > 15) cyan++;
     else if (r > 180 && b > 135 && g < 205 && r - g > 30 && b - g > 30) pink++;
-    else if (r > 170 && g > 105 && b < 85 && g - b > 55 && r - g > 25)
+    else if (
+      r > 185 &&
+      g > 105 &&
+      b < 85 &&
+      g - b > 50 &&
+      r - g > 45
+    )
       laudo++;
-    else if (r > 165 && g > 70 && g < 210 && b > 40 && b < 180 && r - g > 18)
+    else if (
+      r > 95 &&
+      g > 60 &&
+      b < 120 &&
+      r > g &&
+      g > b &&
+      g - b > (r - g) * 1.15
+    )
+      brown++;
+    else if (
+      r > 155 &&
+      g > 70 &&
+      g < 210 &&
+      b > 40 &&
+      b < 185 &&
+      r - g > 18 &&
+      r - g > (g - b) * 1.15
+    )
       orange++;
-    else if (r > 95 && g > 60 && b < 100 && r > g && g > b) brown++;
   }
   const ratio = (n: number) => (eligible ? n / eligible : 0),
     best = Math.max(cyan, orange, pink, disease, medical, laudo, brown, blue),
@@ -1518,18 +1540,8 @@ function annualFeatureEvidence(
   )
     return { status: "FORMACION", confidence: 0.87 };
 
-  // Very dark warm/brown is vacaciones. It is evaluated before the two
-  // lighter warm families.
-  if (
-    luma < 0.34 &&
-    b < 0.22 &&
-    r >= g - 0.02 &&
-    r > b + 0.08
-  )
-    return { status: "VACACIONES_PENDIENTES", confidence: 0.92 };
-
-  // Laudo is orange: strong red, clearly more green than blue. Requiring the
-  // green-blue separation prevents pale brown cycle holidays becoming Laudo.
+  // Laudo is the most saturated yellow/orange family. Resolve it before the
+  // two brown families so a strong orange cannot become vacaciones.
   if (
     r > 0.46 &&
     g > 0.24 &&
@@ -1541,17 +1553,35 @@ function annualFeatureEvidence(
   )
     return { status: "LAUDO", confidence: 0.91 };
 
-  // Fiesta propia: warm/pale brown. This intentionally accepts a wider range
-  // than Laudo but only after the stricter orange rule above has failed.
+  // Vacaciones and FEST are both brown/warm in photographed calendars.
+  // Brightness is unreliable on screens and phone photos, so v36 separates
+  // them primarily by hue geometry:
+  //   vacaciones -> brown/yellow: G-B dominates R-G
+  //   FEST        -> salmon/red:  R-G dominates G-B
+  // This keeps the decision stable when the same calendar is brighter/darker.
+  const redGreenGap = r - g,
+    greenBlueGap = g - b;
+
   if (
     r > 0.39 &&
-    r > g + 0.07 &&
-    g >= b - 0.015 &&
-    b < 0.31 &&
+    r > g &&
+    g > b + 0.06 &&
+    b < 0.25 &&
     saturation > 0.08 &&
-    luma >= 0.30
+    redGreenGap < 0.18 &&
+    greenBlueGap > redGreenGap * 1.15
   )
-    return { status: "FEST", confidence: 0.87 };
+    return { status: "VACACIONES_PENDIENTES", confidence: 0.93 };
+
+  if (
+    r > 0.39 &&
+    redGreenGap > 0.08 &&
+    g >= b - 0.015 &&
+    b < 0.32 &&
+    saturation > 0.08 &&
+    redGreenGap > greenBlueGap * 1.15
+  )
+    return { status: "FEST", confidence: 0.90 };
 
   // Pale green / grey-green used by revisión médica.
   if (
