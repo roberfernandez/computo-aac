@@ -107,9 +107,20 @@ type DayData = {
 type MonthPlan = { original: DayData[]; days: DayData[]; confirmed: boolean };
 type YearPlan = Record<number, MonthPlan>;
 type FiestaLetter = "K" | "M" | "L" | "N";
+type SummerPercentage = "75" | "100";
+type SummerShift = "AT86" | "AT87";
+type SummerMonthAssignment = {
+  month: number;
+  fiestaLetter: FiestaLetter;
+  shift: SummerShift;
+};
+type SummerContract = {
+  percentage: SummerPercentage;
+  assignments: SummerMonthAssignment[];
+};
 type ContractType = "85.81" | "85" | "78.91" | "78.14" | "75";
 type Subturn = "T8.1" | "T8.2" | "T8.3" | "T8.4" | "T8.5";
-type Turn = "T1" | "T2" | "T4" | "T5" | "T8";
+type Turn = "T1" | "T2" | "T4" | "T5" | "T8" | "ESTIU";
 type UserProfile = {
   turn?: Turn;
   name: string;
@@ -117,6 +128,7 @@ type UserProfile = {
   fiestaLetter: FiestaLetter;
   contract: ContractType;
   subturn?: Subturn;
+  summer?: Record<string, SummerContract>;
 };
 type ShiftKind =
   "NORMAL" | "FRIDAY_EVE" | "SATURDAY" | "NON_STOP" | "LONG_SATURDAY";
@@ -158,7 +170,12 @@ const CONTRACT_LABELS: Record<ContractType, string> = {
   "78.14": "78,14 %",
   "75": "75 %",
 };
-const TURNS: Turn[] = ["T1", "T2", "T4", "T5", "T8"];
+const TURNS: Turn[] = ["T1", "T2", "T4", "T5", "T8", "ESTIU"];
+const DEFAULT_SUMMER_CONTRACT: SummerContract = {
+  percentage: "75",
+  assignments: [],
+};
+const SUMMER_SERVICE_MONTHS = [7, 8, 9, 10] as const;
 const FULL_TIME_HOURS: Record<number, number> = { 2020: 1666, 2021: 1666, 2022: 1658, 2023: 1658, 2024: 1650, 2025: 1642, 2026: 1634, 2027: 1618 };
 const FULL_TIME_SHIFTS = {
   T1: { start: "04:30", end: "12:19" },
@@ -169,16 +186,40 @@ const FULL_TIME_SHIFTS = {
 function profileTurn(profile: UserProfile): Turn {
   return profile.turn && TURNS.includes(profile.turn) ? profile.turn : "T8";
 }
-function isFullTime(profile: UserProfile) { return profileTurn(profile) !== "T8"; }
-function profileLabel(profile: UserProfile) {
+function isSummer(profile: UserProfile) { return profileTurn(profile) === "ESTIU"; }
+function isFullTime(profile: UserProfile) {
+  const turn = profileTurn(profile);
+  return turn !== "T8" && turn !== "ESTIU";
+}
+function summerContractFor(profile: UserProfile, year: number): SummerContract {
+  const stored = profile.summer?.[String(year)];
+  return stored
+    ? {
+        percentage: stored.percentage === "100" ? "100" : "75",
+        assignments: Array.isArray(stored.assignments) ? stored.assignments : [],
+      }
+    : DEFAULT_SUMMER_CONTRACT;
+}
+function summerAssignmentFor(profile: UserProfile, year: number, month: number) {
+  return summerContractFor(profile, year).assignments.find(
+    (assignment) => assignment.month === month,
+  );
+}
+function profileLabel(profile: UserProfile, year?: number) {
+  if (isSummer(profile))
+    return year === undefined
+      ? "Estiu"
+      : `Estiu · ${summerContractFor(profile, year).percentage} %`;
   return isFullTime(profile) ? `${profileTurn(profile)} · 100 %` : `T8 · ${CONTRACT_LABELS[profile.contract]}`;
 }
 function theoreticalHours(year: number, profile: UserProfile) {
+  if (isSummer(profile)) return undefined;
   return isFullTime(profile) ? FULL_TIME_HOURS[year] : ANNUAL_THEORETICAL_HOURS[year]?.[profile.contract];
 }
 // Keep the existing T8 contract/subturn as inactive preferences when changing turn.
 // Legacy profiles without a turn remain T8. No stored calendar is rewritten.
 function balanceLabel(profile: UserProfile, value: number) {
+  if (isSummer(profile)) return formatHours(value);
   return isFullTime(profile) ? "Pendiente" : signed(value);
 }
 function nightLabel(profile: UserProfile, value: number) {
@@ -321,6 +362,52 @@ const CYCLE_PATTERN: BaseStatus[] = [
 
 function daysInMonth(year: number, month: number) {
   return new Date(year, month, 0).getDate();
+}
+function daysInYear(year: number) {
+  return new Date(year, 1, 29).getMonth() === 1 ? 366 : 365;
+}
+function summerAssignmentMonths(plan: YearPlan) {
+  const detected = SUMMER_SERVICE_MONTHS.filter(
+    (month) => (plan[month]?.days?.length || 0) > 0,
+  );
+  return detected.length ? [...detected] : [...SUMMER_SERVICE_MONTHS];
+}
+function summerDetectedSpan(plan: YearPlan, year: number) {
+  const dates = Object.entries(plan).flatMap(([monthKey, monthPlan]) => {
+    const month = Number(monthKey);
+    return (monthPlan?.days || [])
+      .filter((day) => day.day >= 1 && day.day <= daysInMonth(year, month))
+      .map((day) => new Date(year, month - 1, day.day, 12));
+  });
+  if (!dates.length) return null;
+  dates.sort((a, b) => a.getTime() - b.getTime());
+  const start = dates[0],
+    end = dates[dates.length - 1],
+    naturalDays =
+      Math.round((end.getTime() - start.getTime()) / 86400000) + 1;
+  return {
+    start,
+    end,
+    naturalDays,
+    label: `${String(start.getDate()).padStart(2, "0")}/${String(start.getMonth() + 1).padStart(2, "0")}–${String(end.getDate()).padStart(2, "0")}/${String(end.getMonth() + 1).padStart(2, "0")}`,
+  };
+}
+function summerContractHours(
+  plan: YearPlan,
+  year: number,
+  profile: UserProfile,
+) {
+  const span = summerDetectedSpan(plan, year),
+    annualReference = FULL_TIME_HOURS[year];
+  if (!span || annualReference === undefined) return undefined;
+  const percentage =
+    summerContractFor(profile, year).percentage === "100" ? 1 : 0.75;
+  return Number(
+    (
+      (annualReference * percentage * span.naturalDays) /
+      daysInYear(year)
+    ).toFixed(2),
+  );
 }
 function weekdayMon(year: number, month: number, day: number) {
   return (new Date(year, month - 1, day).getDay() + 6) % 7;
@@ -595,11 +682,52 @@ const SUBTURN_SHIFTS: Record<
     LONG_SATURDAY: { start: "21:10", end: "06:00" },
   },
 };
+const SUMMER_SHIFTS: Record<
+  SummerShift,
+  Record<Exclude<ShiftKind, "LONG_SATURDAY">, { start: string; end: string }>
+> = {
+  AT86: {
+    NORMAL: { start: "19:20", end: "00:18" },
+    FRIDAY_EVE: { start: "19:20", end: "02:50" },
+    SATURDAY: { start: "20:30", end: "05:00" },
+    NON_STOP: { start: "20:30", end: "05:00" },
+  },
+  AT87: {
+    NORMAL: { start: "19:52", end: "00:50" },
+    FRIDAY_EVE: { start: "19:20", end: "02:50" },
+    SATURDAY: { start: "20:30", end: "05:00" },
+    NON_STOP: { start: "20:30", end: "05:00" },
+  },
+};
 function shiftFor(
   profile: UserProfile,
   kind: ShiftKind,
   weekday: number,
+  year?: number,
+  month?: number,
 ): ShiftDefinition {
+  if (isSummer(profile)) {
+    if (year === undefined || month === undefined)
+      return { start: "", end: "", minutes: NaN, value: NaN };
+    const summer = summerContractFor(profile, year);
+    if (summer.percentage !== "75")
+      return { start: "", end: "", minutes: NaN, value: NaN };
+    const assignment = summerAssignmentFor(profile, year, month);
+    if (!assignment)
+      return { start: "", end: "", minutes: NaN, value: NaN };
+    const effectiveKind =
+        kind === "LONG_SATURDAY" ? "SATURDAY" : kind,
+      base = SUMMER_SHIFTS[assignment.shift][effectiveKind],
+      row =
+        effectiveKind === "NORMAL" && weekday === 6
+          ? { start: "19:20", end: "00:50" }
+          : base;
+    return {
+      ...row,
+      minutes: elapsedMinutes(row.start, row.end),
+      value: 0,
+    };
+  }
   if (isFullTime(profile)) {
     const turn = profileTurn(profile) as keyof typeof FULL_TIME_SHIFTS;
     let shift: { start: string; end: string } = FULL_TIME_SHIFTS[turn];
@@ -660,7 +788,7 @@ function nightMinutesForShift(start: string, end: string, total: number) {
   return overlap > 240 ? total : overlap;
 }
 function nightForDay(d: DayData, profile: UserProfile, code: string | null | undefined,
-  start: string, end: string, total: number, month: number) {
+  start: string, end: string, total: number, year: number, month: number) {
   const overlap = nightOverlapMinutesForShift(start, end);
   let reason = "";
   if (isFullTime(profile)) reason = "Nocturnidad de tiempo completo pendiente de validar";
@@ -670,7 +798,7 @@ function nightForDay(d: DayData, profile: UserProfile, code: string | null | und
   if (!reason && code?.endsWith("_FINS_23H")) {
     // Nochebuena: la reducción de presencia no reduce la nocturnidad abonada.
     // Nómina 12/2025 confirma que T8 cobra la nocturnidad de la jornada normal.
-    const normal = shiftFor(profile, "NORMAL", 1);
+    const normal = shiftFor(profile, "NORMAL", 1, year, month);
     payable = nightMinutesForShift(normal.start, normal.end, normal.minutes);
   }
   if (!reason && !Number.isFinite(payable)) reason = "Pendiente: horario incompleto o duración distinta del intervalo";
@@ -727,7 +855,7 @@ function calcDay(
       start = d.customStart!; end = d.customEnd!;
       minutes = elapsedMinutes(start, end);
     }
-    const nightResult = nightForDay(d, profile, code, start, end, minutes, month);
+    const nightResult = nightForDay(d, profile, code, start, end, minutes, year, month);
     const night = fullTime ? 0 : nightResult.payable;
     return {
       scheduleReview: !Number.isFinite(minutes), compensationPending: fullTime,
@@ -752,7 +880,7 @@ function calcDay(
   // The event is the current date's official code. October only selects the
   // existing autumn tariff; spring keeps its previous schedule. No event date
   // is reconstructed from tomorrow or a last-Saturday formula.
-  if (code === "DISSABTE_CANVI_HORA" && profile.contract === "75" && month === 10) {
+  if (code === "DISSABTE_CANVI_HORA" && !isSummer(profile) && profile.contract === "75" && month === 10) {
     kind = "LONG_SATURDAY";
     reason = "Sábado largo · cambio de hora";
   }
@@ -762,13 +890,13 @@ function calcDay(
   } else if (d.special === "FESTIVO_ESPECIAL" || d.special === "VISPERA_MANUAL" || d.status === "VISPERA_FESTIVO") {
     kind = "FRIDAY_EVE"; reason = "Jornada especial · manual";
   }
-  let definition = shiftFor(profile, kind, wd),
+  let definition = shiftFor(profile, kind, wd, year, month),
     start = definition.start,
     end = definition.end,
     workedMinutes = definition.minutes,
     value = definition.value;
   if (!isFullTime(profile) && code.endsWith("_FINS_23H")) {
-    const normal = shiftFor(profile, "NORMAL", wd);
+    const normal = shiftFor(profile, "NORMAL", wd, year, month);
     definition = normal;
     start = normal.start;
     end = "23:50";
@@ -798,15 +926,25 @@ function calcDay(
     reason = "Modificación de jornada";
   }
   const actualWorkedMinutes = workedMinutes,
-    nightResult = nightForDay(d, profile, code, start, end, actualWorkedMinutes, month),
-    actualNightMinutes = isFullTime(profile) ? 0 : nightResult.payable,
-    actualNightHours = decimalHoursFromMinutes(actualNightMinutes),
-    actualOrdinaryHours = decimalHoursFromMinutes(actualWorkedMinutes),
+    nightResult = nightForDay(d, profile, code, start, end, actualWorkedMinutes, year, month),
+    actualNightMinutes = isFullTime(profile)
+      ? 0
+      : Number.isFinite(actualWorkedMinutes)
+        ? nightResult.payable
+        : NaN,
+    actualNightHours = Number.isFinite(actualNightMinutes)
+      ? decimalHoursFromMinutes(actualNightMinutes)
+      : NaN,
+    actualOrdinaryHours = Number.isFinite(actualWorkedMinutes)
+      ? decimalHoursFromMinutes(actualWorkedMinutes)
+      : NaN,
     actualHoraNona =
-      !isFullTime(profile) && actualWorkedMinutes > 480
+      !isFullTime(profile) && Number.isFinite(actualWorkedMinutes) && actualWorkedMinutes > 480
         ? Math.ceil((actualWorkedMinutes - 480) / 15) * 0.25
-        : 0,
-    hours = `${Math.floor(actualWorkedMinutes / 60)}:${String(actualWorkedMinutes % 60).padStart(2, "0")}`;
+        : Number.isFinite(actualWorkedMinutes) ? 0 : NaN,
+    hours = Number.isFinite(actualWorkedMinutes)
+      ? `${Math.floor(actualWorkedMinutes / 60)}:${String(actualWorkedMinutes % 60).padStart(2, "0")}`
+      : "Pendiente";
   if (toPreviousYear) {
     value = 0;
     reason = `Cómputo aplicado a ${year - 1}`;
@@ -814,15 +952,32 @@ function calcDay(
     value = actualWorkedMinutes / 60;
     reason = `Cómputo aplicado a ${year}`;
   }
-  const fullTime = isFullTime(profile);
-  const scheduleReview = fullTime && ["T1", "T2"].includes(profileTurn(profile)) && (wd === 5 || kind === "NON_STOP") && d.special !== "MODIFICACION";
+  const fullTime = isFullTime(profile),
+    summer = isSummer(profile),
+    summerAssignment = summer ? summerAssignmentFor(profile, year, month) : undefined;
+  const scheduleReview =
+    (fullTime && ["T1", "T2"].includes(profileTurn(profile)) && (wd === 5 || kind === "NON_STOP") && d.special !== "MODIFICACION") ||
+    (summer && !Number.isFinite(actualWorkedMinutes));
   const absenceReview = fullTime && ["FORMACION", "REVISION_MEDICA", "COMPUTO_ANTERIOR", "COMPUTO_ACTUAL"].includes(d.status);
   if (fullTime) reason = `${profileTurn(profile)} · ${scheduleReview ? "horario histórico por confirmar" : reason}${absenceReview ? " · abono pendiente" : ""} · cómputo pendiente`;
+  if (summer) {
+    const summerContract = summerContractFor(profile, year);
+    reason =
+      summerContract.percentage === "75"
+        ? `Estiu 75 % · ${summerAssignment ? `${summerAssignment.fiestaLetter} · ${summerAssignment.shift}` : "letra/AT pendiente"} · ${reason}`
+        : "Estiu 100 % · horario operativo pendiente de asignación";
+  }
   return {
     scheduleReview,
     compensationPending: fullTime,
-    value: fullTime ? 0 : Number(value.toFixed(2)),
-    shift: `${start}–${end}`,
+    value: summer
+      ? toPreviousYear
+        ? 0
+        : actualOrdinaryHours
+      : fullTime
+        ? 0
+        : Number(value.toFixed(2)),
+    shift: Number.isFinite(actualWorkedMinutes) ? `${start}–${end}` : "Pendiente",
     hours,
     night: iso(actualNightHours),
     workedMinutes: toPreviousYear ? 0 : actualWorkedMinutes,
