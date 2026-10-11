@@ -7047,21 +7047,21 @@ export default function Home() {
                     </div>
                   ) : (
                     <div>
-                      <Label>Variación de horas</Label>
+                      <Label>Variación de minutos</Label>
                       <Input
                         className="compute-edit"
                         type="number"
-                        step="0.25"
-                        value={selected.extraHours}
+                        step="1"
+                        value={Math.round(selected.extraHours * 60)}
                         onChange={(e) =>
                           setSelected({
                             ...selected,
-                            extraHours: +e.target.value,
+                            extraHours: +e.target.value / 60,
                           })
                         }
                       />
                       <p className="mt-1 text-xs text-white/40">
-                        Positivo: trabajas más · negativo: trabajas menos.
+                        Introduce minutos reales: 5 = 5 min · 60 = 1 h. Positivo: trabajas más · negativo: trabajas menos.
                       </p>
                     </div>
                   )}
