@@ -78,13 +78,15 @@ type Special =
   | "NON_STOP_EXTRA"
   | "MODIFICACION";
 type ModificationPlacement = "FINAL" | "INICIO" | "PERSONALIZADO";
-type PriorOrigin = "VACACIONES" | "RJ" | "COMPUTO";
+type PriorOrigin = "VACACIONES" | "MINI" | "RJ" | "COMPUTO";
 type PeriodKind = "VACACIONES" | "MINI" | "RJ" | "PATERNIDAD" | "VAC_ANTERIOR";
+type PeriodYear = "ACTUAL" | "ANTERIOR";
 type PeriodRecord = {
   id: string;
   kind: PeriodKind;
   start: string;
   end: string;
+  periodYear?: PeriodYear;
   priorOrigin?: PriorOrigin;
 };
 type DayData = {
@@ -326,7 +328,11 @@ function dayColourClass(d: DayData) {
   )
     return "tmb-blue";
   if (d.status === "VAC_ANTERIOR") {
-    return d.priorOrigin === "RJ" ? "tmb-blue" : d.priorOrigin === "COMPUTO" ? "tmb-neutral" : "tmb-brown";
+    return d.priorOrigin === "RJ" || d.priorOrigin === "MINI"
+      ? "tmb-blue"
+      : d.priorOrigin === "COMPUTO"
+        ? "tmb-neutral"
+        : "tmb-brown";
   }
   const colours: Partial<Record<Status, string>> = {
     AGCG: "tmb-grey", DCOM: "tmb-turquoise", FEST: "tmb-salmon",
@@ -341,11 +347,13 @@ function showMonthlyConcept(value: number) {
 }
 const priorOriginLabel: Record<PriorOrigin, string> = {
   VACACIONES: "Vacaciones pendientes",
+  MINI: "Mini pendiente",
   RJ: "RJ pendiente",
   COMPUTO: "Cómputo horario positivo",
 };
 const priorSituationLabel: Record<PriorOrigin, string> = {
   VACACIONES: "Vacaciones año anterior",
+  MINI: "Mini año anterior",
   RJ: "RJ año anterior",
   COMPUTO: "Cómputo positivo año anterior",
 };
@@ -495,9 +503,11 @@ function compactStatusLabel(d: DayData) {
     : d.status === "VAC_ANTERIOR"
       ? d.priorOrigin === "RJ"
         ? "RJ ANT."
-        : d.priorOrigin === "COMPUTO"
-          ? "CÓMP. + ANT."
-          : "VAC. ANT."
+        : d.priorOrigin === "MINI"
+          ? "MINI ANT."
+          : d.priorOrigin === "COMPUTO"
+            ? "CÓMP. + ANT."
+            : "VAC. ANT."
       : d.status === "VACACIONES_PENDIENTES"
         ? "VAC. ¿AÑO?"
       : d.status === "COMPUTO_ANTERIOR"
@@ -4971,6 +4981,7 @@ export default function Home() {
     [multiSelectedDays, setMultiSelectedDays] = useState<number[]>([]),
     [bulkSituation, setBulkSituation] = useState(""),
     [periodKind, setPeriodKind] = useState<PeriodKind>("VACACIONES"),
+    [periodYear, setPeriodYear] = useState<PeriodYear>("ACTUAL"),
     [periodStart, setPeriodStart] = useState(""),
     [periodEnd, setPeriodEnd] = useState(""),
     [priorOrigin, setPriorOrigin] = useState<PriorOrigin>("VACACIONES");
@@ -4987,6 +4998,8 @@ export default function Home() {
     setMultiSelectedDays([]);
     setBulkSituation("");
     setEditingPeriodId(null);
+    setPeriodKind("VACACIONES");
+    setPeriodYear("ACTUAL");
     setPeriodStart("");
     setPeriodEnd("");
     try {
@@ -5565,14 +5578,20 @@ export default function Home() {
           canApplyPeriod
         ) {
           applied++;
-          let status: Status = periodKind;
-          if (periodKind === "MINI") {
+          const isNewCurrentPeriod =
+              periodKind === "VACACIONES" || periodKind === "MINI",
+            isPreviousYear = isNewCurrentPeriod && periodYear === "ANTERIOR",
+            previousOrigin: PriorOrigin =
+              periodKind === "MINI" ? "MINI" : "VACACIONES";
+          let status: Status = isPreviousYear ? "VAC_ANTERIOR" : periodKind;
+          if (periodKind === "MINI" && !isPreviousYear) {
             status =
               d.status === "LAUDO" || !miniLaudoAssigned ? "LAUDO" : "MINI";
             if (status === "LAUDO") miniLaudoAssigned = true;
           }
-          const note =
-            periodKind === "MINI"
+          const note = isPreviousYear
+            ? priorSituationLabel[previousOrigin]
+            : periodKind === "MINI"
               ? status === "LAUDO"
                 ? "Laudo ligado al miniperiodo"
                 : "Miniperiodo"
@@ -5589,8 +5608,11 @@ export default function Home() {
             status,
             note,
             periodId: id,
-            priorOrigin:
-              periodKind === "VAC_ANTERIOR" ? priorOrigin : undefined,
+            priorOrigin: isPreviousYear
+              ? previousOrigin
+              : periodKind === "VAC_ANTERIOR"
+                ? priorOrigin
+                : undefined,
             special: "NINGUNA" as Special,
             extraHours: 0,
           };
@@ -5610,6 +5632,9 @@ export default function Home() {
       kind: periodKind,
       start: periodStart,
       end: periodEnd,
+      ...((periodKind === "VACACIONES" || periodKind === "MINI")
+        ? { periodYear }
+        : {}),
       ...(periodKind === "VAC_ANTERIOR" ? { priorOrigin } : {}),
     };
     persist(next);
@@ -5619,6 +5644,8 @@ export default function Home() {
         : [...periods, record],
     );
     if (next[month]) setDays(next[month].days);
+    setPeriodKind("VACACIONES");
+    setPeriodYear("ACTUAL");
     setPeriodStart("");
     setPeriodEnd("");
     setEditingPeriodId(null);
@@ -5629,6 +5656,10 @@ export default function Home() {
   function editPeriod(record: PeriodRecord) {
     setEditingPeriodId(record.id);
     setPeriodKind(record.kind);
+    setPeriodYear(
+      record.periodYear ||
+        (record.kind === "VAC_ANTERIOR" ? "ANTERIOR" : "ACTUAL"),
+    );
     setPeriodStart(record.start);
     setPeriodEnd(record.end);
     if (record.priorOrigin) setPriorOrigin(record.priorOrigin);
@@ -6177,7 +6208,7 @@ export default function Home() {
                   {editingPeriodId ? "Editar periodo" : "Añadir periodo"}
                 </h2>
                 <p className="text-xs text-white/40">
-                  Vacaciones, mini, RJ, paternidad o días pendientes
+                  Vacaciones o mini · año actual o anterior
                 </p>
               </div>
             </div>
@@ -6194,32 +6225,22 @@ export default function Home() {
                   <SelectContent>
                     <SelectItem value="VACACIONES">Vacaciones</SelectItem>
                     <SelectItem value="MINI">Mini</SelectItem>
-                    <SelectItem value="RJ">RJ</SelectItem>
-                    <SelectItem value="PATERNIDAD">Paternidad</SelectItem>
-                    <SelectItem value="VAC_ANTERIOR">
-                      Año/s anterior/es
-                    </SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-              {periodKind === "VAC_ANTERIOR" && (
+              {(periodKind === "VACACIONES" || periodKind === "MINI") && (
                 <div>
-                  <Label>Origen del día pendiente</Label>
+                  <Label>Corresponde a</Label>
                   <Select
-                    value={priorOrigin}
-                    onValueChange={(v) => setPriorOrigin(v as PriorOrigin)}
+                    value={periodYear}
+                    onValueChange={(v) => setPeriodYear(v as PeriodYear)}
                   >
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {Object.entries(priorOriginLabel).map(
-                        ([value, label]) => (
-                          <SelectItem key={value} value={value}>
-                            {label}
-                          </SelectItem>
-                        ),
-                      )}
+                      <SelectItem value="ACTUAL">Año actual</SelectItem>
+                      <SelectItem value="ANTERIOR">Año anterior</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -6265,6 +6286,8 @@ export default function Home() {
                   className="w-full text-white/50"
                   onClick={() => {
                     setEditingPeriodId(null);
+                    setPeriodKind("VACACIONES");
+                    setPeriodYear("ACTUAL");
                     setPeriodStart("");
                     setPeriodEnd("");
                   }}
@@ -6292,12 +6315,16 @@ export default function Home() {
                       >
                         <div className="flex items-start justify-between gap-2">
                           <div>
-                            <b className="text-sm">{statusLabel[p.kind]}</b>
+                            <b className="text-sm">
+                              {p.kind === "VACACIONES" || p.kind === "MINI"
+                                ? `${p.kind === "VACACIONES" ? "Vacaciones" : "Mini"} · ${p.periodYear === "ANTERIOR" ? "año anterior" : "año actual"}`
+                                : statusLabel[p.kind]}
+                            </b>
                             <p className="mt-1 text-xs text-white/45">
                               {p.start.split("-").reverse().join("/")} –{" "}
                               {p.end.split("-").reverse().join("/")}
                             </p>
-                            {p.priorOrigin && (
+                            {p.priorOrigin && p.kind !== "VACACIONES" && p.kind !== "MINI" && (
                               <p className="mt-1 text-xs text-[#eeb64b]">
                                 {priorOriginLabel[p.priorOrigin]}
                               </p>
@@ -6309,6 +6336,7 @@ export default function Home() {
                               variant="ghost"
                               className="h-8 w-8 text-white/40 hover:text-[#ffd173]"
                               onClick={() => editPeriod(p)}
+                              disabled={p.kind !== "VACACIONES" && p.kind !== "MINI"}
                               aria-label={`Editar periodo ${statusLabel[p.kind]}`}
                             >
                               <PencilLine size={15} />
