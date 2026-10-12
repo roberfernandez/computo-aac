@@ -666,10 +666,10 @@ const FIXED_PROFILES: Record<
     NON_STOP: { start: "20:30", end: "05:00", minutes: 510, value: 1.85 },
   },
   "78.91": {
-    NORMAL: { start: "18:46", end: "00:50", minutes: 364, value: -0.67 },
-    FRIDAY_EVE: { start: "18:46", end: "02:50", minutes: 484, value: 1.33 },
-    SATURDAY: { start: "19:56", end: "05:00", minutes: 544, value: 2.33 },
-    NON_STOP: { start: "19:56", end: "05:00", minutes: 544, value: 2.33 },
+    NORMAL: { start: "19:20", end: "00:50", minutes: 330, value: -0.67 },
+    FRIDAY_EVE: { start: "19:20", end: "02:50", minutes: 450, value: 1.33 },
+    SATURDAY: { start: "20:30", end: "05:00", minutes: 510, value: 2.33 },
+    NON_STOP: { start: "20:30", end: "05:00", minutes: 510, value: 2.33 },
   },
   "78.14": {
     NORMAL: { start: "19:20", end: "00:50", minutes: 330, value: -0.61 },
