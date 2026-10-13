@@ -7760,6 +7760,7 @@ function MonthView({
                 <TableHead>Situación actual</TableHead>
                 <TableHead>Jornada</TableHead>
                 <TableHead>Noct. variable</TableHead>
+                <TableHead>Hora Nona</TableHead>
                 <TableHead className="text-right">
                   {isSummer(profile) ? "Horas" : "Cómputo"}
                 </TableHead>
@@ -7802,6 +7803,13 @@ function MonthView({
                     {c.nightReason && d.status !== "COMPUTO_ANTERIOR" && (
                       <span className="block text-xs text-muted-foreground">{c.nightReason}</span>
                     )}
+                  </TableCell>
+                  <TableCell>
+                    {isFullTime(profile) && isWorking(d.status)
+                      ? "Pendiente"
+                      : Number.isFinite(c.horaNona)
+                        ? iso(c.horaNona)
+                        : "Pendiente"}
                   </TableCell>
                   <TableCell
                     className={`text-right font-bold ${c.value > 0 ? "text-[#71d7cc]" : c.value < 0 ? "text-[#ff8d7c]" : "text-white/45"}`}
