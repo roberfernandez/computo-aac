@@ -59,3 +59,14 @@ test('unconfirmed schedules remain pending without hiding independent day counts
  assert.equal(d.metrics.horaNonaHours.value,null);
  assert.equal(d.metrics.specialRetributiveDays.value,0);
 });
+
+test('payroll activity exports resolved status, rest and vacation without notes or identity',()=>{
+ const profile={...DEFAULT_PROFILE,contract:'85.81',name:'PRIVATE'};
+ const data=[{...day,day:5,baseStatus:'AGCG'},{...day,day:6,baseStatus:'FEST',status:'FEST'},{...day,day:7,baseStatus:'AGCG',status:'VACACIONES'}];
+ const out=payrollFactsFor({1:{days:data}},2026,profile).months[1].days;
+ assert.equal(out[0].activity.version,1);assert.equal(out[0].activity.ordinary,true);
+ assert.equal(out[1].activity.weeklyRest,true);assert.equal(out[1].activity.working,false);
+ assert.equal(out[2].activity.vacation,true);assert.equal(out[2].activity.ordinary,false);
+ const unknown=payrollFactsFor({1:{days:[{...day,status:'REVISAR'}]}},2026,profile).months[1].days[0];
+ assert.equal(unknown.activity.working,null);assert.equal(unknown.activity.vacation,null);
+});

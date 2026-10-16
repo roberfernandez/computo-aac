@@ -1138,6 +1138,16 @@ function payrollFactsFor(plan: YearPlan, year: number, profile: UserProfile) {
       const c = calcDay(d, stored.days, year, month, profile), uncertain = needsReview(d.status);
       const schedulePending = uncertain || c.scheduleReview;
       return { date: `${period}-${String(d.day).padStart(2, "0")}`, schedule: c.shift,
+        activity: {
+          version: 1,
+          status: d.status,
+          priorOrigin: d.priorOrigin || null,
+          working: uncertain ? null : isWorking(d.status),
+          ordinary: uncertain ? null : d.status === "AGCG" && d.baseStatus === "AGCG",
+          weeklyRest: d.baseStatus === "FEST" ? true : d.baseStatus === "AGCG" || d.baseStatus === "DCOM" ? false : null,
+          scheduleResolved: !schedulePending,
+          vacation: uncertain || (d.status === "VAC_ANTERIOR" && !d.priorOrigin) ? null : d.status === "VACACIONES" || (d.status === "VAC_ANTERIOR" && d.priorOrigin === "VACACIONES"),
+        },
         metrics: {
           ordinaryHours: metric(schedulePending ? NaN : c.ordinaryHours, "h"),
           nightPayableMinutes: metric(schedulePending || c.nightReason ? NaN : c.nightPayableMinutes, "min"),
