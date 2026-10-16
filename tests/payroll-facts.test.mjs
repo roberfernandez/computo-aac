@@ -12,6 +12,12 @@ const context=await calendarContext(); context.process={env:{}};context.calculat
 vm.runInContext(ts.transpileModule(body,{compilerOptions:{target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.React}}).outputText+'\nglobalThis.api={payrollFactsFor,calcDay,DEFAULT_PROFILE,retributiveSummaryFor};',context);
 const {payrollFactsFor,calcDay,DEFAULT_PROFILE}=context.api;
 const day={day:2,status:'AGCG',special:'NINGUNA',extraHours:0};
+
+test('original calendar work dates survive vacation and rest overlays without guessing missing origins',()=>{
+ const ds=[{...day,day:1,status:'VACACIONES',baseStatus:'AGCG'},{...day,day:2,status:'DCOM',baseStatus:'DCOM'},{...day,day:3,status:'FEST',baseStatus:'FEST'},{...day,day:4}];
+ const out=payrollFactsFor({8:{days:ds}},2026,DEFAULT_PROFILE);
+ assert.deepEqual(Array.from(out.months[8].days,d=>d.activity.calendarWorkingDay),[true,false,false,null]);
+});
 test('export preserves resolved units and strips personal fields',()=>{
  const profile={...DEFAULT_PROFILE,name:'PRIVATE',employeeNumber:'PRIVATE'};
  const d={...day,notes:'PRIVATE'};

@@ -1143,6 +1143,8 @@ function payrollFactsFor(plan: YearPlan, year: number, profile: UserProfile) {
           version: 1,
           status: d.status,
           priorOrigin: d.priorOrigin || null,
+          // Original scheduled work dates survive vacations, RJ and other overlays.
+          calendarWorkingDay: d.baseStatus === "AGCG" ? true : d.baseStatus === "FEST" || d.baseStatus === "DCOM" ? false : null,
           working: uncertain ? null : isWorking(d.status),
           ordinary: uncertain ? null : d.status === "AGCG" && d.baseStatus === "AGCG",
           weeklyRest: d.baseStatus === "FEST" ? true : d.baseStatus === "AGCG" || d.baseStatus === "DCOM" ? false : null,
