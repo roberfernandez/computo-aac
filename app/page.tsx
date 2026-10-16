@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, @next/next/no-img-element, react-hooks/set-state-in-effect */
 "use client";
 
+import { calculateEntitlement } from "@/lib/payroll-entitlements";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CATEGORY_RULES, officialCalendar, officialCategory, officialHolidayFor } from "@/lib/official-calendar";
 import {
@@ -1167,6 +1168,22 @@ function payrollFactsFor(plan: YearPlan, year: number, profile: UserProfile) {
     return [month, { schema: "computo-economic-facts-v1", producer: "computo-aac", version: "1", year, period, profile: resolvedProfile, days, totals }];
   }));
   return { schema: "metro-payroll-facts-v1", year, profile: resolvedProfile, months };
+}
+
+type PayrollConceptSummary = { id: string; name: string; value: number | null; reason: string };
+function retributiveSummaryFor(plan: YearPlan, year: number, profile: UserProfile, month: number, previousYearExport?: any): PayrollConceptSummary[] {
+  const exported = payrollFactsFor(plan, year, profile);
+  const facts = exported.months[month];
+  const history: any[] = Object.values(exported.months);
+  if (previousYearExport?.schema === "metro-payroll-facts-v1" && previousYearExport.year === year - 1 && previousYearExport.months?.[12]) history.push(previousYearExport.months[12]);
+  const concepts = [["official-holiday", "Plus Festivo Oficial"], ["worked-holiday-e", "P.Festivo Trabajado E"], ["special-day", "Plus día Especial"]].map(([id, name]) => {
+    const result = calculateEntitlement(id, { facts, profile: exported.profile, period: facts?.period || `${year}-${String(month).padStart(2, "0")}`, history });
+    return { id, name, value: result.labour?.value ?? null, reason: result.message || "" };
+  });
+  const vacationDays = facts?.days.filter(d => d.activity.vacation === true).length ?? 0;
+  const uncertainVacation = !facts || facts.days.length !== daysInMonth(year, month) || facts.days.some(d => d.activity.vacation === null);
+  concepts.push({ id: "vacation-premiums", name: "Primas en Vacaciones", value: uncertainVacation ? null : vacationDays, reason: "Días de vacaciones; Nòmina aplica la media económica individual." });
+  return concepts;
 }
 
 function copyRecognizedDays(input: DayData[]) {
@@ -5802,6 +5819,11 @@ export default function Home() {
     first = weekdayMon(year, month, 1),
     review = days.filter((d) => needsReview(d.status) || (isWorking(d.status) && !officialCategory(year, month, d.day))).length,
     worked = days.filter((d) => isWorking(d.status)).length;
+  const payrollConcepts = useMemo(() => {
+    let previousYearExport;
+    try { previousYearExport = JSON.parse(localStorage.getItem(`metro-payroll-facts-v1-${year - 1}`) || "null"); } catch {}
+    return retributiveSummaryFor(plan, year, profile, month, previousYearExport);
+  }, [plan, year, profile, month, officialRevision]);
   const monthTotals = useMemo(
     () =>
       Object.fromEntries(
@@ -6533,10 +6555,7 @@ export default function Home() {
               monthOrdinaryHours={currentMonthOrdinaryHours}
               monthNightHours={currentMonthNightHours}
               monthHoraNona={currentMonthHoraNona}
-              monthSpecialRetributiveDays={
-                currentMonthSpecialRetributiveDays
-              }
-              monthPlusFestiu={currentMonthPlusFestiu}
+              payrollConcepts={payrollConcepts}
               monthPlusConvenio={currentMonthPlusConvenio}
               review={review}
               worked={worked}
@@ -7297,7 +7316,7 @@ function AnnualView({
                       <div className="annual-night">
                         <span>
                           <CalendarDays size={12} />
-                          Días especiales:
+                          Fechas D.ESP trabajadas:
                         </span>
                         <b>{specialRetributiveDaysCount(p.days, year, m)}</b>
                       </div>
@@ -7368,7 +7387,7 @@ function AnnualView({
                 />
                 {annualPlusFestiu > 0 && (
                   <AnnualStat
-                    label="Plus Festiu informativo"
+                    label="Domingos trabajados · calendario"
                     value={`${annualPlusFestiu} domingos`}
                   />
                 )}
@@ -7411,8 +7430,8 @@ function MonthView({
   monthOrdinaryHours,
   monthNightHours,
   monthHoraNona,
-  monthSpecialRetributiveDays,
-  monthPlusFestiu,
+
+  payrollConcepts,
   review,
   monthPlusConvenio,
   worked,
@@ -7438,8 +7457,8 @@ function MonthView({
   monthOrdinaryHours: number;
   monthNightHours: number;
   monthHoraNona: number;
-  monthSpecialRetributiveDays: number;
-  monthPlusFestiu: number;
+
+  payrollConcepts: PayrollConceptSummary[];
   review: number;
   monthPlusConvenio: number;
   worked: number;
@@ -7552,14 +7571,14 @@ function MonthView({
             <span>Horas ordinarias</span>
             <strong>{formatHours(monthOrdinaryHours)}</strong>
           </div>
-          <div className="month-kpi night">
+          {(!Number.isFinite(monthNightHours) || monthNightHours > 0 || calculations.some(({ c }) => c.scheduleReview || (c.nightReason && c.nightOverlapMinutes > 0))) && <div className="month-kpi night">
             <span>
               <Moon size={13} />
-              Nocturnidad variable
+              Nocturnidad Variable
             </span>
             <strong>{nightLabel(profile, monthNightHours)}</strong>
-          </div>
-          {(isFullTime(profile) || !Number.isFinite(monthHoraNona) || monthHoraNona > 0) && (
+          </div>}
+          {(!Number.isFinite(monthHoraNona) || monthHoraNona > 0) && (
             <div className="month-kpi payroll">
               <span>
                 <Clock3 size={13} />
@@ -7568,35 +7587,18 @@ function MonthView({
               <strong>{isFullTime(profile) ? "Pendiente" : iso(monthHoraNona)}</strong>
             </div>
           )}
-          {monthSpecialRetributiveDays > 0 && (
-            <div className="month-kpi special">
-              <span>
-                <CalendarDays size={13} />
-                Días especiales
-              </span>
-              <strong>
-                {monthSpecialRetributiveDays}{" "}
-                {monthSpecialRetributiveDays === 1 ? "día" : "días"}
-              </strong>
+          {payrollConcepts.filter(item => item.value === null || item.value > 0).map(item => (
+            <div key={item.id} className="month-kpi payroll" title={item.reason}>
+              <span><CalendarDays size={13} /> {item.name}</span>
+              <strong>{item.value === null ? "Pendiente" : `${item.value} ${item.value === 1 ? "día" : "días"}`}</strong>
+              {item.value === null && <span role="status">{item.reason}</span>}
             </div>
-          )}
-          {monthPlusFestiu > 0 && (
-            <div className="month-kpi festive">
-              <span>
-                <CalendarDays size={13} />
-                Plus Festiu
-              </span>
-              <strong>
-                {monthPlusFestiu}{" "}
-                {monthPlusFestiu === 1 ? "domingo" : "domingos"}
-              </strong>
-            </div>
-          )}
-          <div className="month-kpi payroll">
+          ))}
+          {(monthPlusConvenio > 0 || review > 0) && <div className="month-kpi payroll">
             <span><CalendarDays size={13} /> Plus Convenio{isFullTime(profile) ? " · provisional" : ""}</span>
             <strong>{monthPlusConvenio} {monthPlusConvenio === 1 ? "día" : "días"}</strong>
             {review > 0 && <span>Provisional · hay días por revisar</span>}
-          </div>
+          </div>}
           <Badge variant="outline" className="whitespace-normal border-white/15 text-white/60">
             {worked} trabajados · {review} pendientes de revisión
             {isFullTime(profile) && ` · ${calculations.filter(({ c }) => c.scheduleReview).length} horarios por confirmar`}
@@ -7607,6 +7609,7 @@ function MonthView({
         {profileLabel(profile, year)} · Las horas son una previsión de horario. El saldo, la nocturnidad abonable, la Hora Nona y los abonos por ausencias están pendientes de validar.
         {["T1", "T2"].includes(profileTurn(profile)) && " Los sábados y non stop usan un horario histórico por confirmar; puedes corregir la jornada en cada día."}
       </p>}
+      <p className="mx-4 mt-2 text-[10px] text-white/45">Unidades estimadas según condiciones · by Roberspierre</p>
       <Tabs defaultValue="calendar" className="p-4 md:p-6">
         <TabsList className="mb-5 bg-[#0b2029]">
           <TabsTrigger value="calendar">Calendario</TabsTrigger>
@@ -7950,7 +7953,7 @@ function Rules({ profile, year }: { profile: UserProfile; year: number }) {
       <Rule
         n="11"
         title="Información retributiva"
-        text="Plus Festiu cuenta domingos efectivamente trabajados. D.ESP señala días especiales confirmados; ninguno de los dos modifica el cómputo ni calcula importes."
+        text="Los contadores retributivos usan las mismas condiciones que Nòmina: festivos oficiales, domingos y franjas de Día Especial. D.ESP marca la fecha del calendario; no equivale por sí sola al derecho de cobro. La variante E es una estimación separada de la variante proporcional."
       />
       <Rule
         n="12"

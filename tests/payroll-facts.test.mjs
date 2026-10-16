@@ -1,3 +1,4 @@
+import {calculateEntitlement} from '../lib/payroll-entitlements.js';
 import { calendarContext } from './helpers/calendar-context.mjs';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -7,8 +8,8 @@ import ts from 'typescript';
 const source=readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8');
 const parsed=ts.createSourceFile('page.tsx',source.slice(0,source.indexOf('export default function Home')),ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
 const body=parsed.statements.filter(n=>!ts.isImportDeclaration(n)).map(n=>n.getText(parsed)).join('\n');
-const context=await calendarContext(); context.process={env:{}};
-vm.runInContext(ts.transpileModule(body,{compilerOptions:{target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.React}}).outputText+'\nglobalThis.api={payrollFactsFor,calcDay,DEFAULT_PROFILE};',context);
+const context=await calendarContext(); context.process={env:{}};context.calculateEntitlement=calculateEntitlement;
+vm.runInContext(ts.transpileModule(body,{compilerOptions:{target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.React}}).outputText+'\nglobalThis.api={payrollFactsFor,calcDay,DEFAULT_PROFILE,retributiveSummaryFor};',context);
 const {payrollFactsFor,calcDay,DEFAULT_PROFILE}=context.api;
 const day={day:2,status:'AGCG',special:'NINGUNA',extraHours:0};
 test('export preserves resolved units and strips personal fields',()=>{
@@ -69,4 +70,16 @@ test('payroll activity exports resolved status, rest and vacation without notes 
  assert.equal(out[2].activity.vacation,true);assert.equal(out[2].activity.ordinary,false);
  const unknown=payrollFactsFor({1:{days:[{...day,status:'REVISAR'}]}},2026,profile).months[1].days[0];
  assert.equal(unknown.activity.working,null);assert.equal(unknown.activity.vacation,null);
+});
+
+test('editable summary shares Nòmina conditions, includes eve, and keeps positive or pending counters',()=>{
+ const days=Array.from({length:31},(_,i)=>({...day,day:i+1,baseStatus:'FEST',status:'FEST'}));
+ for(const n of [1,5,6,18])Object.assign(days[n-1],{baseStatus:'AGCG',status:'AGCG'});
+ const before=payrollFactsFor({12:{days:Array.from({length:31},(_,i)=>({...day,day:i+1,baseStatus:'FEST',status:'FEST'}))}},2025,DEFAULT_PROFILE);
+ const rows=context.api.retributiveSummaryFor({1:{days}},2026,DEFAULT_PROFILE,1,before);
+ assert.equal(rows.find(r=>r.id==='special-day').value,1);
+ assert.equal(rows.find(r=>r.id==='official-holiday').value,2);
+ assert.equal(rows.find(r=>r.id==='worked-holiday-e').value,1);
+ assert.equal(rows.find(r=>r.id==='vacation-premiums').value,0);
+ assert.match(source,/payrollConcepts.filter\(item => item.value === null \|\| item.value > 0\)/);
 });
