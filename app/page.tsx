@@ -5992,8 +5992,9 @@ export default function Home() {
               href="https://roberfernandez.github.io/tmb-agent/"
               aria-label="Tornar a TMB Agent"
               title="Tornar a TMB Agent"
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition hover:bg-white/10"
+              className="tmb-return-button"
             >
+              <ChevronLeft aria-hidden="true" width={22} height={22} />
               <img
                 src="https://roberfernandez.github.io/tmb-agent/assets/icons/tmb-agent-192.png"
                 alt=""
