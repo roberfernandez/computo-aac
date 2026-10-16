@@ -83,3 +83,11 @@ test('editable summary shares Nòmina conditions, includes eve, and keeps positi
  assert.equal(rows.find(r=>r.id==='vacation-premiums').value,0);
  assert.match(source,/payrollConcepts.filter\(item => item.value === null \|\| item.value > 0\)/);
 });
+
+test('payroll export sends the exact daily-rounded night hours shown in Còmput',()=>{
+ const days=[{...day,day:1,baseStatus:'AGCG'},{...day,day:7,baseStatus:'AGCG'}];
+ const out=payrollFactsFor({4:{days}},2026,{...DEFAULT_PROFILE,turn:'T8',contract:'85.81',fiestaLetter:'M'}).months[4];
+ assert.equal(out.nightHoursMethod,'daily-rounded-2');
+ assert.equal(Number(out.totals.nightPayableHours.value.toFixed(2)),5.66);
+ assert.equal(out.totals.nightPayableMinutes.value,340);
+});

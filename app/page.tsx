@@ -1152,6 +1152,7 @@ function payrollFactsFor(plan: YearPlan, year: number, profile: UserProfile) {
         metrics: {
           ordinaryHours: metric(schedulePending ? NaN : c.ordinaryHours, "h"),
           nightPayableMinutes: metric(schedulePending || c.nightReason ? NaN : c.nightPayableMinutes, "min"),
+          nightPayableHours: metric(schedulePending || c.nightReason ? NaN : c.nightHours, "h"),
           horaNonaHours: metric(schedulePending ? NaN : c.horaNona, "h"),
           // This is the existing Plus Festiu counter, not an invented second economic entitlement.
           plusFestiuDays: metric(uncertain ? NaN : plusFestiuCount([d], year, month), "day"),
@@ -1160,12 +1161,12 @@ function payrollFactsFor(plan: YearPlan, year: number, profile: UserProfile) {
           workedHolidayDays: metric(NaN, "day"),
         } };
     });
-    const totals = Object.fromEntries(["ordinaryHours", "nightPayableMinutes", "horaNonaHours", "plusFestiuDays", "specialRetributiveDays", "plusConveniDays", "workedHolidayDays"].map(key => {
+    const totals = Object.fromEntries(["ordinaryHours", "nightPayableMinutes", "nightPayableHours", "horaNonaHours", "plusFestiuDays", "specialRetributiveDays", "plusConveniDays", "workedHolidayDays"].map(key => {
       const values = days.map(d => d.metrics[key as keyof typeof d.metrics]);
       const known = values.filter(v => v.state === "known"), missing = daysInMonth(year, month) - days.length;
       return [key, { unit: values[0]?.unit ?? (key === "nightPayableMinutes" ? "min" : key.endsWith("Days") ? "day" : "h"), value: known.length ? known.reduce((sum, v) => sum + (v.value ?? 0), 0) : null, known: known.length, pending: values.length - known.length, missing }];
     }));
-    return [month, { schema: "computo-economic-facts-v1", producer: "computo-aac", version: "1", year, period, profile: resolvedProfile, days, totals }];
+    return [month, { schema: "computo-economic-facts-v1", producer: "computo-aac", version: "1", nightHoursMethod: "daily-rounded-2", year, period, profile: resolvedProfile, days, totals }];
   }));
   return { schema: "metro-payroll-facts-v1", year, profile: resolvedProfile, months };
 }
