@@ -18,7 +18,7 @@ test('unrelated recognition, calculation and storage helpers remain byte-for-byt
  const a=ts.createSourceFile('page.tsx',old,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
  // I-83 intentionally changes nightMinutesForShift and its calcDay consumer.
  // night-variable.test.mjs checks all non-night calcDay results against the baseline.
- for(const n of a.statements.filter(n=>n.end<old.indexOf('export default function Home')&&ts.isFunctionDeclaration(n)&&!['specialRetributiveDaysCount','nightMinutesForShift','calcDay'].includes(n.name.text))){
+ for(const n of a.statements.filter(n=>n.end<old.indexOf('export default function Home')&&ts.isFunctionDeclaration(n)&&!['specialRetributiveDaysCount','nightMinutesForShift','nightForDay','calcDay'].includes(n.name.text))){
   assert.equal(ast.statements.find(x=>ts.isFunctionDeclaration(x)&&x.name.text===n.name.text).getText(ast),n.getText(a),n.name.text);
  }
 });

@@ -63,7 +63,7 @@ test('modifications at start/end keep their existing duration and use the result
  }
 });
 test('exceptional remuneration remains pending without changing the shift or balance',()=>{
- for(const [y,m,n,extras,reason] of [[2026,12,24,{},'Nochebuena'],[2026,10,24,{},'cambio de hora'],[2026,9,23,{special:'NON_STOP_EXTRA'},'extraordinario']]){
+ for(const [y,m,n,extras,reason] of [[2026,12,24,{},'Nochebuena'],[2026,9,23,{special:'NON_STOP_EXTRA'},'extraordinario']]){
   const d=day(n,extras),c=api.calcDay(d,[d],y,m,profile),old=oldContext.api.calcDay(d,[d],y,m,profile);
   assert.ok(Number.isNaN(c.nightPayableMinutes));assert.ok(Number.isNaN(c.nightHours));assert.match(c.nightReason,new RegExp(reason));
   for(const key of ['shift','value','workedMinutes','ordinaryHours','horaNona','creditedMinutes'])assert.equal(c[key],old[key],key);
@@ -104,6 +104,7 @@ test('all fixture dates/profiles preserve balance, nona, ordinary hours and cred
  for(const turn of ['T1','T2','T4','T5'])profiles.push({...profile,turn});
  // Calendar dates are supplied by the local test fixture, not a network call.
  for(const y of [2024,2025,2026])for(let m=1;m<=12;m++)for(let n=1;n<=new Date(y,m,0).getDate();n++)for(const p of profiles){
+  if(y===2026 && m===10 && n===24)continue; // Explicitly superseded by TMB 21/10/2026; autumn-clock.test.mjs.
   const d=day(n),c=api.calcDay(d,[d],y,m,p),old=oldContext.api.calcDay(d,[d],y,m,p);
   for(const key of ['value','workedMinutes','ordinaryHours','horaNona','creditedMinutes','shift','hours','scheduleReview','compensationPending','reason'])assert.equal(c[key],old[key],`${y}-${m}-${n} ${p.turn}/${p.contract}/${p.subturn} ${key}`);
  }

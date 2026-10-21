@@ -41,7 +41,7 @@ test('explicit treatment of every category with unchanged 85.81% schedules', () 
     FESTIU:364,FESTIU_ESPECIAL:484,VIGILIA_NON_STOP:510};
   for(const row of fixtures) {
     if(row.categoria_codigo===null) continue;
-    assert.equal(calc(row.fecha).workedMinutes,expected[row.categoria_codigo],row.fecha+' '+row.categoria_codigo);
+    assert.equal(calc(row.fecha).workedMinutes,row.fecha==='2026-10-24'?530:expected[row.categoria_codigo],row.fecha+' '+row.categoria_codigo);
   }
 });
 
@@ -86,10 +86,12 @@ test('use official autumn change dates with the existing long-Saturday shifts', 
     const [y,m,d]=date.split('-').map(Number);
     for(const subturn of ['T8.1','T8.2','T8.3','T8.4','T8.5']) {
       const p={...profile,contract:'75',subturn};
-      const expected={'T8.1':'21:10–04:00','T8.2':'23:30–05:20','T8.3':'21:10–03:00','T8.4':'21:10–06:00','T8.5':'21:10–06:00'};
+      const expected=y===2026
+        ? {'T8.1':'21:10–02:40','T8.2':'23:30–05:00','T8.3':'21:10–02:40','T8.4':'21:10–05:00','T8.5':'21:10–05:00'}
+        : {'T8.1':'21:10–04:00','T8.2':'23:30–05:20','T8.3':'21:10–03:00','T8.4':'21:10–06:00','T8.5':'21:10–06:00'};
       assert.equal(calc(date,p).shift,expected[subturn],date);
       if(y!==2026) assert.equal(calc(date,p).shift,old.api.calcDay(day(d),[day(d)],y,m,p).shift);
-      else assert.notEqual(calc(date,p).shift,old.api.calcDay(day(d),[day(d)],y,m,p).shift);
+
     }
   }
 });
@@ -171,7 +173,7 @@ test('clock-change event reads only the current Saturday code, never the next da
     assert.equal(d,24,'must not inspect Sunday');return 'DISSABTE_CANVI_HORA';
   }});
   const current=helpers(source,local).api;
-  assert.equal(current.calcDay(day(24),[day(24)],2026,10,p).shift,'21:10–04:00');
+  assert.equal(current.calcDay(day(24),[day(24)],2026,10,p).shift,'21:10–02:40');
   local.officialCategory=()=> 'DISSABTE';
   assert.equal(current.calcDay(day(24),[day(24)],2026,10,p).shift,'20:30–03:00');
   assert.equal(current.calcDay(day(31),[day(31)],2026,10,p).shift,'20:30–03:00');

@@ -822,6 +822,36 @@ function shiftFor(
     value: Number((minutes / 60 - theoretical).toFixed(2)),
   };
 }
+// Complement del Quadre 21/10/2026, línies convencionals. The service
+// clock is kept unchanged until leaving the shift. Published clock labels are
+// therefore NOT enough to derive duration on the repeated-hour night.
+function autumn2026Shift(profile: UserProfile, year: number, month: number,
+  code: string, special: DayData["special"]): ShiftDefinition | undefined {
+  if (year !== 2026 || month !== 10 || code !== "DISSABTE_CANVI_HORA" ||
+      !["NINGUNA", "MODIFICACION"].includes(special)) return undefined;
+  const summer = isSummer(profile);
+  const assignment = summer ? summerAssignmentFor(profile, year, month) : undefined;
+  if (summer && !assignment) return undefined;
+  const full = isFullTime(profile) ||
+    (summer && summerContractFor(profile, year).percentage === "100");
+  if (full) {
+    const turn = summer ? assignment?.fullTimeTurn || "T1" : profileTurn(profile);
+    if (turn === "T1") return { start: "04:30", end: "13:20", minutes: 530, value: 0 };
+    if (turn === "T2") return { start: "12:50", end: "21:40", minutes: 530, value: 0 };
+    return undefined; // T4/T5 unchanged. No TOLA profiles are modelled here.
+  }
+  if (!summer && profile.contract === "75") {
+    const subturn = profile.subturn || "T8.1";
+    if (subturn === "T8.1") return { start: "21:10", end: "02:40", minutes: 390, value: 0 };
+    if (subturn === "T8.2") return { start: "23:30", end: "05:00", minutes: 390, value: 1 };
+    if (subturn === "T8.3") return { start: "21:10", end: "02:40", minutes: 330, value: 0 };
+  }
+  const normal = shiftFor(profile, "SATURDAY", 5, year, month);
+  // T8 (including AT86/87): the published 21:10–05:00 spans 8:50 real.
+  // Keep each contract's existing balance basis; do not add the repeated hour twice.
+  return { start: "21:10", end: "05:00", minutes: 530,
+    value: normal.value + (530 - normal.minutes) / 60 };
+}
 // Continuous wall-clock interval only. Equal endpoints cannot distinguish a
 // zero-length shift from 24 hours; neither is a supported working shift here.
 function nightOverlapMinutesForShift(start: string, end: string) {
@@ -851,7 +881,7 @@ function nightForDay(d: DayData, profile: UserProfile, code: string | null | und
     (isSummer(profile) && summerContractFor(profile, year).percentage === "100")
   )
     reason = "Nocturnidad de tiempo completo pendiente de validar";
-  else if (code?.includes("CANVI_HORA") && overlap > 0 && month === 10) reason = "Pendiente: duración nocturna en cambio de hora";
+  else if (code === "DISSABTE_CANVI_HORA" && overlap > 0 && month === 10) reason = "Pendiente: duración nocturna en cambio de hora";
   else if (d.special === "NON_STOP_EXTRA") reason = "Pendiente: tratamiento de Non Stop extraordinario";
   let payable = reason ? NaN : nightMinutesForShift(start, end, total);
   if (!reason && code?.endsWith("_FINS_23H")) {
@@ -949,7 +979,16 @@ function calcDay(
   } else if (d.special === "FESTIVO_ESPECIAL" || d.special === "VISPERA_MANUAL" || d.status === "VISPERA_FESTIVO") {
     kind = "FRIDAY_EVE"; reason = "Jornada especial · manual";
   }
-  let definition = shiftFor(profile, kind, wd, year, month),
+  const autumn = autumn2026Shift(profile, year, month, code, d.special);
+  if (autumn) {
+    reason = "Cambio de hora · comunicado TMB 21/10/2026 · reloj de servicio sin atrasar";
+    if (!isSummer(profile) && profile.contract === "75" && !isFullTime(profile)) {
+      const subturn = profile.subturn || "T8.1";
+      if (["T8.1", "T8.2", "T8.3"].includes(subturn))
+        reason += subturn === "T8.2" ? " · 1 h de cómputo" : " · sin cómputo horario";
+    }
+  }
+  let definition = autumn || shiftFor(profile, kind, wd, year, month),
     start = definition.start,
     end = definition.end,
     workedMinutes = definition.minutes,
@@ -985,7 +1024,12 @@ function calcDay(
     reason = "Modificación de jornada";
   }
   const actualWorkedMinutes = workedMinutes,
-    nightResult = nightForDay(d, profile, code, start, end, actualWorkedMinutes, year, month),
+    // Map the confirmed duration onto a continuous service-clock interval.
+    // Custom endpoints still need their own repeated-hour disambiguation.
+    nightResult = autumn && !(d.special === "MODIFICACION" && d.modificationPlacement === "PERSONALIZADO")
+      ? nightForDay(d, profile, "DISSABTE", start,
+          clockLabel(clockMinutes(start) + actualWorkedMinutes), actualWorkedMinutes, year, month)
+      : nightForDay(d, profile, code, start, end, actualWorkedMinutes, year, month),
     actualNightMinutes = isFullTime(profile)
       ? 0
       : Number.isFinite(actualWorkedMinutes)
@@ -1017,8 +1061,8 @@ function calcDay(
   const summerContract = summer ? summerContractFor(profile, year) : undefined,
     summerTurn = summerAssignment?.fullTimeTurn || "T1";
   const scheduleReview =
-    (fullTime && ["T1", "T2"].includes(profileTurn(profile)) && (wd === 5 || kind === "NON_STOP") && d.special !== "MODIFICACION") ||
-    (summer &&
+    (!autumn && fullTime && ["T1", "T2"].includes(profileTurn(profile)) && (wd === 5 || kind === "NON_STOP") && d.special !== "MODIFICACION") ||
+    (!autumn && summer &&
       summerContract?.percentage === "100" &&
       ["T1", "T2"].includes(summerTurn) &&
       (wd === 5 || kind === "NON_STOP") &&
