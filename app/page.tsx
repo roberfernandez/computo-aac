@@ -7521,6 +7521,24 @@ function MonthView({
   onMonthChange: (m: number) => void;
   onSelect: (d: DayData) => void;
 }) {
+  const [todayKey, setTodayKey] = useState("");
+  useEffect(() => {
+    const formatter = new Intl.DateTimeFormat("sv-SE", {
+      timeZone: "Europe/Madrid", year: "numeric", month: "2-digit", day: "2-digit",
+    });
+    const refreshToday = () => setTodayKey(formatter.format(new Date()));
+    refreshToday();
+    const timer = window.setInterval(refreshToday, 30000);
+    window.addEventListener("focus", refreshToday);
+    document.addEventListener("visibilitychange", refreshToday);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refreshToday);
+      document.removeEventListener("visibilitychange", refreshToday);
+    };
+  }, []);
+  const todayDay = todayKey.startsWith(`${year}-${String(month).padStart(2, "0")}-`)
+    ? Number(todayKey.slice(8)) : null;
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null),
     longPressTriggered = useRef(false),
     pointerStart = useRef<{ day: number; x: number; y: number } | null>(null),
@@ -7680,7 +7698,7 @@ function MonthView({
             {calculations.map(({ d, c }) => (
               <button
                 key={d.day}
-                className={`day ${d.status.toLowerCase()} ${dayColourClass(d)} ${officialHolidayFor(year, month, d.day) ? "official" : ""} ${d.status !== d.baseStatus ? "modified" : ""}`}
+                className={`day ${d.day === todayDay ? "today" : ""} ${d.status.toLowerCase()} ${dayColourClass(d)} ${officialHolidayFor(year, month, d.day) ? "official" : ""} ${d.status !== d.baseStatus ? "modified" : ""}`}
                 style={
                   selectedSet.has(d.day)
                     ? {
@@ -7689,6 +7707,7 @@ function MonthView({
                       }
                     : undefined
                 }
+                aria-current={d.day === todayDay ? "date" : undefined}
                 aria-pressed={multiSelectActive ? selectedSet.has(d.day) : undefined}
                 onPointerDown={(event) => startLongPress(d.day, event)}
                 onPointerMove={moveLongPress}
@@ -7701,7 +7720,7 @@ function MonthView({
                 onClick={() => activateDay(d)}
               >
                 <div className="day-top">
-                  <b>{d.day}</b>
+                  <b>{d.day}{d.day === todayDay && <span className="today-label">HOY</span>}</b>
                   <span
                     className={`compute ${c.value > 0 ? "pos" : c.value < 0 ? "neg" : "zero"}`}
                   >
@@ -7807,6 +7826,7 @@ function MonthView({
           <p className="mt-4 text-xs text-white/38">
             Mantén pulsado un día para iniciar selección múltiple, o usa
             “Seleccionar varios”. La marca de festivo y NS proceden del calendario oficial TMB.
+            El marco violeta y la etiqueta HOY señalan el día actual.
             Los colores personales siguen identificando trabajo, descanso y ausencias. El punto dorado
             identifica días modificados. D.ESP marca un día especial
             retributivo confirmado; es informativo y no altera el cómputo.
@@ -7831,7 +7851,8 @@ function MonthView({
               {calculations.map(({ d, c }) => (
                 <TableRow
                   key={d.day}
-                  className={`cursor-pointer ${multiSelectActive && selectedSet.has(d.day) ? "bg-[#eeb64b]/10" : ""}`}
+                  aria-current={d.day === todayDay ? "date" : undefined}
+                  className={`cursor-pointer ${d.day === todayDay ? "today-row" : ""} ${multiSelectActive && selectedSet.has(d.day) ? "bg-[#eeb64b]/10" : ""}`}
                   onClick={() =>
                     multiSelectActive ? onToggleMultiDay(d.day) : onSelect(d)
                   }
@@ -7839,6 +7860,7 @@ function MonthView({
                   <TableCell className="font-semibold">
                     {String(d.day).padStart(2, "0")}/
                     {String(month).padStart(2, "0")}
+                    {d.day === todayDay && <span className="today-table-label">HOY</span>}
                   </TableCell>
                   <TableCell>{d.baseStatus}</TableCell>
                   <TableCell>

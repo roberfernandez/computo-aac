@@ -59,3 +59,11 @@
 .tmb-return-button:hover{background:#26394d;border-color:#ffe177;color:#ffe177}
 .tmb-return-button:active{background:#30465e}
 .tmb-return-button:focus-visible{outline:3px solid #98c5e0;outline-offset:3px}
+
+/* Hoy: violeta exclusivo, independiente del fondo laboral y del MOD dorado.
+   El marco interior permite conservar el contorno de selección y foco. */
+.day[class*="tmb-"].today,.day[class*="tmb-"].today:hover{box-shadow:inset 0 0 0 3px #c4a1ff}
+.day[class*="tmb-"].today .day-top>b{border-radius:5px;background:#c4a1ff;color:#170d2b;padding:2px 5px;text-shadow:none;line-height:1.15}
+.today-label{display:block;font-size:8px;font-weight:900;letter-spacing:.04em;line-height:1.3}
+.today-row>td:first-child{box-shadow:inset 3px 0 #c4a1ff}
+.today-table-label{display:inline-block;margin-left:6px;border-radius:4px;background:#c4a1ff;color:#170d2b;padding:2px 4px;font-size:9px;font-weight:900}
