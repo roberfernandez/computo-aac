@@ -69,7 +69,9 @@ type Status =
   | "VISPERA_FESTIVO"
   | "HUELGA_LEGAL"
   | "COMPUTO_ANTERIOR"
-  | "COMPUTO_ACTUAL";
+  | "COMPUTO_ACTUAL"
+  | "COMPUTO_POSITIVO_ANTERIOR"
+  | "COMPUTO_POSITIVO_ACTUAL";
 type Special =
   | "NINGUNA"
   | "VISPERA_MANUAL"
@@ -119,6 +121,24 @@ type UserProfile = {
 };
 type ShiftKind =
   "NORMAL" | "FRIDAY_EVE" | "SATURDAY" | "NON_STOP" | "LONG_SATURDAY";
+type DayCalculation = {
+  scheduleReview: boolean;
+  compensationPending: boolean;
+  value: number;
+  shift: string;
+  hours: string;
+  night: string;
+  workedMinutes: number;
+  nightMinutes: number;
+  nightHours: number;
+  ordinaryHours: number;
+  horaNona: number;
+  creditedMinutes: number;
+  reason: string;
+  nightOverlapMinutes?: number;
+  nightPayableMinutes?: number;
+  nightReason?: string;
+};
 type ShiftDefinition = {
   start: string;
   end: string;
@@ -232,8 +252,10 @@ const statusLabel: Record<Status, string> = {
   PERMISO: "Permiso",
   VISPERA_FESTIVO: "Víspera de festivo",
   HUELGA_LEGAL: "Huelga legal",
-  COMPUTO_ANTERIOR: "Cómputo año anterior",
-  COMPUTO_ACTUAL: "Cómputo año actual",
+  COMPUTO_ANTERIOR: "Cómputo negativo año anterior",
+  COMPUTO_ACTUAL: "Cómputo negativo año actual",
+  COMPUTO_POSITIVO_ANTERIOR: "Cómputo positivo año anterior",
+  COMPUTO_POSITIVO_ACTUAL: "Cómputo positivo año actual",
 };
 const specialLabel: Record<Special, string> = {
   NINGUNA: "Jornada según calendario",
@@ -359,10 +381,14 @@ function compactStatusLabel(d: DayData) {
       : d.status === "VACACIONES_PENDIENTES"
         ? "VAC. ¿AÑO?"
       : d.status === "COMPUTO_ANTERIOR"
-        ? "CÓMP. ANT."
+        ? "CÓMP. − ANT."
         : d.status === "COMPUTO_ACTUAL"
-          ? "CÓMP. ACT."
-          : d.status;
+          ? "CÓMP. − ACT."
+          : d.status === "COMPUTO_POSITIVO_ANTERIOR"
+            ? "CÓMP. + ANT."
+            : d.status === "COMPUTO_POSITIVO_ACTUAL"
+              ? "CÓMP. + ACT."
+              : d.status;
 }
 function specialMark(s: Special) {
   return s === "VISPERA_MANUAL"
@@ -393,10 +419,11 @@ function makeDays(year: number, month: number, reviewing = true): DayData[] {
 function normalizeDays(raw: DayData[], year: number, month: number) {
   return raw.map((d: any) => {
     const legacyEve = d.status === "VISPERA_FESTIVO",
-      legacySpecial = d.special === "AMPLIACION" ? "MODIFICACION" : d.special;
+      legacySpecial = d.special === "AMPLIACION" ? "MODIFICACION" : d.special,
+      legacyPositivePrevious = d.status === "VAC_ANTERIOR" && d.priorOrigin === "COMPUTO";
     return {
       ...d,
-      status: legacyEve ? "AGCG" : d.status,
+      status: legacyPositivePrevious ? "COMPUTO_POSITIVO_ANTERIOR" : legacyEve ? "AGCG" : d.status,
       baseStatus: d.baseStatus || baseOf(d.status),
       officialHoliday:
         false, // Legacy red-digit flags are no longer a source of operational truth.
@@ -404,7 +431,7 @@ function normalizeDays(raw: DayData[], year: number, month: number) {
       extraHours: Number(d.extraHours) || 0,
       modificationPlacement: d.modificationPlacement || "FINAL",
       note: d.note || "",
-      priorOrigin:
+      priorOrigin: legacyPositivePrevious ? undefined :
         d.priorOrigin ||
         (d.status === "VAC_ANTERIOR" ? "VACACIONES" : undefined),
     };
@@ -443,7 +470,9 @@ function applyCycleValidation(
       d.status === "PERMISO" ||
       d.status === "HUELGA_LEGAL" ||
       d.status === "COMPUTO_ANTERIOR" ||
-      d.status === "COMPUTO_ACTUAL"
+      d.status === "COMPUTO_ACTUAL" ||
+      d.status === "COMPUTO_POSITIVO_ANTERIOR" ||
+      d.status === "COMPUTO_POSITIVO_ACTUAL"
     )
       return { ...d, baseStatus: expected };
     const detected = baseOf(d.status),
@@ -618,9 +647,33 @@ function calcDay(
   year: number,
   month: number,
   profile: UserProfile,
-) {
+): DayCalculation {
   const toPreviousYear = d.status === "COMPUTO_ANTERIOR",
     toCurrentYear = d.status === "COMPUTO_ACTUAL";
+  // Descanso compensatorio: descontar las horas del turno de ese día,
+  // sin inventar trabajo, nocturnidad ni complementos de servicio.
+  if (d.status === "COMPUTO_POSITIVO_ANTERIOR" || d.status === "COMPUTO_POSITIVO_ACTUAL") {
+    const previous = d.status === "COMPUTO_POSITIVO_ANTERIOR";
+    const scheduled = calcDay({ ...d, status: "AGCG" }, all, year, month, profile);
+    const minutes = scheduled.workedMinutes;
+    const known = Number.isFinite(minutes);
+    const time = known ? `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, "0")}` : "pendiente";
+    return {
+      ...scheduled,
+      scheduleReview: scheduled.scheduleReview || !known,
+      value: isFullTime(profile) || previous ? 0 : known ? -decimalHoursFromMinutes(minutes) : NaN,
+      shift: "Descanso compensatorio",
+      hours: "0:00",
+      night: "0",
+      workedMinutes: 0,
+      nightMinutes: 0,
+      nightHours: 0,
+      ordinaryHours: 0,
+      horaNona: 0,
+      creditedMinutes: !isFullTime(profile) && previous ? -minutes : 0,
+      reason: `Descanso por cómputo positivo · ${time} h aplicadas a ${previous ? year - 1 : year}`,
+    };
+  }
   if (!isWorking(d.status))
     return {
       scheduleReview: false,
@@ -1802,7 +1855,7 @@ function previousYearCreditMinutes(
   for (let month = 1; month <= 12; month++) {
     const days = plan[month]?.days || [];
     for (const d of days)
-      if (d.status === "COMPUTO_ANTERIOR")
+      if (d.status === "COMPUTO_ANTERIOR" || d.status === "COMPUTO_POSITIVO_ANTERIOR")
         total += calcDay(d, days, sourceYear, month, profile).creditedMinutes;
   }
   return total;
@@ -2881,13 +2934,13 @@ export default function Home() {
                     {planReady ? balanceLabel(profile, annual) : "—"}
                   </p>
                   <p className="text-sm text-white/50">Total anual {year}</p>
-                  {incomingPreviousCreditMinutes > 0 && (
+                  {incomingPreviousCreditMinutes !== 0 && (
                     <p className="mt-2 text-xs text-[#8ee9df]">
                       Incluye {balanceLabel(profile, incomingPreviousCredit)} compensado en{" "}
                       {year + 1}
                     </p>
                   )}
-                  {outgoingPreviousCreditMinutes > 0 && (
+                  {outgoingPreviousCreditMinutes !== 0 && (
                     <p className="mt-2 text-xs text-[#eeb64b]">
                       {balanceLabel(profile, 
                         Number((outgoingPreviousCreditMinutes / 60).toFixed(2)),
@@ -3256,7 +3309,7 @@ export default function Home() {
                     </SelectItem>
                     {Object.entries(priorSituationLabel).map(
                       ([value, label]) =>
-                        value !== "VACACIONES" ? (
+                        value !== "VACACIONES" && value !== "COMPUTO" ? (
                           <SelectItem value={`prior:${value}`} key={value}>
                             {label}
                           </SelectItem>
@@ -3287,15 +3340,19 @@ export default function Home() {
               </div>
               {selected.status === "COMPUTO_ANTERIOR" && (
                 <div className="rounded-xl border border-[#eeb64b]/25 bg-[#eeb64b]/8 p-3 text-xs leading-5 text-white/65">
-                  <b className="text-[#ffd173]">Se aplicará a {year - 1}.</b> La
-                  jornada quedará a 0,00 en el cómputo de {year} y compensará el
-                  saldo anual anterior.
+                  <b className="text-[#ffd173]">Cómputo negativo de {year - 1}.</b> Las
+                  horas trabajadas se sumarán al saldo anterior, sin aumentar el cómputo de {year}.
                 </div>
               )}
               {selected.status === "COMPUTO_ACTUAL" && (
                 <div className="rounded-xl border border-[#71d7cc]/25 bg-[#71d7cc]/8 p-3 text-xs leading-5 text-white/65">
-                  <b className="text-[#8ee9df]">Se aplicará a {year}.</b> La
-                  jornada completa se añadirá al cómputo anual actual.
+                  <b className="text-[#8ee9df]">Cómputo negativo de {year}.</b> La
+                  jornada completa trabajada se sumará al saldo actual.
+                </div>
+              )}
+              {(selected.status === "COMPUTO_POSITIVO_ANTERIOR" || selected.status === "COMPUTO_POSITIVO_ACTUAL") && (
+                <div className="rounded-xl border border-[#4975bd]/35 bg-[#4975bd]/10 p-3 text-xs leading-5 text-white/65">
+                  <b className="text-[#a8c8ff]">Descanso compensatorio del año {selected.status === "COMPUTO_POSITIVO_ANTERIOR" ? year - 1 : year}.</b> Se descontarán las horas que habrías trabajado ese día según tu contrato y turno. No computa como trabajo ni genera nocturnidad.
                 </div>
               )}
               {selected.special === "MODIFICACION" && (
@@ -3935,7 +3992,7 @@ function Rules({ profile }: { profile: UserProfile }) {
       <Rule
         n="09"
         title="Cómputo entre años"
-        text="Cómputo año anterior compensa el saldo previo; cómputo año actual incorpora la jornada completa al año seleccionado."
+        text="Cómputo negativo: las horas trabajadas reducen una deuda con la empresa (+). Cómputo positivo: un descanso consume las horas del turno que correspondía trabajar (−). Cada movimiento se aplica al año actual o al anterior, sin generar trabajo ficticio."
       />
       <Rule
         n="10"
