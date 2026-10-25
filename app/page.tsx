@@ -139,6 +139,24 @@ type UserProfile = {
 };
 type ShiftKind =
   "NORMAL" | "FRIDAY_EVE" | "SATURDAY" | "NON_STOP" | "LONG_SATURDAY";
+type DayCalculation = {
+  scheduleReview: boolean;
+  compensationPending: boolean;
+  value: number;
+  shift: string;
+  hours: string;
+  night: string;
+  workedMinutes: number;
+  nightMinutes: number;
+  nightHours: number;
+  ordinaryHours: number;
+  horaNona: number;
+  creditedMinutes: number;
+  reason: string;
+  nightOverlapMinutes?: number;
+  nightPayableMinutes?: number;
+  nightReason?: string;
+};
 type ShiftDefinition = {
   start: string;
   end: string;
@@ -914,7 +932,7 @@ function calcDay(
   year: number,
   month: number,
   profile: UserProfile,
-) {
+): DayCalculation {
   const toPreviousYear = d.status === "COMPUTO_ANTERIOR",
     toCurrentYear = d.status === "COMPUTO_ACTUAL";
   // Descanso compensatorio: descontar las horas del turno de ese día,
