@@ -413,6 +413,13 @@ const CYCLE_PATTERN: BaseStatus[] = [
   "DCOM",
   "FEST",
 ];
+// Jan-2027 phase anchors read from the four perpetual AAC letter calendars.
+const LETTER_CYCLE_PHASE_2027: Record<FiestaLetter, number> = {
+  K: 4,
+  L: 25,
+  M: 18,
+  N: 11,
+};
 
 function daysInMonth(year: number, month: number) {
   return new Date(year, month, 0).getDate();
@@ -3631,6 +3638,9 @@ function continueCyclePhase(phase: number, fromYear: number, toYear: number) {
   );
   return (((phase + elapsed) % 28) + 28) % 28;
 }
+function cyclePhaseForLetter(year: number, fiestaLetter: FiestaLetter) {
+  return continueCyclePhase(LETTER_CYCLE_PHASE_2027[fiestaLetter], 2027, year);
+}
 function storedCyclePhase(raw: string | null): number | undefined {
   if (raw === null || raw.trim() === "") return undefined;
   const phase = Number(raw);
@@ -5160,8 +5170,9 @@ export default function Home() {
     [profileDraft, setProfileDraft] = useState<UserProfile>(DEFAULT_PROFILE),
     [profileOpen, setProfileOpen] = useState(true),
     [profileLoaded, setProfileLoaded] = useState(false);
-  function loadYear(y: number) {
+  function loadYear(y: number, selectedMonth = month) {
     setYear(y);
+    setMonth(selectedMonth);
     setMultiSelectActive(false);
     setMultiSelectedDays([]);
     setBulkSituation("");
@@ -5204,12 +5215,69 @@ export default function Home() {
         localStorage.setItem(`metro-year-${y}`, JSON.stringify(normalized));
         setDetectorVersion(savedDetectorVersion);
         setPlan(normalized);
-        setDays(normalized[month]?.days || makeDays(y, month));
+        setDays(normalized[selectedMonth]?.days || makeDays(y, selectedMonth));
         const generatedByLetter = Object.values(normalized).some((monthPlan) =>
-          monthPlan.days.some((day) =>
+          [...monthPlan.days, ...monthPlan.original].some((day) =>
             day.note.startsWith("Previsión automática · continuidad de la letra "),
           ),
         );
+        if (generatedByLetter && y >= 2027) {
+          const phase = cyclePhaseForLetter(y, profile.fiestaLetter),
+            storedPhase = storedCyclePhase(
+              localStorage.getItem(`metro-cycle-phase-${y}-${profile.fiestaLetter}`),
+            ),
+            canonicalPlan = makeCycleYearPlan(y, phase, profile.fiestaLetter),
+            planDiffersFromCanonical = Object.entries(normalized).some(([monthKey, previousMonth]) => {
+              const m = Number(monthKey), canonicalMonth = canonicalPlan[m];
+              return previousMonth.original.some((originalDay) => {
+                const canonicalDay = canonicalMonth.days.find((day) => day.day === originalDay.day);
+                return canonicalDay &&
+                  (originalDay.status !== canonicalDay.status || originalDay.baseStatus !== canonicalDay.baseStatus);
+              }) || previousMonth.days.some((previousDay) => {
+                if (previousDay.manualEdited || previousDay.periodId) return false;
+                const canonicalDay = canonicalMonth.days.find((day) => day.day === previousDay.day);
+                return canonicalDay &&
+                  (previousDay.status !== canonicalDay.status || previousDay.baseStatus !== canonicalDay.baseStatus);
+              });
+            });
+          if (storedPhase !== phase || planDiffersFromCanonical) {
+            const corrected = canonicalPlan;
+            for (let m = 1; m <= 12; m++) {
+              const previousMonth = normalized[m];
+              if (!previousMonth) {
+                delete corrected[m];
+                continue;
+              }
+              corrected[m] = {
+                ...corrected[m],
+                confirmed: previousMonth.confirmed,
+                days: corrected[m].days.map((baseDay) => {
+                  const previousDay = previousMonth.days.find((day) => day.day === baseDay.day);
+                  if (!previousDay) return baseDay;
+                  if (!previousDay.manualEdited && !previousDay.periodId) return baseDay;
+                  return { ...previousDay, baseStatus: baseDay.baseStatus };
+                }),
+              };
+            }
+            const yearKey = `metro-year-${y}`,
+              phaseKey = `metro-cycle-phase-${y}-${profile.fiestaLetter}`,
+              detectorKey = `metro-detector-version-${y}`;
+            localStorage.setItem(yearKey, JSON.stringify(corrected));
+            localStorage.setItem(phaseKey, String(phase));
+            localStorage.setItem(detectorKey, String(ANNUAL_DETECTOR_VERSION));
+            for (const key of [yearKey, phaseKey, detectorKey]) {
+              markStorageKeyPending(key);
+              void pushStorageKey(key).catch(() =>
+                setSyncState(navigator.onLine ? "error" : "offline"),
+              );
+            }
+            setDetectorVersion(ANNUAL_DETECTOR_VERSION);
+            setPlan(corrected);
+            setDays(corrected[selectedMonth]?.days || makeDays(y, selectedMonth));
+            setMessage(`Previsión ${y} corregida según el calendario perpetuo de la letra ${profile.fiestaLetter}.`);
+            return;
+          }
+        }
         setMessage(
           generatedByLetter
             ? `Calendario ${y} recuperado · continuidad de la letra ${profile.fiestaLetter}.`
@@ -5222,28 +5290,8 @@ export default function Home() {
         return;
       } catch {}
     setDetectorVersion(0);
-    let sourceYear = y;
-    let sourcePhase: number | undefined;
-    const targetPhase = storedCyclePhase(
-      localStorage.getItem(`metro-cycle-phase-${y}-${profile.fiestaLetter}`),
-    );
-    if (targetPhase !== undefined) {
-      sourcePhase = targetPhase;
-    } else {
-      for (let candidate = y - 1; candidate >= Math.max(2000, y - 20); candidate--) {
-        const storedPhase =
-          storedCyclePhase(
-            localStorage.getItem(`metro-cycle-phase-${candidate}-${profile.fiestaLetter}`),
-          ) ?? storedCyclePhase(localStorage.getItem(`metro-cycle-phase-${candidate}`));
-        if (storedPhase !== undefined) {
-          sourceYear = candidate;
-          sourcePhase = storedPhase;
-          break;
-        }
-      }
-    }
-    if (sourcePhase !== undefined) {
-      const phase = continueCyclePhase(sourcePhase, sourceYear, y),
+    if (y >= 2027) {
+      const phase = cyclePhaseForLetter(y, profile.fiestaLetter),
         generated = makeCycleYearPlan(y, phase, profile.fiestaLetter),
         yearKey = `metro-year-${y}`,
         phaseKey = `metro-cycle-phase-${y}-${profile.fiestaLetter}`,
@@ -5259,14 +5307,14 @@ export default function Home() {
       }
       setDetectorVersion(ANNUAL_DETECTOR_VERSION);
       setPlan(generated);
-      setDays(generated[month]?.days || makeDays(y, month));
+      setDays(generated[selectedMonth]?.days || makeDays(y, selectedMonth));
       setMessage(
-        `Calendario ${y} generado siguiendo la continuidad de la letra ${profile.fiestaLetter} desde ${sourceYear}.`,
+        `Calendario ${y} generado según el calendario perpetuo de la letra ${profile.fiestaLetter}.`,
       );
       return;
     }
     setPlan({});
-    setDays(makeDays(y, month));
+    setDays(makeDays(y, selectedMonth));
     setMessage("Sube el calendario anual para crear la previsión completa.");
   }
   // Primero sincroniza la copia compartida y después carga el año ya convergido.
@@ -5524,11 +5572,25 @@ export default function Home() {
     setMessage("Captura mensual preparada. Pulsa Analizar mes.");
   }
   function openMonth(m: number) {
-    setMonth(m);
+    let targetYear = year;
+    let targetMonth = m;
+    if (targetMonth < 1) {
+      targetYear--;
+      targetMonth = 12;
+    } else if (targetMonth > 12) {
+      targetYear++;
+      targetMonth = 1;
+    }
+    if (targetYear !== year) {
+      setScreen("month");
+      loadYear(targetYear, targetMonth);
+      return;
+    }
+    setMonth(targetMonth);
     setMultiSelectActive(false);
     setMultiSelectedDays([]);
     setBulkSituation("");
-    setDays(plan[m]?.days || makeDays(year, m));
+    setDays(plan[targetMonth]?.days || makeDays(year, targetMonth));
     setScreen("month");
   }
   function commitMonth(nextDays: DayData[]) {
@@ -7745,7 +7807,7 @@ function MonthView({
               size="icon"
               variant="ghost"
               className="month-arrow"
-              disabled={month === 1}
+              disabled={year <= 2000 && month === 1}
               onClick={() => onMonthChange(month - 1)}
               aria-label="Mes anterior"
             >
@@ -7759,7 +7821,7 @@ function MonthView({
               size="icon"
               variant="ghost"
               className="month-arrow"
-              disabled={month === 12}
+              disabled={year >= 2035 && month === 12}
               onClick={() => onMonthChange(month + 1)}
               aria-label="Mes siguiente"
             >
