@@ -5221,7 +5221,7 @@ export default function Home() {
             day.note.startsWith("Previsión automática · continuidad de la letra "),
           ),
         );
-        if (generatedByLetter && y >= 2027) {
+        if (generatedByLetter && y >= 2027 && !isSummer(profile)) {
           const phase = cyclePhaseForLetter(y, profile.fiestaLetter),
             storedPhase = storedCyclePhase(
               localStorage.getItem(`metro-cycle-phase-${y}-${profile.fiestaLetter}`),
@@ -5290,7 +5290,7 @@ export default function Home() {
         return;
       } catch {}
     setDetectorVersion(0);
-    if (y >= 2027) {
+    if (y >= 2027 && !isSummer(profile)) {
       const phase = cyclePhaseForLetter(y, profile.fiestaLetter),
         generated = makeCycleYearPlan(y, phase, profile.fiestaLetter),
         yearKey = `metro-year-${y}`,
