@@ -134,10 +134,11 @@ function estimatedCategory(year: number, month: number, day: number): OfficialCa
     return "DIUMENGE_CANVI_HORA";
   if (dow === 6 && (month === 3 || month === 10) && isLastSunday(year, month, day + 1))
     return "DISSABTE_CANVI_HORA";
+  if (holidays.has(tomorrowKey))
+    return dow === 0 ? "FESTIU_ESPECIAL" : "DIVENDRES_VIG_FESTIU";
   if (dow === 0) return holidays.has(key) ? "FESTIU" : "DIUMENGE";
   if (dow === 6) return holidays.has(key) ? "FESTIU" : "DISSABTE";
   if (holidays.has(key)) return "FESTIU";
-  if (dow === 5 && holidays.has(tomorrowKey)) return "DIVENDRES_VIG_FESTIU";
   return dow === 5 ? "DIVENDRES" : "FEINER";
 }
 const BARCELONA_HOLIDAYS: Record<number, Set<string>> = {
