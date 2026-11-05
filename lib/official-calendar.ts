@@ -83,6 +83,63 @@ export const officialCalendar = createOfficialCalendarClient();
 export function officialCategory(year: number, month: number, day: number) {
   return officialCalendar.get(year, month, day);
 }
+
+export type CalendarCategorySource = "official" | "estimated" | "unavailable";
+export function calendarCategory(year: number, month: number, day: number) {
+  const official = officialCategory(year, month, day);
+  if (official) return { code: official, source: "official" as const };
+  if (year > new Date().getFullYear())
+    return { code: estimatedCategory(year, month, day), source: "estimated" as const };
+  return { code: null, source: "unavailable" as const };
+}
+
+function easterSunday(year: number) {
+  const a = year % 19, b = Math.floor(year / 100), c = year % 100,
+    d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25),
+    g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30,
+    i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7,
+    m = Math.floor((a + 11 * h + 22 * l) / 451),
+    month = Math.floor((h + l - 7 * m + 114) / 31),
+    day = ((h + l - 7 * m + 114) % 31) + 1;
+  return new Date(Date.UTC(year, month - 1, day));
+}
+
+function weekday(year: number, month: number, day: number) {
+  return new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+}
+
+function estimatedHolidayKeys(year: number) {
+  const easter = easterSunday(year), key = (date: Date) => date.toISOString().slice(5, 10),
+    offset = (days: number) => new Date(easter.getTime() + days * 86400000),
+    fixed = ["01-01", "01-06", "05-01", "06-24", "08-15", "09-11", "09-24", "10-12", "11-01", "12-06", "12-08", "12-25", "12-26"];
+  return new Set([...fixed, key(offset(-2)), key(offset(1)), key(offset(50))]);
+}
+
+function isLastSunday(year: number, month: number, day: number) {
+  const next = new Date(Date.UTC(year, month - 1, day + 7));
+  return weekday(year, month, day) === 0 && next.getUTCMonth() !== month - 1;
+}
+
+function estimatedCategory(year: number, month: number, day: number): OfficialCategory {
+  const dow = weekday(year, month, day), key = `${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`,
+    tomorrow = new Date(Date.UTC(year, month - 1, day + 1)),
+    tomorrowKey = tomorrow.toISOString().slice(5, 10),
+    holidays = BARCELONA_HOLIDAYS[year] || estimatedHolidayKeys(year);
+
+  if ((month === 6 && day === 23) || (month === 9 && day === 23) || (month === 12 && day === 31))
+    return "VIGILIA_NON_STOP";
+  if (month === 12 && day === 24)
+    return dow === 5 ? "DIVENDRES_NO_LECTIU_FINS_23H" : "FEINER_NO_LECTIU_FINS_23H";
+  if (dow === 0 && (month === 3 || month === 10) && isLastSunday(year, month, day))
+    return "DIUMENGE_CANVI_HORA";
+  if (dow === 6 && (month === 3 || month === 10) && isLastSunday(year, month, day + 1))
+    return "DISSABTE_CANVI_HORA";
+  if (dow === 0) return holidays.has(key) ? "FESTIU" : "DIUMENGE";
+  if (dow === 6) return holidays.has(key) ? "FESTIU" : "DISSABTE";
+  if (holidays.has(key)) return "FESTIU";
+  if (dow === 5 && holidays.has(tomorrowKey)) return "DIVENDRES_VIG_FESTIU";
+  return dow === 5 ? "DIVENDRES" : "FEINER";
+}
 const BARCELONA_HOLIDAYS: Record<number, Set<string>> = {
   2024: new Set([
     "01-01",
@@ -153,9 +210,8 @@ const BARCELONA_HOLIDAYS: Record<number, Set<string>> = {
 };
 
 export function officialHolidayFor(year: number, month: number, day: number) {
-  const holidays = BARCELONA_HOLIDAYS[year];
-  if (!holidays) return false;
-
   const key = `${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  const holidays = BARCELONA_HOLIDAYS[year] || (year > new Date().getFullYear() ? estimatedHolidayKeys(year) : undefined);
+  if (!holidays) return false;
   return holidays.has(key);
 }

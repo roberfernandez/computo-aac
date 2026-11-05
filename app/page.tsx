@@ -3,7 +3,7 @@
 
 import { calculateEntitlement } from "@/lib/payroll-entitlements";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CATEGORY_RULES, officialCalendar, officialCategory, officialHolidayFor } from "@/lib/official-calendar";
+import { CATEGORY_RULES, calendarCategory, officialCalendar, officialHolidayFor } from "@/lib/official-calendar";
 import {
   UploadCloud,
   CheckCircle2,
@@ -988,7 +988,7 @@ function calcDay(
       creditedMinutes: 0,
       reason: statusLabel[d.status],
     };
-  const code = officialCategory(year, month, d.day);
+  const code = calendarCategory(year, month, d.day).code;
   if (!code) {
     // Unknown official category is not an unknown personal situation. Preserve
     // every result independent of that category, including cross-year zeros.
@@ -5121,7 +5121,10 @@ export default function Home() {
   const [calendarRetry, setCalendarRetry] = useState(0);
   useEffect(() => {
     let cancelled = false;
-    setCalendarStatus(`Cargando calendario oficial ${year}…`);
+    const projectedYear = year > new Date().getFullYear();
+    setCalendarStatus(projectedYear
+      ? `Previsión orientativa ${year}: se aplican la continuidad de la letra y categorías estimadas hasta cargar el calendario TMB.`
+      : `Cargando calendario oficial ${year}…`);
     const sourceYears = [year];
     // Only load an adjacent year if saved credited work actually needs its rules.
     try {
@@ -5132,13 +5135,17 @@ export default function Home() {
       if (cancelled) return;
       const missing = calendars.flatMap(c => [...c].filter(([, code]) => code === null).map(([date]) => date));
       setCalendarStatus(missing.length
-        ? `Calendario oficial cargado. Categoría no disponible: ${missing.join(", ")}. Solo quedan pendientes los cálculos que necesiten esas categorías.`
+        ? projectedYear
+          ? `Calendario oficial ${year} cargado. ${missing.length} fechas sin categoría usan una estimación hasta que se complete el calendario.`
+          : `Calendario oficial cargado. Categoría no disponible: ${missing.join(", ")}. Solo quedan pendientes los cálculos que necesiten esas categorías.`
         : `Calendario oficial ${year} cargado y disponible en esta sesión.`);
       setOfficialRevision(v => v + 1);
     }).catch(() => {
       if (cancelled) return;
       setOfficialRevision(v => v + 1);
-      setCalendarStatus("No se ha podido cargar el calendario oficial. El reconocimiento de colores sigue disponible; las jornadas sin categoría y sus totales quedan pendientes. Reintenta la carga.");
+      setCalendarStatus(projectedYear
+        ? `Calendario TMB ${year} aún no disponible. Se muestra una previsión orientativa con categorías estimadas; al cargar el calendario intranet se actualizarán los cálculos.`
+        : "No se ha podido cargar el calendario oficial. El reconocimiento de colores sigue disponible; las jornadas sin categoría y sus totales quedan pendientes. Reintenta la carga.");
     });
     return () => { cancelled = true; };
   }, [year, calendarRetry]);
@@ -6070,7 +6077,7 @@ export default function Home() {
     currentMonthPlusFestiu = plusFestiuCount(days, year, month),
     currentMonthPlusConvenio = plusConvenioCount(days),
     first = weekdayMon(year, month, 1),
-    review = days.filter((d) => needsReview(d.status) || (isWorking(d.status) && !officialCategory(year, month, d.day))).length,
+    review = days.filter((d) => needsReview(d.status) || (isWorking(d.status) && !calendarCategory(year, month, d.day).code)).length,
     worked = days.filter((d) => isWorking(d.status)).length;
   const payrollConcepts = useMemo(() => {
     let previousYearExport;
@@ -7280,10 +7287,13 @@ export default function Home() {
                     </b>
                   </div>
                 )}
-                <p className="mt-2 rounded-xl border border-[#eeb64b]/25 p-3 text-sm">
-                  Categoría oficial TMB: {officialCategory(year, month, selected.day)?.replaceAll("_", " ") || "No disponible · cómputo pendiente"}.
-                  Se consulta por fecha y no se modifica desde el calendario personal.
-                </p>
+                {(() => {
+                  const category = calendarCategory(year, month, selected.day);
+                  return <p className="mt-2 rounded-xl border border-[#eeb64b]/25 p-3 text-sm">
+                    {category.source === "official" ? "Categoría oficial TMB" : category.source === "estimated" ? "Categoría estimada" : "Categoría oficial TMB"}: {category.code?.replaceAll("_", " ") || "No disponible · cómputo pendiente"}.
+                    {category.source === "estimated" ? " Se actualizará cuando se cargue el calendario oficial." : " Se consulta por fecha y no se modifica desde el calendario personal."}
+                  </p>;
+                })()}
               </div>
               {selected.status === "COMPUTO_ANTERIOR" && (
                 <div className="rounded-xl border border-[#eeb64b]/25 bg-[#eeb64b]/8 p-3 text-xs leading-5 text-white/65">
@@ -7946,7 +7956,7 @@ function MonthView({
                 <div className="day-marks">
                   {d.special !== "NINGUNA" ? (
                     <i>{specialMark(d.special)}</i>
-                  ) : (officialCategory(year, month, d.day) === "VIGILIA_NON_STOP") && isWorking(d.status) ? (
+                  ) : (calendarCategory(year, month, d.day).code === "VIGILIA_NON_STOP") && isWorking(d.status) ? (
                     <i>NS</i>
                   ) : null}
                   {isConfirmedSpecialRetributiveDay(year, month, d.day) && (
@@ -8075,7 +8085,7 @@ function MonthView({
                   <TableCell>{d.baseStatus}</TableCell>
                   <TableCell>
                     <Badge variant="outline">{situationLabel(d)}</Badge>
-                    {(officialCategory(year, month, d.day) === "VIGILIA_NON_STOP") && isWorking(d.status) && (
+                    {(calendarCategory(year, month, d.day).code === "VIGILIA_NON_STOP") && isWorking(d.status) && (
                       <small className="ml-2 text-[#eeb64b]">
                         Non stop pactado
                       </small>
@@ -8188,7 +8198,7 @@ function Rules({ profile, year }: { profile: UserProfile; year: number }) {
       <Rule
         n="02"
         title="Festivos oficiales"
-        text="La categoría operativa procede del calendario oficial TMB. Sin categoría disponible, el cómputo queda pendiente; no se deduce del número rojo ni del día siguiente."
+        text="La categoría operativa procede del calendario oficial TMB cuando está cargado. Para años futuros sin calendario, Còmput estima la categoría según el día, festivos previstos y vísperas conocidas; los resultados son orientativos y se actualizan al cargar el calendario oficial."
       />
       <Rule
         n="03"

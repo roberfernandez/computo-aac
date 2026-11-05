@@ -47,7 +47,7 @@
 .day[class*="tmb-"] .compute{border-radius:4px;background:#071a22;padding:2px 3px}
 .day[class*="tmb-"] .compute.zero{color:#d9e4e7}
 .day[class*="tmb-"] .day-top>b{color:#fff;text-shadow:none}
-.day[class*="tmb-"].official .day-top>b{border-bottom:2px solid #ffb4a8}
+.day[class*="tmb-"].official .day-top>b{color:#ff6f61;text-shadow:0 0 14px rgba(239,107,89,.3);border-bottom:2px solid #ffb4a8}
 .day[class*="tmb-"] i.convention-mark{background:#172731;color:#ffe0a0}
 .day[class*="tmb-"].revisar,.day[class*="tmb-"].vacaciones_pendientes{border-style:dashed;border-color:#ffe0a0}
 @media(max-width:760px){.day[class*="tmb-"]{min-height:92px}.day[class*="tmb-"] .day-top{flex-direction:column;gap:2px}.day[class*="tmb-"] strong{margin-top:6px;letter-spacing:0}}
