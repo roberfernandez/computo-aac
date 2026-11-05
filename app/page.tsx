@@ -3625,6 +3625,41 @@ function phaseStatus(year: number, month: number, day: number, phase: number) {
     elapsed = Math.round((current - first) / 86400000);
   return CYCLE_PATTERN[(((elapsed + phase) % 28) + 28) % 28];
 }
+function continueCyclePhase(phase: number, fromYear: number, toYear: number) {
+  const elapsed = Math.round(
+    (Date.UTC(toYear, 0, 1) - Date.UTC(fromYear, 0, 1)) / 86400000,
+  );
+  return (((phase + elapsed) % 28) + 28) % 28;
+}
+function storedCyclePhase(raw: string | null): number | undefined {
+  if (raw === null || raw.trim() === "") return undefined;
+  const phase = Number(raw);
+  return Number.isInteger(phase) && phase >= 0 && phase < 28 ? phase : undefined;
+}
+function makeCycleYearPlan(
+  year: number,
+  phase: number,
+  fiestaLetter: FiestaLetter,
+): YearPlan {
+  const result: YearPlan = {};
+  for (let month = 1; month <= 12; month++) {
+    const days = makeDays(year, month, false).map((day) => {
+      const status = phaseStatus(year, month, day.day, phase);
+      return {
+        ...day,
+        baseStatus: status,
+        status,
+        note: `Previsión automática · continuidad de la letra ${fiestaLetter}`,
+      };
+    });
+    result[month] = {
+      original: days.map((day) => ({ ...day })),
+      days,
+      confirmed: false,
+    };
+  }
+  return result;
+}
 function inferCyclePhase(year: number, source: Record<number, DayData[]>) {
   let bestPhase = 0,
     bestScore = -Infinity;
@@ -5170,8 +5205,15 @@ export default function Home() {
         setDetectorVersion(savedDetectorVersion);
         setPlan(normalized);
         setDays(normalized[month]?.days || makeDays(y, month));
+        const generatedByLetter = Object.values(normalized).some((monthPlan) =>
+          monthPlan.days.some((day) =>
+            day.note.startsWith("Previsión automática · continuidad de la letra "),
+          ),
+        );
         setMessage(
-          Object.keys(normalized).length
+          generatedByLetter
+            ? `Calendario ${y} recuperado · continuidad de la letra ${profile.fiestaLetter}.`
+            : Object.keys(normalized).length
             ? detectorIsCurrent
               ? `Previsión anual recuperada · detector v${ANNUAL_DETECTOR_VERSION}.`
               : "Este año se analizó con un detector anterior. Vuelve a subir el calendario anual y pulsa Crear previsión."
@@ -5180,6 +5222,49 @@ export default function Home() {
         return;
       } catch {}
     setDetectorVersion(0);
+    let sourceYear = y;
+    let sourcePhase: number | undefined;
+    const targetPhase = storedCyclePhase(
+      localStorage.getItem(`metro-cycle-phase-${y}-${profile.fiestaLetter}`),
+    );
+    if (targetPhase !== undefined) {
+      sourcePhase = targetPhase;
+    } else {
+      for (let candidate = y - 1; candidate >= Math.max(2000, y - 20); candidate--) {
+        const storedPhase =
+          storedCyclePhase(
+            localStorage.getItem(`metro-cycle-phase-${candidate}-${profile.fiestaLetter}`),
+          ) ?? storedCyclePhase(localStorage.getItem(`metro-cycle-phase-${candidate}`));
+        if (storedPhase !== undefined) {
+          sourceYear = candidate;
+          sourcePhase = storedPhase;
+          break;
+        }
+      }
+    }
+    if (sourcePhase !== undefined) {
+      const phase = continueCyclePhase(sourcePhase, sourceYear, y),
+        generated = makeCycleYearPlan(y, phase, profile.fiestaLetter),
+        yearKey = `metro-year-${y}`,
+        phaseKey = `metro-cycle-phase-${y}-${profile.fiestaLetter}`,
+        detectorKey = `metro-detector-version-${y}`;
+      localStorage.setItem(yearKey, JSON.stringify(generated));
+      localStorage.setItem(phaseKey, String(phase));
+      localStorage.setItem(detectorKey, String(ANNUAL_DETECTOR_VERSION));
+      for (const key of [yearKey, phaseKey, detectorKey]) {
+        markStorageKeyPending(key);
+        void pushStorageKey(key).catch(() =>
+          setSyncState(navigator.onLine ? "error" : "offline"),
+        );
+      }
+      setDetectorVersion(ANNUAL_DETECTOR_VERSION);
+      setPlan(generated);
+      setDays(generated[month]?.days || makeDays(y, month));
+      setMessage(
+        `Calendario ${y} generado siguiendo la continuidad de la letra ${profile.fiestaLetter} desde ${sourceYear}.`,
+      );
+      return;
+    }
     setPlan({});
     setDays(makeDays(y, month));
     setMessage("Sube el calendario anual para crear la previsión completa.");
@@ -6119,7 +6204,7 @@ export default function Home() {
               <p className="text-xs font-semibold uppercase tracking-[.22em] text-[#71d7cc]">
                 {isSummer(profile)
                   ? profileLabel(profile, year)
-                  : `Ciclo ${profile.fiestaLetter} · ${profileLabel(profile, year)}`} · versión {APP_BUILD} ·{" "}
+                  : `Letra ${profile.fiestaLetter} · ${profileLabel(profile, year)}`} · versión {APP_BUILD} ·{" "}
                 <span className={syncState === "syncing" ? "text-[#eeb64b]" : ""}>
                   {syncState === "synced" ? "☁ sincronizado" : syncState === "syncing" ? "☁ sincronizando…" : syncState === "offline" ? "☁ sin conexión" : syncState === "error" ? "☁ pendiente" : "☁ local"}
                 </span>
