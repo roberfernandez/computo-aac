@@ -97,7 +97,7 @@ test('use official autumn change dates with the existing long-Saturday shifts', 
 });
 
 test('cycle helpers remain unchanged while visual recognition is tested separately', () => {
-  for (const name of ['inferCyclePhase','auditCycle','applyCycleValidation']) {
+  for (const name of ['inferCyclePhase','auditCycle']) {
     const get=a=>a.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name.text===name).getText(a);
     assert.equal(get(ast),get(old.ast),name);
   }

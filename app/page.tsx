@@ -80,7 +80,7 @@ type Special =
   | "NON_STOP_PACTADO"
   | "NON_STOP_EXTRA"
   | "MODIFICACION";
-type ModificationPlacement = "FINAL" | "INICIO" | "PERSONALIZADO";
+type ModificationPlacement = "FINAL" | "INICIO" | "AMBOS" | "PERSONALIZADO";
 type PriorOrigin = "VACACIONES" | "MINI" | "RJ" | "COMPUTO";
 type PeriodKind = "VACACIONES" | "MINI" | "RJ" | "PATERNIDAD" | "VAC_ANTERIOR";
 type PeriodYear = "ACTUAL" | "ANTERIOR";
@@ -100,6 +100,9 @@ type DayData = {
   special: Special;
   extraHours: number;
   modificationPlacement?: ModificationPlacement;
+  modificationAccount?: "ACTUAL" | "ANTERIOR";
+  startExtraMinutes?: number;
+  endExtraMinutes?: number;
   customStart?: string;
   customEnd?: string;
   note: string;
@@ -300,7 +303,7 @@ const CONFIRMED_SPECIAL_RETRIBUTIVE_DAYS = [
 // Incrementar esta versión cuando cambie la lógica de reconocimiento anual.
 // Los años analizados con una versión anterior se conservan, pero la interfaz
 // avisa de que conviene volver a leer su imagen.
-const ANNUAL_DETECTOR_VERSION = 36;
+const ANNUAL_DETECTOR_VERSION = 37;
 const statusLabel: Record<Status, string> = {
   REVISAR: "Revisar",
   AGCG: "Trabajo · AGCG",
@@ -330,7 +333,7 @@ const specialLabel: Record<Special, string> = {
   FESTIVO_ESPECIAL: "Festivo especial operativo",
   NON_STOP_PACTADO: "Non stop pactado",
   NON_STOP_EXTRA: "Non stop extraordinario",
-  MODIFICACION: "Modificación de jornada",
+  MODIFICACION: "Ajustar jornada / cómputo por horas",
 };
 // Presentation only: preserve the colour families recognized by the detector.
 // Ambiguous/manual states have no proven original colour and stay neutral.
@@ -612,81 +615,11 @@ function applyCycleValidation(
   month: number,
   phase?: number,
 ) {
-  return input.map((d) => {
-    const canUseCycle = Number.isInteger(phase),
-      expected = canUseCycle
-        ? phaseStatus(year, month, d.day, phase as number)
-        : baseOf(d.status);
-    if (d.status === "REVISAR")
-      return canUseCycle
-        ? {
-            ...d,
-            baseStatus: expected,
-            status: expected,
-            note: "Jornada completada mediante el ciclo de 28 días",
-          }
-        : d;
-    if (
-      d.status === "VACACIONES" ||
-      d.status === "VACACIONES_PENDIENTES" ||
-      d.status === "VAC_ANTERIOR" ||
-      d.status === "MINI" ||
-      d.status === "LAUDO" ||
-      d.status === "RJ" ||
-      d.status === "PATERNIDAD" ||
-      d.status === "FORMACION" ||
-      d.status === "REVISION_MEDICA" ||
-      d.status === "ENFERMEDAD" ||
-      d.status === "PERMISO" ||
-      d.status === "HUELGA_LEGAL" ||
-      d.status === "COMPUTO_ANTERIOR" ||
-      d.status === "COMPUTO_ACTUAL" ||
-      d.status === "COMPUTO_POSITIVO_ANTERIOR" ||
-      d.status === "COMPUTO_POSITIVO_ACTUAL"
-    )
-      return { ...d, baseStatus: expected };
-    const detected = baseOf(d.status),
-      autoMismatch = d.note.startsWith("Cambio visible respecto al ciclo"),
-      hasPhotoEvidence = d.confidence !== undefined,
-      strongPhotoEvidence = (d.confidence || 0) >= 0.55;
-    if (canUseCycle && detected === "AGCG" && expected !== "AGCG")
-      return {
-        ...d,
-        baseStatus: expected,
-        status: expected,
-        note: "Fiesta validada por el ciclo de 28 días",
-      };
-    if (canUseCycle && detected !== expected && hasPhotoEvidence)
-      return strongPhotoEvidence
-        ? {
-            ...d,
-            baseStatus: detected,
-            status: detected,
-            note: `Bloque de color confirmado respecto al ciclo: se esperaba ${expected}`,
-          }
-        : {
-            ...d,
-            baseStatus: expected,
-            status: expected,
-            note: "Jornada corregida mediante el ciclo de 28 días",
-          };
-    if (canUseCycle && detected !== expected && autoMismatch)
-      return {
-        ...d,
-        baseStatus: expected,
-        status: expected,
-        note: "Jornada corregida mediante el ciclo de 28 días",
-      };
-    return {
-      ...d,
-      baseStatus: detected,
-      status: detected,
-      note:
-        canUseCycle && detected !== expected
-          ? `Cambio visible respecto al ciclo: se esperaba ${expected}`
-          : "",
-    };
-  });
+  // A personal image is evidence, including grey working days and ambiguous
+  // colours. The letter is only an informational comparison, never a repair.
+  return Number.isInteger(phase)
+    ? auditCycle(input, year, month, phase as number)
+    : copyRecognizedDays(input);
 }
 
 const FIXED_PROFILES: Record<
@@ -940,6 +873,19 @@ function calcDay(
   month: number,
   profile: UserProfile,
 ): DayCalculation {
+  if (d.special === "MODIFICACION" && d.modificationAccount) {
+    const baseDay: DayData = { ...d, status: "AGCG", special: "NINGUNA", extraHours: 0, modificationAccount: undefined };
+    const base = calcDay(baseDay, all, year, month, profile);
+    const actual = calcDay({ ...d, status: "AGCG", modificationAccount: undefined }, all, year, month, profile);
+    const delta = actual.workedMinutes - base.workedMinutes;
+    const previous = d.modificationAccount === "ANTERIOR";
+    return {
+      ...actual,
+      value: previous ? base.value : actual.value,
+      creditedMinutes: previous && !isFullTime(profile) ? delta : 0,
+      reason: `Ajuste por horas · ${Number.isFinite(delta) ? (delta >= 0 ? "+" : "") + delta + " min" : "pendiente"} aplicado a ${previous ? year - 1 : year}`,
+    };
+  }
   const toPreviousYear = d.status === "COMPUTO_ANTERIOR",
     toCurrentYear = d.status === "COMPUTO_ACTUAL";
   // Descanso compensatorio: descontar las horas del turno de ese día,
@@ -1001,8 +947,12 @@ function calcDay(
       const shift = shiftFor(profile, "NORMAL", 1, year, month);
       start = shift.start; end = shift.end; minutes = shift.minutes;
       if (d.special === "MODIFICACION" && !custom) {
-        minutes = Math.max(0, minutes + Math.round(d.extraHours * 60));
-        if (d.modificationPlacement === "INICIO") start = clockLabel(clockMinutes(start) - Math.round(d.extraHours * 60));
+        const delta = d.modificationPlacement === "AMBOS" ? (d.startExtraMinutes || 0) + (d.endExtraMinutes || 0) : Math.round(d.extraHours * 60);
+        minutes = Math.max(0, minutes + delta);
+        if (d.modificationPlacement === "AMBOS") {
+          start = clockLabel(clockMinutes(start) - (d.startExtraMinutes || 0));
+          end = clockLabel(clockMinutes(end) + (d.endExtraMinutes || 0));
+        } else if (d.modificationPlacement === "INICIO") start = clockLabel(clockMinutes(start) - Math.round(d.extraHours * 60));
         else end = clockLabel(clockMinutes(end) + Math.round(d.extraHours * 60));
       }
     }
@@ -1080,12 +1030,17 @@ function calcDay(
       value += (customMinutes - workedMinutes) / 60;
       workedMinutes = customMinutes;
     } else {
-      const delta = Math.round(d.extraHours * 60);
+      const delta = d.modificationPlacement === "AMBOS"
+        ? (d.startExtraMinutes || 0) + (d.endExtraMinutes || 0)
+        : Math.round(d.extraHours * 60);
       workedMinutes = Math.max(0, workedMinutes + delta);
-      if ((d.modificationPlacement || "FINAL") === "INICIO")
+      if (d.modificationPlacement === "AMBOS") {
+        start = clockLabel(clockMinutes(start) - (d.startExtraMinutes || 0));
+        end = clockLabel(clockMinutes(end) + (d.endExtraMinutes || 0));
+      } else if ((d.modificationPlacement || "FINAL") === "INICIO")
         start = clockLabel(clockMinutes(start) - delta);
       else end = clockLabel(clockMinutes(end) + delta);
-      value += d.extraHours;
+      value += delta / 60;
     }
     reason = "Modificación de jornada";
   }
@@ -4839,9 +4794,9 @@ async function classifyAnnual(file: File, year: number) {
   if (!canvas) return null;
   const originalSize = canvas.width + "x" + canvas.height;
   let panels =
-    detectProjectionAnnualPanels(canvas, year, diagnostic) ||
     detectModernAnnualPanels(canvas, year, false, diagnostic) ||
     detectModernAnnualPanels(canvas, year, true, diagnostic) ||
+    detectProjectionAnnualPanels(canvas, year, diagnostic) ||
     detectStraightAnnualPanels(canvas, year);
   // Historical TMB annual sheets use a straight 6x2 layout. Keep its proven
   // header-based detector ahead of the generic photographed-geometry fallback.
@@ -5058,7 +5013,7 @@ function previousYearCreditMinutes(
   for (let month = 1; month <= 12; month++) {
     const days = plan[month]?.days || [];
     for (const d of days)
-      if (d.status === "COMPUTO_ANTERIOR" || d.status === "COMPUTO_POSITIVO_ANTERIOR")
+      if (d.status === "COMPUTO_ANTERIOR" || d.status === "COMPUTO_POSITIVO_ANTERIOR" || (d.special === "MODIFICACION" && d.modificationAccount === "ANTERIOR"))
         total += calcDay(d, days, sourceYear, month, profile).creditedMinutes;
   }
   return total;
@@ -5109,6 +5064,55 @@ function storedFollowingYearVacationUse(sourceYear: number) {
   }
 }
 
+
+function hourlyAdjustment(d: DayData): DayData {
+  return {
+    ...d,
+    status: "AGCG",
+    special: "MODIFICACION",
+    modificationAccount: d.status.startsWith("COMPUTO")
+      ? d.status.endsWith("ANTERIOR") ? "ANTERIOR" : "ACTUAL"
+      : d.modificationAccount || "ACTUAL",
+    modificationPlacement: d.modificationPlacement || "INICIO",
+    extraHours: 0,
+    startExtraMinutes: 0,
+    endExtraMinutes: 0,
+    customStart: undefined,
+    customEnd: undefined,
+    priorOrigin: undefined,
+    periodId: undefined,
+  };
+}
+
+function modificationFields(d: DayData): Partial<DayData> {
+  return {
+    extraHours: d.extraHours,
+    modificationPlacement: d.modificationPlacement || "FINAL",
+    modificationAccount: d.modificationAccount || "ACTUAL",
+    startExtraMinutes: d.startExtraMinutes || 0,
+    endExtraMinutes: d.endExtraMinutes || 0,
+    customStart: d.customStart,
+    customEnd: d.customEnd,
+  };
+}
+function modificationError(d: DayData, days: DayData[], year: number, month: number, profile: UserProfile): string {
+  if (d.special !== "MODIFICACION") return "";
+  const fail = (message: string) => `Día ${d.day}: ${message}`;
+  if (d.modificationPlacement === "PERSONALIZADO") {
+    if (![d.customStart, d.customEnd].every(time => typeof time === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(time)))
+      return fail("indica entrada y salida válidas.");
+    if (d.customStart === d.customEnd) return fail("la jornada debe durar más de cero minutos.");
+  } else {
+    const changes = d.modificationPlacement === "AMBOS" ? [d.startExtraMinutes || 0, d.endExtraMinutes || 0] : [d.extraHours * 60];
+    if (changes.some(n => !Number.isFinite(n) || Math.abs(n) >= 1440 || Math.abs(n - Math.round(n)) > .00001))
+      return fail("introduce minutos enteros dentro de una jornada.");
+    const base = calcDay({ ...d, status: "AGCG", special: "NINGUNA", modificationAccount: undefined }, days, year, month, profile);
+    const duration = base.workedMinutes + changes.reduce((a, b) => a + b, 0);
+    if (!Number.isFinite(duration)) return fail("falta el horario de referencia; indica un horario personalizado.");
+    if (duration <= 0 || duration >= 1440) return fail("el ajuste debe dejar una jornada entre 1 y 1439 minutos; para un día completo usa la categoría de cómputo.");
+  }
+  return "";
+}
 
 export default function Home() {
   const [year, setYear] = useState(INITIAL_YEAR),
@@ -5165,6 +5169,7 @@ export default function Home() {
     [multiSelectActive, setMultiSelectActive] = useState(false),
     [multiSelectedDays, setMultiSelectedDays] = useState<number[]>([]),
     [bulkSituation, setBulkSituation] = useState(""),
+    [bulkModification, setBulkModification] = useState<DayData>({ day: 1, baseStatus: "AGCG", status: "AGCG", special: "MODIFICACION", extraHours: 0, modificationAccount: "ACTUAL", modificationPlacement: "INICIO", officialHoliday: false, note: "" }),
     [periodKind, setPeriodKind] = useState<PeriodKind>("VACACIONES"),
     [periodYear, setPeriodYear] = useState<PeriodYear>("ACTUAL"),
     [periodStart, setPeriodStart] = useState(""),
@@ -5253,6 +5258,10 @@ export default function Home() {
               const previousMonth = normalized[m];
               if (!previousMonth) {
                 delete corrected[m];
+                continue;
+              }
+              if (!previousMonth.original.every(day => day.note.startsWith("Previsión automática · continuidad de la letra "))) {
+                corrected[m] = previousMonth;
                 continue;
               }
               corrected[m] = {
@@ -5695,7 +5704,7 @@ export default function Home() {
       persist({
         ...plan,
         [month]: {
-          original: existing?.original || next.map((d) => ({ ...d })),
+          original: next.map((d) => ({ ...d })),
           days: next,
           confirmed: existing?.confirmed || false,
         },
@@ -5739,6 +5748,7 @@ export default function Home() {
     setBulkSituation("");
   }
   function bulkSituationLabel(value: string) {
+    if (value === "restore") return "Restaurar original";
     if (value.startsWith("prior:")) {
       const origin = value.slice(6) as PriorOrigin;
       return priorSituationLabel[origin];
@@ -5755,6 +5765,10 @@ export default function Home() {
     const selectedDays = new Set(multiSelectedDays),
       nextDays = days.map((day) => {
         if (!selectedDays.has(day.day)) return day;
+        if (bulkSituation === "restore") {
+          const original = plan[month]?.original.find(d => d.day === day.day);
+          return original ? { ...original, manualEdited: false } : day;
+        }
 
         if (bulkSituation.startsWith("prior:")) {
           const origin = bulkSituation.slice(6) as PriorOrigin;
@@ -5778,11 +5792,15 @@ export default function Home() {
                 : isWorking(day.status)
                   ? day.status
                   : ("AGCG" as Status);
+          if (special === "MODIFICACION") return {
+            ...day, ...modificationFields(bulkModification), status: "AGCG" as Status,
+            special, priorOrigin: undefined, periodId: undefined, manualEdited: true,
+          };
           return {
             ...day,
             status,
             special,
-            extraHours: special === "MODIFICACION" ? day.extraHours : 0,
+            extraHours: 0,
             priorOrigin:
               special === "NINGUNA" ? day.priorOrigin : undefined,
             periodId: undefined,
@@ -5803,7 +5821,7 @@ export default function Home() {
         return {
           ...day,
           status,
-          special: working ? day.special : ("NINGUNA" as Special),
+          special: status.startsWith("COMPUTO") ? ("NINGUNA" as Special) : working ? day.special : ("NINGUNA" as Special),
           extraHours: working ? day.extraHours : 0,
           priorOrigin: undefined,
           periodId: undefined,
@@ -5813,6 +5831,8 @@ export default function Home() {
       }),
       count = multiSelectedDays.length,
       label = bulkSituationLabel(bulkSituation);
+    const invalid = nextDays.filter(d => selectedDays.has(d.day)).map(d => modificationError(d, days, year, month, profile)).find(Boolean);
+    if (invalid) { setMessage(invalid); return; }
     commitMonth(nextDays);
     cancelMultiSelection();
     setMessage(
@@ -5970,6 +5990,8 @@ export default function Home() {
   }
   function updateSelected() {
     if (!selected) return;
+    const invalid = modificationError(selected, days, year, month, profile);
+    if (invalid) { setMessage(invalid); return; }
     commitMonth(
       days.map((d) =>
         d.day === selected.day
@@ -6823,6 +6845,8 @@ export default function Home() {
               multiSelectActive={multiSelectActive}
               multiSelectedDays={multiSelectedDays}
               bulkSituation={bulkSituation}
+              bulkModification={bulkModification}
+              onBulkModificationChange={setBulkModification}
               onBulkSituationChange={setBulkSituation}
               onStartMultiSelect={startMultiSelection}
               onToggleMultiDay={toggleMultiDay}
@@ -7164,7 +7188,7 @@ export default function Home() {
         </DialogContent>
       </Dialog>
       <Dialog open={!!selected} onOpenChange={(o) => !o && setSelected(null)}>
-        <DialogContent className="border-white/10 bg-[#0d222b] text-white sm:max-w-lg">
+        <DialogContent className="max-h-[90vh] overflow-y-auto border-white/10 bg-[#0d222b] text-white sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>
               Editar {selected?.day} de {MONTHS[month - 1]}
@@ -7209,8 +7233,11 @@ export default function Home() {
                           : "AGCG";
                       setSelected({
                         ...selected,
-                        status,
+                        status: special === "MODIFICACION" ? "AGCG" : status,
                         special,
+                        modificationAccount: special === "MODIFICACION"
+                          ? selected.status.startsWith("COMPUTO") ? selected.status.endsWith("ANTERIOR") ? "ANTERIOR" : "ACTUAL" : selected.modificationAccount || "ACTUAL"
+                          : undefined,
                         extraHours:
                           special === "MODIFICACION" ? selected.extraHours : 0,
                         modificationPlacement:
@@ -7223,7 +7250,7 @@ export default function Home() {
                       setSelected({
                         ...selected,
                         status,
-                        special: working ? selected.special : "NINGUNA",
+                        special: status.startsWith("COMPUTO") ? "NINGUNA" : working ? selected.special : "NINGUNA",
                         extraHours: working ? selected.extraHours : 0,
                         priorOrigin: isPrior
                           ? selected.priorOrigin || "VACACIONES"
@@ -7312,85 +7339,18 @@ export default function Home() {
                   <b className="text-[#a8c8ff]">Descanso compensatorio del año {selected.status === "COMPUTO_POSITIVO_ANTERIOR" ? year - 1 : year}.</b> Se descontarán las horas que habrías trabajado ese día según tu contrato y turno. No computa como trabajo ni genera nocturnidad.
                 </div>
               )}
-              {selected.special === "MODIFICACION" && (
-                <div className="space-y-3 rounded-xl border border-white/8 bg-white/3 p-3">
-                  <div>
-                    <Label>Cómo se modifica</Label>
-                    <Select
-                      value={selected.modificationPlacement || "FINAL"}
-                      onValueChange={(value) =>
-                        setSelected({
-                          ...selected,
-                          modificationPlacement: value as ModificationPlacement,
-                        })
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="FINAL">
-                          Cambiar la hora de salida
-                        </SelectItem>
-                        <SelectItem value="INICIO">
-                          Cambiar la hora de entrada
-                        </SelectItem>
-                        <SelectItem value="PERSONALIZADO">
-                          Horario personalizado
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  {selected.modificationPlacement === "PERSONALIZADO" ? (
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <Label>Entrada</Label>
-                        <Input
-                          type="time"
-                          value={selected.customStart || "18:46"}
-                          onChange={(e) =>
-                            setSelected({
-                              ...selected,
-                              customStart: e.target.value,
-                            })
-                          }
-                        />
-                      </div>
-                      <div>
-                        <Label>Salida</Label>
-                        <Input
-                          type="time"
-                          value={selected.customEnd || "00:50"}
-                          onChange={(e) =>
-                            setSelected({
-                              ...selected,
-                              customEnd: e.target.value,
-                            })
-                          }
-                        />
-                      </div>
-                    </div>
-                  ) : (
-                    <div>
-                      <Label>Variación de minutos</Label>
-                      <Input
-                        className="compute-edit"
-                        type="number"
-                        step="1"
-                        value={Math.round(selected.extraHours * 60)}
-                        onChange={(e) =>
-                          setSelected({
-                            ...selected,
-                            extraHours: +e.target.value / 60,
-                          })
-                        }
-                      />
-                      <p className="mt-1 text-xs text-white/40">
-                        Introduce minutos reales: 5 = 5 min · 60 = 1 h. Positivo: trabajas más · negativo: trabajas menos.
-                      </p>
-                    </div>
-                  )}
+              {selected.status.startsWith("COMPUTO") && selected.special !== "MODIFICACION" && (
+                <div className="rounded-xl border border-white/10 p-3 text-sm">
+                  <p className="mb-2 text-white/65">¿Solo recuperas o disfrutas unas horas dentro de una jornada normal?</p>
+                  <Button variant="outline" onClick={() => setSelected(hourlyAdjustment(selected))}>Ajustar por horas en este día</Button>
                 </div>
+              )}
+              {selected.special === "MODIFICACION" && (
+                <>
+                  <ModificationFields day={selected} year={year} onChange={setSelected} />
+                  <p className="text-sm text-[#8ee9df]">Horario resultante: {calcDay(selected, days, year, month, profile).shift}</p>
+                  {modificationError(selected, days, year, month, profile) && <p role="alert" className="text-sm text-red-300">{modificationError(selected, days, year, month, profile)}</p>}
+                </>
               )}
               <div>
                 <Label>Nota</Label>
@@ -7420,6 +7380,39 @@ export default function Home() {
       </Dialog>
     </main>
   );
+}
+
+function ModificationFields({ day, year, onChange }: { day: DayData; year: number; onChange: (day: DayData) => void }) {
+  const patch = (change: Partial<DayData>) => onChange({ ...day, ...change });
+  return <div className="space-y-3 rounded-xl border border-white/10 bg-white/3 p-3">
+    <p className="text-sm text-white/70">Conserva la jornada normal y aplica solo la diferencia de horas al saldo elegido.</p>
+    <div><Label>Saldo al que se aplica el ajuste</Label>
+      <Select value={day.modificationAccount || "ACTUAL"} onValueChange={value => patch({ modificationAccount: value as "ACTUAL" | "ANTERIOR" })}>
+        <SelectTrigger><SelectValue /></SelectTrigger><SelectContent>
+          <SelectItem value="ACTUAL">Año actual · {year}</SelectItem>
+          <SelectItem value="ANTERIOR">Año anterior · {year - 1}</SelectItem>
+        </SelectContent>
+      </Select>
+    </div>
+    <div><Label>Cómo se modifica</Label>
+      <Select value={day.modificationPlacement || "FINAL"} onValueChange={value => patch({ modificationPlacement: value as ModificationPlacement })}>
+        <SelectTrigger><SelectValue /></SelectTrigger><SelectContent>
+          <SelectItem value="INICIO">Cambiar la hora de entrada</SelectItem>
+          <SelectItem value="FINAL">Cambiar la hora de salida</SelectItem>
+          <SelectItem value="AMBOS">Entrada y salida</SelectItem>
+          <SelectItem value="PERSONALIZADO">Horario personalizado</SelectItem>
+        </SelectContent>
+      </Select>
+    </div>
+    {day.modificationPlacement === "PERSONALIZADO" ? <div className="grid grid-cols-2 gap-2">
+      <div><Label>Entrada</Label><Input aria-label="Entrada personalizada" type="time" value={day.customStart || ""} onChange={e => patch({ customStart: e.target.value })} /></div>
+      <div><Label>Salida</Label><Input aria-label="Salida personalizada" type="time" value={day.customEnd || ""} onChange={e => patch({ customEnd: e.target.value })} /></div>
+    </div> : day.modificationPlacement === "AMBOS" ? <div className="grid grid-cols-2 gap-2">
+      <div><Label>Minutos en la entrada</Label><Input aria-label="Minutos en la entrada" type="number" step="1" value={day.startExtraMinutes || 0} onChange={e => patch({ startExtraMinutes: Number(e.target.value) })} /></div>
+      <div><Label>Minutos en la salida</Label><Input aria-label="Minutos en la salida" type="number" step="1" value={day.endExtraMinutes || 0} onChange={e => patch({ endExtraMinutes: Number(e.target.value) })} /></div>
+    </div> : <div><Label>Variación de minutos</Label><Input aria-label="Variación de minutos" className="compute-edit" type="number" step="1" value={Math.round(day.extraHours * 60)} onChange={e => patch({ extraHours: Number(e.target.value) / 60 })} /></div>}
+    <p className="text-xs text-white/60">60 = 1 hora. Positivo: entrar antes o salir después para recuperar horas. Negativo: entrar después o salir antes para disfrutar horas a favor. Puedes combinar ambos extremos.</p>
+  </div>;
 }
 
 function UploadBox({
@@ -7706,6 +7699,8 @@ function MonthView({
   multiSelectActive,
   multiSelectedDays,
   bulkSituation,
+  bulkModification,
+  onBulkModificationChange,
   onBulkSituationChange,
   onStartMultiSelect,
   onToggleMultiDay,
@@ -7733,6 +7728,8 @@ function MonthView({
   multiSelectActive: boolean;
   multiSelectedDays: number[];
   bulkSituation: string;
+  bulkModification: DayData;
+  onBulkModificationChange: (day: DayData) => void;
   onBulkSituationChange: (value: string) => void;
   onStartMultiSelect: (day?: number) => void;
   onToggleMultiDay: (day: number) => void;
@@ -7997,6 +7994,7 @@ function MonthView({
                     <SelectValue placeholder="Asignar categoría…" />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="restore">Restaurar original</SelectItem>
                     {Object.entries(statusLabel)
                       .filter(
                         ([value]) =>
@@ -8021,7 +8019,6 @@ function MonthView({
                         ) : null,
                     )}
                     {Object.entries(specialLabel)
-                      .filter(([value]) => value !== "MODIFICACION")
                       .map(([value, label]) => (
                         <SelectItem value={`special:${value}`} key={value}>
                           {label}
@@ -8037,10 +8034,10 @@ function MonthView({
                   Aplicar
                 </Button>
               </div>
-              <p className="mt-2 text-[11px] leading-4 text-white/35">
-                La modificación de jornada sigue siendo individual porque
-                necesita horas y posición de la modificación.
-              </p>
+              {bulkSituation === "special:MODIFICACION" && <div className="mt-3">
+                <ModificationFields day={bulkModification} year={year} onChange={onBulkModificationChange} />
+                <p className="mt-2 text-xs text-white/60">Se aplicará el mismo ajuste al horario propio de cada día seleccionado. Revisa que todos correspondan a días trabajados.</p>
+              </div>}
             </div>
           )}
           <p className="mt-4 text-xs text-white/38">
