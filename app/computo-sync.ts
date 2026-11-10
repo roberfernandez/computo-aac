@@ -99,10 +99,26 @@ export async function deleteStorageKeys(keys:string[]){
   return true;
 }
 
+// Remove only byte-for-byte duplicate backups. Different backups may hold unsynced edits.
+function pruneIdenticalBackups(){
+  const prefix = "computo-sync-backup-v1:";
+  const redundant: string[] = [];
+  for(let i=0;i<localStorage.length;i++){
+    const backupKey=localStorage.key(i);
+    if(!backupKey?.startsWith(prefix)) continue;
+    const originalKey=backupKey.slice(prefix.length);
+    if(!isComputoStorageKey(originalKey)) continue;
+    const original=localStorage.getItem(originalKey);
+    if(original!==null && original===localStorage.getItem(backupKey)) redundant.push(backupKey);
+  }
+  for(const key of redundant) localStorage.removeItem(key);
+}
+
 export async function syncComputoStorage(onState?:(s:SyncState)=>void){
   const session=readSharedSession(); if(!session){onState?.("local");return;}
   onState?.("syncing");
   try{
+    pruneIdenticalBackups();
     const userId=await authenticatedUserId(session); if(!userId){onState?.("local");return;}
     // Los borrados pendientes se aplican antes de descargar para que la nube no resucite datos eliminados.
     for(const key of pendingDeletes()) if(isComputoStorageKey(key)) {
