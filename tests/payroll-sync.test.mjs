@@ -33,7 +33,10 @@ test('annual deletion cannot be overwritten by an older in-flight export',async(
 
 test('restoring a payroll export cancels its queued deletion',async()=>{
  const bodies=[];
- const {values,api}=setup(async(url,options)=>{bodies.push(JSON.parse(options.body));return {ok:true};});
+ const {values,api}=setup(async(url,options)=>{
+   if(!options) return {ok:true,json:async()=>[]};
+   bodies.push(JSON.parse(options.body));return {ok:true};
+ });
  values.set('computo-sync-pending-delete-v1',JSON.stringify([key]));
  values.set(key,JSON.stringify({revision:'restored'}));
  api.markStorageKeyPending(key);
