@@ -5386,9 +5386,11 @@ export default function Home() {
           markStorageKeyPending(exportKey);
           void pushStorageKey(exportKey).catch(() => setSyncState(navigator.onLine ? "error" : "offline"));
         }
-      } catch {
-        // Do not leave an obsolete, apparently valid snapshot after a failed export.
-        void deleteStorageKeys([exportKey]).catch(() => setSyncState("error"));
+      } catch (error) {
+        // A temporary calculation or hydration failure is not a calendar deletion.
+        // Keep the last valid snapshot and surface the actual failure for diagnosis.
+        console.error("[Còmput AAC] No se pudo generar la exportación de horarios", { year: y, error });
+        setSyncState("error");
       }
     }
   }
