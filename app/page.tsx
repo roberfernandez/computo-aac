@@ -6485,6 +6485,20 @@ export default function Home() {
                   title="Sube el calendario anual"
                   onFile={chooseAnnual}
                 />
+                {annualFile && planReady && (
+                  <Button variant="outline" className="mt-3 w-full" disabled={busy} onClick={async () => {
+                    try {
+                      await saveAnnualCalendarImage(year, annualFile);
+                      setMessage("Imagen del calendario guardada en la nube. Se verá en otros dispositivos sin recalcular los datos.");
+                      setAnnualFile(null);
+                    } catch (error) {
+                      console.warn("[Còmput AAC] Error al guardar imagen anual", error);
+                      setMessage("No se pudo guardar la imagen en la nube. Comprueba tu sesión y vuelve a intentarlo.");
+                    }
+                  }}>
+                    Guardar imagen sin recalcular el calendario
+                  </Button>
+                )}
                 {busy && <Progress value={progress} className="mt-4" />}
                 <div className="mt-4 grid grid-cols-2 gap-2">
                   <Button
