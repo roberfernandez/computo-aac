@@ -55,6 +55,29 @@ export function pushStorageKey(key:string): Promise<boolean> {
   return next;
 }
 
+// Upload a generated payroll snapshot without requiring another localStorage copy.
+export function pushPayrollSnapshot(key:string, raw:string): Promise<boolean> {
+  if(!key.startsWith("metro-payroll-facts-v1-")) return Promise.resolve(false);
+  const previous = payrollWrites.get(key) || Promise.resolve(false);
+  const next = previous.catch(() => false).then(async () => {
+    const session = readSharedSession();
+    if(!session) return false;
+    const userId = await authenticatedUserId(session);
+    if(!userId) return false;
+    const response = await fetch(`${SUPABASE_URL}/rest/v1/computo_sync?on_conflict=user_id,storage_key`, {
+      method: "POST", headers: headers(session.access_token),
+      body: JSON.stringify({user_id:userId,storage_key:key,payload:encodePayload(raw),updated_at:new Date().toISOString()})
+    });
+    if(!response.ok) throw new Error(`sync payroll ${response.status}`);
+    clearPendingDelete(key);
+    clearPending(key);
+    return true;
+  });
+  payrollWrites.set(key,next);
+  void next.finally(() => {if(payrollWrites.get(key)===next) payrollWrites.delete(key);}).catch(() => {});
+  return next;
+}
+
 export async function deleteStorageKeys(keys:string[]){
   const valid=keys.filter(isComputoStorageKey);
   valid.forEach(key=>{ localStorage.removeItem(key); markPendingDelete(key); });
