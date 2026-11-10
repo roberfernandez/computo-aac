@@ -43,7 +43,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { deleteStorageKeys, markStorageKeyPending, pushStorageKey, syncComputoStorage, type SyncState } from "./computo-sync";
+import { deleteStorageKeys, markStorageKeyPending, pushPayrollSnapshot, pushStorageKey, syncComputoStorage, type SyncState } from "./computo-sync";
 import {
   Table,
   TableBody,
@@ -5382,9 +5382,21 @@ export default function Home() {
         const saved = JSON.parse(localStorage.getItem(key) || "{}");
         const output = JSON.stringify(payrollFactsFor(saved, y, activeProfile));
         if (localStorage.getItem(exportKey) !== output) {
-          localStorage.setItem(exportKey, output);
-          markStorageKeyPending(exportKey);
-          void pushStorageKey(exportKey).catch(() => setSyncState(navigator.onLine ? "error" : "offline"));
+          try {
+            localStorage.setItem(exportKey, output);
+            markStorageKeyPending(exportKey);
+            void pushStorageKey(exportKey).catch(() => setSyncState(navigator.onLine ? "error" : "offline"));
+          } catch (storageError) {
+            // QuotaExceededError must not block the cloud export or delete the calendar.
+            if (!(storageError instanceof DOMException && storageError.name === "QuotaExceededError")) throw storageError;
+            console.warn("[Còmput AAC] Almacenamiento local lleno; enviando horarios directamente a la nube", { year: y });
+            void pushPayrollSnapshot(exportKey, output)
+              .then(ok => { if (!ok) setSyncState("error"); })
+              .catch(error => {
+                console.error("[Còmput AAC] Falló el envío directo de horarios", { year: y, error });
+                setSyncState(navigator.onLine ? "error" : "offline");
+              });
+          }
         }
       } catch (error) {
         // A temporary calculation or hydration failure is not a calendar deletion.
