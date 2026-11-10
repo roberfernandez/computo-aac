@@ -30,3 +30,34 @@ test('annual deletion cannot be overwritten by an older in-flight export',async(
  const b=api.deleteStorageKeys([key]);release();await Promise.all([a,b]);
  assert.equal(bodies.at(-1).payload.__deleted,true);assert.equal(values.has(key),false);
 });
+
+test('restoring a payroll export cancels its queued deletion',async()=>{
+ const bodies=[];
+ const {values,api}=setup(async(url,options)=>{
+   if(!options) return {ok:true,json:async()=>[]};
+   bodies.push(JSON.parse(options.body));return {ok:true};
+ });
+ values.set('computo-sync-pending-delete-v1',JSON.stringify([key]));
+ values.set(key,JSON.stringify({revision:'restored'}));
+ api.markStorageKeyPending(key);
+ assert.equal(JSON.parse(values.get('computo-sync-pending-delete-v1')).includes(key),false);
+ await api.syncComputoStorage();
+ assert.equal(bodies.some(b=>b.payload.__deleted===true),false);
+ assert.equal(bodies.some(b=>b.payload.revision==='restored'),true);
+});
+test('restoration during an in-flight deletion is republished after the tombstone',async()=>{
+ let start,release;const started=new Promise(r=>start=r),bodies=[];
+ const {values,api}=setup(async(url,options)=>{
+   const body=JSON.parse(options.body);bodies.push(body);
+   if(body.payload.__deleted===true){start();await new Promise(r=>release=r);}
+   return {ok:true};
+ });
+ const deletion=api.deleteStorageKeys([key]);
+ await started;
+ values.set(key,JSON.stringify({revision:'restored'}));
+ api.markStorageKeyPending(key);
+ release();
+ await deletion;
+ assert.equal(bodies.at(-1).payload.revision,'restored');
+ assert.equal(values.has(key),true);
+});
