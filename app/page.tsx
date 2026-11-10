@@ -44,6 +44,7 @@ import {
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { deleteStorageKeys, markStorageKeyPending, pushPayrollSnapshot, pushStorageKey, syncComputoStorage, type SyncState } from "./computo-sync";
+import { loadAnnualCalendarImage, saveAnnualCalendarImage, removeAnnualCalendarImage } from "./annual-calendar-cloud";
 import {
   Table,
   TableBody,
@@ -5157,6 +5158,7 @@ export default function Home() {
     [uploadMode, setUploadMode] = useState<"annual" | "monthly">("annual");
   const [annualFile, setAnnualFile] = useState<File | null>(null),
     [annualPreview, setAnnualPreview] = useState(""),
+    [cloudAnnualPreview, setCloudAnnualPreview] = useState(""),
     [monthlyFile, setMonthlyFile] = useState<File | null>(null),
     [monthlyPreview, setMonthlyPreview] = useState("");
   const [progress, setProgress] = useState(0),
@@ -5372,6 +5374,17 @@ export default function Home() {
     },
     [monthlyPreview],
   );
+  useEffect(() => {
+    let cancelled = false;
+    let objectUrl: string | null = null;
+    setCloudAnnualPreview("");
+    void loadAnnualCalendarImage(year).then((url) => {
+      if (cancelled) { if (url) URL.revokeObjectURL(url); return; }
+      objectUrl = url;
+      setCloudAnnualPreview(url || "");
+    }).catch(() => { if (!cancelled) setCloudAnnualPreview(""); });
+    return () => { cancelled = true; if (objectUrl) URL.revokeObjectURL(objectUrl); };
+  }, [year]);
   // Write the new snapshot synchronously before navigation can interrupt an edit.
   function refreshPayrollExports(activeProfile: UserProfile = profile) {
     const years = Array.from({length: localStorage.length}, (_, i) => localStorage.key(i))
@@ -5651,6 +5664,14 @@ export default function Home() {
       setProgress(100);
       persist(found.plan);
       persistPeriods([]);
+      try {
+        await saveAnnualCalendarImage(year, annualFile);
+        const savedPreview = await loadAnnualCalendarImage(year);
+        if (savedPreview) setCloudAnnualPreview(savedPreview);
+      } catch (imageError) {
+        console.warn("[Còmput AAC] No se pudo guardar la imagen anual en la nube", imageError);
+        setMessage("Previsión creada, pero no se pudo guardar la imagen en la nube.");
+      }
       localStorage.setItem(
         `metro-detector-version-${year}`,
         String(ANNUAL_DETECTOR_VERSION),
@@ -6073,6 +6094,8 @@ export default function Home() {
     setDays(makeDays(year, month));
     clearAnnualImage();
     clearMonthlyImage();
+    setCloudAnnualPreview("");
+    void removeAnnualCalendarImage(year).catch((error) => console.warn("[Còmput AAC] No se pudo eliminar la imagen anual", error));
     const keysToDelete = [
       `metro-year-${year}`,
       `metro-payroll-facts-v1-${year}`,
@@ -6458,7 +6481,7 @@ export default function Home() {
               </TabsList>
               <TabsContent value="annual">
                 <UploadBox
-                  preview={annualPreview}
+                  preview={annualPreview || cloudAnnualPreview}
                   title="Sube el calendario anual"
                   onFile={chooseAnnual}
                 />
