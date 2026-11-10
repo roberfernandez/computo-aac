@@ -5185,6 +5185,11 @@ export default function Home() {
     [profileOpen, setProfileOpen] = useState(true),
     [profileLoaded, setProfileLoaded] = useState(false);
   function loadYear(y: number, selectedMonth = month) {
+    if (y !== year) {
+      setAnnualFile(null);
+      setAnnualPreview("");
+      setCloudAnnualPreview("");
+    }
     setYear(y);
     setMonth(selectedMonth);
     setMultiSelectActive(false);
