@@ -134,6 +134,21 @@ export async function syncComputoStorage(onState?:(s:SyncState)=>void){
     if(!response.ok) throw new Error(`sync pull ${response.status}`);
     const remote=await response.json() as Array<{storage_key:string,payload:unknown}>;
     // Conservative first migration: remote wins for keys already in cloud; otherwise upload local keys.
+    // Payroll exports are derived data. Remove only backups confirmed equal to
+    // the authenticated cloud snapshot; never prune divergent or calendar backups.
+    for (const row of remote) {
+      if (!/^metro-payroll-facts-v1-\\d{4}$/.test(row.storage_key) || isDeletedPayload(row.payload)) continue;
+      const backupKey = `computo-sync-backup-v1:${row.storage_key}`;
+      const backup = localStorage.getItem(backupKey);
+      if (backup === null) continue;
+      try {
+        if (JSON.stringify(JSON.parse(backup)) === JSON.stringify(row.payload)) {
+          localStorage.removeItem(backupKey);
+        }
+      } catch {
+        // Preserve backups whose contents cannot be verified.
+      }
+    }
     const remoteKeys=new Set(remote.map(r=>r.storage_key));
     for(const row of remote) if(isComputoStorageKey(row.storage_key)) {
       if(isDeletedPayload(row.payload)) {
