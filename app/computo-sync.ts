@@ -127,8 +127,22 @@ export async function syncComputoStorage(onState?:(s:SyncState)=>void){
       }
       const incoming=decodePayload(row.payload), current=localStorage.getItem(row.storage_key);
       // La primera convergencia nunca destruye una copia local distinta: se conserva como respaldo recuperable.
-      if(current!==null && current!==incoming) localStorage.setItem(`computo-sync-backup-v1:${row.storage_key}`, current);
-      localStorage.setItem(row.storage_key,incoming);
+      if(current!==null && current!==incoming) {
+        // Keep the original recoverable; if quota is full, do not overwrite it.
+        try {
+          localStorage.setItem(`computo-sync-backup-v1:${row.storage_key}`, current);
+        } catch (error) {
+          if (!(error instanceof DOMException && error.name === "QuotaExceededError")) throw error;
+          console.warn("[Còmput AAC] Sin espacio para respaldar datos locales; se conserva el original", { key: row.storage_key });
+          continue;
+        }
+      }
+      try {
+        localStorage.setItem(row.storage_key,incoming);
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === "QuotaExceededError")) throw error;
+        console.warn("[Còmput AAC] Sin espacio para descargar datos; se conserva la versión local", { key: row.storage_key });
+      }
     }
     const localKeys:string[]=[]; for(let i=0;i<localStorage.length;i++){const key=localStorage.key(i);if(key&&isComputoStorageKey(key)&&!remoteKeys.has(key))localKeys.push(key);}
     for(const key of localKeys) await pushStorageKey(key);
