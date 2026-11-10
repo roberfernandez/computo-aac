@@ -5300,7 +5300,7 @@ export default function Home() {
             : Object.keys(normalized).length
             ? detectorIsCurrent
               ? `Previsión anual recuperada · detector v${ANNUAL_DETECTOR_VERSION}.`
-              : "Este año se analizó con un detector anterior. Vuelve a subir el calendario anual y pulsa Crear previsión."
+              : "Calendario anual recuperado. Los datos guardados se mantienen; no es necesario volver a subirlo."
             : "Sube el calendario anual para crear la previsión completa.",
         );
         return;
@@ -6519,9 +6519,9 @@ export default function Home() {
               </TabsContent>
             </Tabs>
             <div
-              className={`status-note ${detectorIsCurrent ? "ok" : "warning"}`}
+              className={`status-note ${planReady ? "ok" : "warning"}`}
             >
-              {detectorIsCurrent ? (
+              {planReady ? (
                 <CheckCircle2 size={17} />
               ) : (
                 <AlertTriangle size={17} />
