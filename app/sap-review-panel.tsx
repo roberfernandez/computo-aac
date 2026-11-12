@@ -4,7 +4,8 @@ import {useEffect,useState} from "react";
 import {authenticatedUserId,readSharedSession} from "./tmb-session";
 import {compareSapToComputo,sapChangeCount,validateSapExport} from "@/lib/sap-comparison";
 
-type ExportDoc = {ano:number;extraido:string;valoraciones:Record<string,unknown[]>;anuales:Record<string,unknown[]>};
+type ValueRow = {Date:string;LongText:string;Number:string;Wagetype?:string};
+type ExportDoc = {ano:number;extraido:string;valoraciones:Record<string,ValueRow[]>};
 type StoredDoc = {key:string;doc:ExportDoc;history:{extraido:string;cambios:number}[]};
 const OWNER_USER_ID="1dd672e7-707f-4197-a393-a5f6f3a6d74e";
 const DB_NAME="computo-sap-private-v1",STORE="exports";
@@ -95,8 +96,16 @@ export default function SapReviewPanel({year}:SapReviewPanelProps){
     setBusy(true);setNotice("");
     try{
       const json=JSON.parse(await file.text());
-      const doc=validateSapExport(json) as ExportDoc;
-      if(doc.ano!==year)throw Error("Este archivo corresponde a "+doc.ano+". Selecciona ese año en Còmput antes de importarlo.");
+      const verified=validateSapExport(json);
+      if(verified.ano!==year)throw Error("Este archivo corresponde a "+verified.ano+". Selecciona ese año en Còmput antes de importarlo.");
+      // Almacenamos sólo las unidades necesarias para comparar, nunca el calendario
+      // completo de actividades, contingentes ni campos SAP ajenos al cálculo.
+      const doc:ExportDoc={ano:verified.ano,extraido:verified.extraido,
+        valoraciones:Object.fromEntries(Object.entries(verified.valoraciones).map(([key,rows])=>[
+          key,rows.map((row:{Date:string;LongText:string;Number:string;Wagetype?:string})=>({
+            Date:row.Date,LongText:row.LongText,Number:row.Number,Wagetype:row.Wagetype
+          }))
+        ]))};
       const result=await replaceSaved(uid,doc);
       setSaved(result.record);
       setRevision(v=>v+1);
@@ -116,7 +125,7 @@ export default function SapReviewPanel({year}:SapReviewPanelProps){
       <p className="text-xs text-white/60">Importa el JSON que has descarregat de Consultes Bàsiques. No es puja a Supabase ni es comparteix amb altres usuaris.</p>
       <label className="flex items-start gap-2 text-xs text-white/80">
         <input type="checkbox" checked={checked} onChange={e=>setChecked(e.target.checked)} className="mt-0.5" />
-        <span>Confirmo que el fitxer conté les meves dades laborals. El JSON actual no identifica l&apos;empleat de forma verificable.</span>
+        <span>Confirmo que el fitxer conté les meves dades laborals. El JSON actual no identifica l&apos;empleat de forma verificable; només es desen dates, conceptes i unitats.</span>
       </label>
       <label className={"block rounded-lg border px-3 py-2 text-center text-sm font-semibold "+(checked&&!busy?"cursor-pointer border-amber-400/60 bg-amber-400/15 text-amber-100":"border-white/10 text-white/50")}>
         {busy?"Verificant i desant…":"Importar dades SAP "+year}
