@@ -117,12 +117,20 @@ export default function SapReviewPanel({year}:SapReviewPanelProps){
     finally{setBusy(false);}
   }
   return (
-    <section className="panel space-y-3 p-5" aria-label="Comprovació experimental amb TMB">
+    <section className="panel space-y-3 p-5" aria-label="Contrast experimental amb TMB">
       <div className="flex items-center justify-between gap-2">
-        <h2 className="font-semibold text-[#f7ca6e]">Comprovar amb TMB</h2>
+        <h2 className="font-semibold text-[#f7ca6e]">Contrastar dades amb TMB</h2>
         <span className="rounded border border-amber-400/40 px-2 py-0.5 text-[11px] text-amber-200">Prova privada</span>
       </div>
-      <p className="text-xs text-white/60">Importa el JSON que has descarregat de Consultes Bàsiques. No es puja a Supabase ni es comparteix amb altres usuaris.</p>
+      <p className="text-xs text-white/60">Contrasta les dades de Còmput amb les valoracions laborals que TMB ha registrat. Cap diferència implica per si sola un error de TMB ni de Còmput.</p>
+      {year===2026 ? <div className="space-y-2 rounded-lg border border-white/15 bg-[#0b2029] p-3">
+        <p className="text-sm font-semibold text-[#f7ca6e]">1 · Obtenir les dades de TMB</p>
+        <p className="text-xs text-white/70">Al mòbil, obre el portal oficial i entra a Consultes Bàsiques. Amb la pàgina oberta, escriu <b>ZZSAP123</b> a la barra de Chrome i toca el marcador. Introdueix el teu número SAP, fes la consulta anual i prem <b>DESCARGAR DATOS TMB {year}</b>.</p>
+        <a href="https://launcher.tmb.cat/apps#Shell-home" target="_blank" rel="noopener noreferrer" className="block rounded-lg border border-[#f7ca6e]/60 bg-[#f7ca6e]/10 px-3 py-2 text-center text-sm font-semibold text-[#f7ca6e]">Obrir el portal TMB</a>
+        <p className="text-[11px] text-white/55">La descàrrega s&apos;executa dins del portal TMB, no des d&apos;aquesta pàgina. Chrome encara no permet a Còmput llegir SAP ni seleccionar automàticament els arxius de Descàrregues.</p>
+      </div> : <p className="rounded border border-amber-400/30 p-3 text-xs text-amber-200">La prova amb el marcador ZZSAP123 està preparada només per a 2026. No l&apos;executis per descarregar l&apos;any {year}.</p>}
+      <p className="text-sm font-semibold text-[#f7ca6e]">2 · Importar i contrastar les dades</p>
+      <p className="text-xs text-white/60">Torna aquí i selecciona el JSON de Descàrregues. Només es guarden dates, conceptes i unitats en aquest dispositiu; el fitxer no s&apos;envia a Supabase.</p>
       <label className="flex items-start gap-2 text-xs text-white/80">
         <input type="checkbox" checked={checked} onChange={e=>setChecked(e.target.checked)} className="mt-0.5" />
         <span>Confirmo que el fitxer conté les meves dades laborals. El JSON actual no identifica l&apos;empleat de forma verificable; només es desen dates, conceptes i unitats.</span>
