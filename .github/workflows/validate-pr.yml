@@ -17,6 +17,7 @@ jobs:
       - run: npx eslint app/computo-sync.ts app/tmb-session.ts app/page.tsx
       - run: node --test tests/payroll-sync.test.mjs
       - run: node --test tests/computo-compensaciones.test.mjs
+      - run: node --test tests/sap-comparison.test.mjs
       - run: npm run build
         env:
           NEXT_PUBLIC_GIT_SHA: ${{ github.event.pull_request.head.sha }}
