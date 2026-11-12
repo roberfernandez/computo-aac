@@ -61,6 +61,12 @@ test("keeps extra SAP concepts separate until interpretation is established",()=
   doc.valoraciones["2026-10"].push({Date:"/Date("+Date.UTC(2026,9,11)+")/",LongText:"Plus Festivo Oficial",Number:"1.00"});
   const report=compareSapToComputo(validateSapExport(doc),facts());
   assert.ok(report.unmapped.some(x=>x.category==="Plus Festivo Oficial"));
+  // Son conceptos distintos: el plus por domingo de Còmput no prueba
+  // el derecho al plus SAP P. Festivo Trabajado E.
+  doc.valoraciones["2026-10"].push({Date:"/Date("+Date.UTC(2026,9,17)+")/",LongText:"P.Festivo Trabajado E",Number:"1.00"});
+  const rest=compareSapToComputo(validateSapExport(doc),facts());
+  assert.ok(rest.unmapped.some(x=>x.category==="P.Festivo Trabajado E"));
+  assert.equal(rest.rows.some(x=>x.concept==="Festivo trabajado, variante E"),false);
 });
 test("detects retroactive official changes without overwriting previous evidence",()=>{
   const before=fixture(),after=fixture();
