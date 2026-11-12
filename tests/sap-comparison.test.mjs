@@ -1,0 +1,69 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import {validateSapExport,compareSapToComputo,sapDate,sapChangeCount} from "../lib/sap-comparison.js";
+
+function fixture(){
+  const year=2026, calendario=[];
+  for(let day=1;day<=365;day++){
+    const d=new Date(Date.UTC(year,0,day));
+    calendario.push({Date:"/Date("+d.valueOf()+")/",Phtd:"AGCG"});
+  }
+  const valoraciones={};
+  for(let m=1;m<=12;m++)valoraciones["2026-"+String(m).padStart(2,"0")]=[];
+  valoraciones["2026-10"]=[
+    {Date:"/Date("+Date.UTC(2026,9,1)+")/",LongText:"Prima Hora Nona",Number:"0.25",Wagetype:"8711"},
+    {Date:"/Date("+Date.UTC(2026,9,1)+")/",LongText:"Plus Convenio",Number:"1.00",Wagetype:"8716"}
+  ];
+  return {origen:"Consultes Bàsiques TMB - SAP",ano:2026,extraido:"2026-11-12T12:51:44.729Z",
+    anuales:{actividades:[{Campo1:"01.01.2026"}],calendario,contingentes:[],leyenda:[]},valoraciones};
+}
+function facts(){
+  const days=Array.from({length:31},(_,i)=>({
+    date:"2026-10-"+String(i+1).padStart(2,"0"),
+    activity:{status:"AGCG",weeklyRest:false},
+    metrics:{
+      horaNonaHours:{state:"known",value:i===0?0.5:0},
+      plusConveniDays:{state:"known",value:i===0?1:0},
+      nightPayableHours:{state:"known",value:0},
+      ordinaryHours:{state:"known",value:0},
+      plusFestiuDays:{state:"known",value:0}
+    }
+  }));
+  return {year:2026,months:{"10":{days}}};
+}
+test("SAP dates preserve original workday across midnight",()=>{
+  assert.equal(sapDate("/Date("+Date.UTC(2026,9,11)+")/"),"2026-10-11");
+  assert.equal(sapDate("garbage"),null);
+});
+test("validates full year before replacing a stored export",()=>{
+  assert.equal(validateSapExport(fixture()).anuales.calendario.length,365);
+  const incomplete=fixture();incomplete.anuales.calendario.pop();
+  assert.throws(()=>validateSapExport(incomplete),/calendario anual no está completo/);
+  const missing=fixture();delete missing.valoraciones["2026-07"];
+  assert.throws(()=>validateSapExport(missing),/Faltan las valoraciones/);
+  const alternate=fixture();alternate.valoraciones["202610"]=alternate.valoraciones["2026-10"];delete alternate.valoraciones["2026-10"];
+  assert.ok(Array.isArray(validateSapExport(alternate).valoraciones["2026-10"]));
+});
+test("compares closed month totals without presuming SAP is correct",()=>{
+  const report=compareSapToComputo(validateSapExport(fixture()),facts());
+  assert.equal(report.ready,true);
+  const a=report.rows.find(x=>x.period==="2026-10"&&x.concept==="Prima Hora Nona");
+  assert.equal(a.status,"diff");
+  assert.equal(a.sap,0.25);assert.equal(a.computed,0.5);
+  assert.equal(a.days[0].date,"2026-10-01");
+  const b=report.rows.find(x=>x.period==="2026-10"&&x.concept==="Plus Convenio");
+  assert.equal(b.status,"match");
+  const future=report.rows.find(x=>x.period==="2026-11"&&x.concept==="Prima Hora Nona");
+  assert.equal(future.status,"pending");
+});
+test("keeps extra SAP concepts separate until interpretation is established",()=>{
+  const doc=fixture();
+  doc.valoraciones["2026-10"].push({Date:"/Date("+Date.UTC(2026,9,11)+")/",LongText:"Plus Festivo Oficial",Number:"1.00"});
+  const report=compareSapToComputo(validateSapExport(doc),facts());
+  assert.ok(report.unmapped.some(x=>x.category==="Plus Festivo Oficial"));
+});
+test("detects retroactive official changes without overwriting previous evidence",()=>{
+  const before=fixture(),after=fixture();
+  after.valoraciones["2026-10"][0].Number="0.50";
+  assert.equal(sapChangeCount(before,after),2);
+});
