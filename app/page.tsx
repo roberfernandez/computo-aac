@@ -45,6 +45,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { deleteStorageKeys, markStorageKeyPending, pushPayrollSnapshot, pushStorageKey, syncComputoStorage, type SyncState } from "./computo-sync";
 import { loadAnnualCalendarImage, saveAnnualCalendarImage, removeAnnualCalendarImage } from "./annual-calendar-cloud";
+import SapReviewPanel from "./sap-review-panel";
 import {
   Table,
   TableBody,
@@ -6571,6 +6572,7 @@ export default function Home() {
               <span>{message}</span>
             </div>
           </section>
+          <SapReviewPanel year={year} />
           <section className="panel p-5">
             <div className="mb-4 flex items-center gap-2">
               <CalendarRange className="text-[#71d7cc]" size={19} />
