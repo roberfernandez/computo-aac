@@ -6619,7 +6619,7 @@ export default function Home() {
               <span>{message}</span>
             </div>
           </section>
-          <SapReviewPanel year={year} />
+          <SapReviewPanel year={year} facts={payrollFactsFor(plan,year,profile)} />
           <section className="panel p-5">
             <div className="mb-4 flex items-center gap-2">
               <CalendarRange className="text-[#71d7cc]" size={19} />

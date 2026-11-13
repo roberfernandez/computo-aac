@@ -58,8 +58,8 @@ function localFacts(year:number):unknown{
   catch{return null;}
 }
 const showNum=(n:number|null)=>n===null?"—":n.toLocaleString("es-ES",{minimumFractionDigits:0,maximumFractionDigits:2});
-type SapReviewPanelProps={year:number};
-export default function SapReviewPanel({year}:SapReviewPanelProps){
+type SapReviewPanelProps={year:number;facts?:unknown};
+export default function SapReviewPanel({year,facts}:SapReviewPanelProps){
   const [auth,setAuth]=useState<"checking"|"owner"|"hidden">("checking");
   const [uid,setUid]=useState("");
   const [testProof,setTestProof]=useState("");
@@ -90,7 +90,7 @@ export default function SapReviewPanel({year}:SapReviewPanelProps){
   },[uid,auth,year,revision]);
   // No solicitudes a SAP ni subida del fichero: todo permanece en IndexedDB de este dispositivo.
   if(auth!=="owner")return null;
-  const comparison=saved?compareSapToComputo(saved.doc,localFacts(year)):null;
+  const comparison=saved?compareSapToComputo(saved.doc,facts??localFacts(year)):null;
   const differences=comparison?.ready?comparison.rows.filter((r:{status:string})=>r.status==="diff"||r.status==="temporal"):[];
   const pending=comparison?.ready?comparison.rows.filter((r:{status:string})=>r.status==="pending"):[];
   async function launchSap(scope:"year"|"october-test"){
