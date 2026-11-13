@@ -105,12 +105,16 @@ export default function SapReviewPanel({year,facts}:SapReviewPanelProps){
   const [reviewSaving,setReviewSaving]=useState("");
   const [reviewDrafts,setReviewDrafts]=useState<Record<string,string>>({});
   useEffect(()=>{
+    let active=true;
     const ua=navigator.userAgent;
-    setBridgePlatform(/Android/i.test(ua)?"android":/Windows|Macintosh|Linux/i.test(ua)?"desktop":"unsupported");
-    if(new URLSearchParams(window.location.search).get("pont")==="instala-android"){
-      setAndroidGuide(true);
-      setNotice("No s'ha pogut obrir el pont Android. Segueix les instruccions d'instal·lació i torna a provar-ho.");
-    }
+    queueMicrotask(()=>{
+      if(!active)return;
+      setBridgePlatform(/Android/i.test(ua)?"android":/Windows|Macintosh|Linux/i.test(ua)?"desktop":"unsupported");
+      if(new URLSearchParams(window.location.search).get("pont")==="instala-android"){
+        setAndroidGuide(true);
+        setNotice("No s'ha pogut obrir el pont Android. Segueix les instruccions d'instal·lació i torna a provar-ho.");
+      }
+    });
     const onDesktopBridge=(event:MessageEvent)=>{
       if(event.source!==window||event.origin!==window.location.origin||
         event.data?.source!=="computo-sap-chrome-v1")return;
@@ -120,7 +124,7 @@ export default function SapReviewPanel({year,facts}:SapReviewPanelProps){
     };
     window.addEventListener("message",onDesktopBridge);
     window.postMessage({source:"computo-sap-web-v1",type:"ping"},window.location.origin);
-    return()=>window.removeEventListener("message",onDesktopBridge);
+    return()=>{active=false;window.removeEventListener("message",onDesktopBridge);};
   },[]);
   useEffect(()=>{
     let active=true;
