@@ -89,6 +89,7 @@ type SapReviewPanelProps={year:number;facts?:unknown};
 export default function SapReviewPanel({year,facts}:SapReviewPanelProps){
   const [auth,setAuth]=useState<"checking"|"owner"|"hidden">("checking");
   const [uid,setUid]=useState("");
+  const [desktopBridge,setDesktopBridge]=useState(false);
   const [saved,setSaved]=useState<StoredDoc|null>(null);
   const [checked,setChecked]=useState(false);
   const [busy,setBusy]=useState(false);
@@ -99,6 +100,18 @@ export default function SapReviewPanel({year,facts}:SapReviewPanelProps){
   const [reviewState,setReviewState]=useState<"loading"|"ready"|"error">("loading");
   const [reviewSaving,setReviewSaving]=useState("");
   const [reviewDrafts,setReviewDrafts]=useState<Record<string,string>>({});
+  useEffect(()=>{
+    const onDesktopBridge=(event:MessageEvent)=>{
+      if(event.source!==window||event.origin!==window.location.origin||
+        event.data?.source!=="computo-sap-chrome-v1")return;
+      if(event.data.type==="ready")setDesktopBridge(true);
+      else if(["started","status","error"].includes(event.data.type)&&typeof event.data.message==="string")
+        setNotice(event.data.message.slice(0,240));
+    };
+    window.addEventListener("message",onDesktopBridge);
+    window.postMessage({source:"computo-sap-web-v1",type:"ping"},window.location.origin);
+    return()=>window.removeEventListener("message",onDesktopBridge);
+  },[]);
   useEffect(()=>{
     let active=true;
     const s=readSharedSession();
@@ -142,6 +155,11 @@ export default function SapReviewPanel({year,facts}:SapReviewPanelProps){
   const categories=Object.entries(toReview.reduce((acc:Record<string,number>,r)=>{acc[r.concept]=(acc[r.concept]||0)+1;return acc;},{}));
   const pendingGroups=Object.entries(pending.reduce((acc:Record<string,number>,r)=>{const group=pendingGroup(r.reason);acc[group]=(acc[group]||0)+1;return acc;},{}));
   async function launchSap(){
+    // En ordinador cal el pont de Chrome; no generem tiquets inútils.
+    if(!desktopBridge&&!/Android/i.test(navigator.userAgent)){
+      setNotice("Per contrastar des de Windows cal instal·lar el pont privat de Chrome. La versió mòbil continua utilitzant Android.");
+      return;
+    }
     setBusy(true);setNotice("");
     try{
       const session=readSharedSession();
@@ -149,9 +167,15 @@ export default function SapReviewPanel({year,facts}:SapReviewPanelProps){
       const response=await fetch("https://hhenkvendzengggrgook.supabase.co/functions/v1/sap-admin-ticket",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+session.access_token},body:JSON.stringify({action:"issue",year,scope:"year"}),signal:AbortSignal.timeout(15000)});
       const result=await response.json();if(!response.ok)throw Error(result.error||"No s’ha autoritzat el contrast.");
       await storePending(result.grant);
-      const ticket=encodeURIComponent(result.ticket);
-      window.location.href="intent://sync?ticket="+ticket+"#Intent;scheme=computo-tmb;package=cat.tmbagent.sapwebviewprobe;end";
-      setNotice("Obrint el pont TMB. Si Android no l’obre, instal·la la versió 0.3.2 del pont privat.");
+      if(desktopBridge){
+        // Només viatja el tiquet HMAC, mai credencials ni registres SAP.
+        window.postMessage({source:"computo-sap-web-v1",type:"start",ticket:result.ticket},window.location.origin);
+        setNotice("Enviant la sol·licitud al pont de Chrome…");
+      }else{
+        const ticket=encodeURIComponent(result.ticket);
+        window.location.href="intent://sync?ticket="+ticket+"#Intent;scheme=computo-tmb;package=cat.tmbagent.sapwebviewprobe;end";
+        setNotice("Obrint el pont TMB per Android. Si no s’obre, revisa la versió 0.3.2.");
+      }
     }catch(e){setNotice(e instanceof Error?e.message:"No s’ha pogut obrir SAP.");}finally{setBusy(false);}
   }
   async function importFile(file:File){
@@ -205,7 +229,7 @@ export default function SapReviewPanel({year,facts}:SapReviewPanelProps){
       <p className="text-xs text-white/60">Contrasta les dades de Còmput amb les valoracions laborals que TMB ha registrat. Cap diferència implica per si sola un error de TMB ni de Còmput.</p>
       <div className="space-y-2 rounded-lg border border-white/15 bg-[#0b2029] p-3">
         <button type="button" disabled={busy} onClick={()=>void launchSap()} className="w-full rounded-lg border border-[#f7ca6e]/60 bg-[#f7ca6e]/10 px-3 py-3 font-semibold text-[#f7ca6e]">{busy?"Verificant accés…":"Contrastar dades amb TMB · "+year}</button>
-        <p className="text-xs text-white/65">Android · S’obre el portal oficial. Autentica’t si TMB ho demana; les valoracions tornen directament a Còmput, sense fitxers ni contrasenyes compartides.</p>
+        <p className="text-xs text-white/65">{desktopBridge?"Windows · Pont Chrome detectat.":/Android/i.test(typeof navigator!=="undefined"?navigator.userAgent:"")?"Android · Pont privat.":"Windows · Cal instal·lar el pont de Chrome."} S’obre el portal oficial de TMB. Autentica’t si cal; les valoracions es guarden només en aquest navegador.</p>
       </div>
       <details><summary className="cursor-pointer text-xs text-white/60">Importació manual existent</summary>
       <p className="text-sm font-semibold text-[#f7ca6e]">2 · Importar i contrastar les dades</p>
