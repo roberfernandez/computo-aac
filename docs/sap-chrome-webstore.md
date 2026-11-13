@@ -20,11 +20,21 @@ Documentació oficial:
 5. Executa el workflow **Deploy Cómputo AAC to GitHub Pages**. El panell oferirà als Windows sense pont el botó **Instal·lar Pont SAP a Chrome**, que obre la fitxa real. L'usuari accepta els permisos a Chrome, torna a Còmput i el recarrega. El pont s'identifica pel mateix missatge `ready` que ja existeix.
 6. Valida la sessió real a Windows: identificació SAP, període anual, 12 mesos, integritat, caducitat de tiquets, tornada a Còmput i aïllament entre dos comptes. No facis difusió general fins a revisar el permís d'accés al portal corporatiu.
 
+## Instal·lació provisional immediata a Windows
+
+Mentre Chrome Web Store revisa l'extensió, el panell de Còmput mostra a Windows, quan no es detecta el pont, el botó **«Descarregar instal·lador Pont SAP · Windows»**. El botó enllaça a la versió fixa de l'EXE de prova a GitHub Releases:
+
+https://github.com/roberfernandez/computo-aac/releases/download/sap-windows-installer-v0.1.1/PontSAP-Windows-Instalador-Prueba-v0.1.1.exe
+
+El workflow `.github/workflows/publish-sap-windows-pilot.yml` genera aquest executable amb Go a partir dels mateixos fitxers de l'extensió que valida i empaqueta per a Chrome Web Store. L'EXE guarda els fitxers al perfil d'usuari, copia la ruta al porta-retalls i obre `chrome://extensions/`. **No instal·la automàticament l'extensió:** l'usuari encara ha d'activar el mode desenvolupador i prémer **Carrega sense empaquetar** i seleccionar la carpeta indicada. No cal descomprimir ZIP ni cercar manualment on es van descarregar els fitxers.
+
+L'EXE no té signatura digital i Windows pot mostrar advertiments. No cal ni es recomana desactivar les proteccions de Windows o les polítiques corporatives. El pilot és només per a usuaris amb accés autoritzat; no distribuir-lo massivament fins a validar el flux SAP corporatiu i les restriccions de cada equip. El botó de la botiga substituirà aquesta opció provisional quan s'indiqui un identificador real de Chrome Web Store.
+
 ## Canvis a Còmput
 
 - Si el pont està detectat, es conserva el flux existent sense cap pas nou.
 - Si no es detecta i hi ha un ID vàlid publicat, apareix el botó directe a la botiga.
-- Si encara no hi ha ID vàlid, apareix un avís honest: la instal·lació directa **encara no està disponible**; no es redirigeix l'usuari a un ZIP o a una guia de carpetes.
+- Si encara no hi ha ID vàlid, ofereix una descàrrega directa de l'EXE de prova, amb una guia curta dels passos manuals imprescindibles de Chrome. No es redirigeix l'usuari a un ZIP.
 - A Android es manté l'instal·lador APK actual sense canvis.
 - No es modifica IndexedDB ni les còpies SAP, els tiquets, les comparacions ni les revisions privades.
 
