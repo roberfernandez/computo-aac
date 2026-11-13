@@ -91,7 +91,7 @@ public class ProbeActivity extends Activity {
         ScrollView statusScroll = new ScrollView(this);
         statusScroll.addView(status);
         root.addView(statusScroll,new LinearLayout.LayoutParams(-1,dp(102)));
-        address = text("WebView independiente de Chrome · v0.2.0",11,GOLD);
+        address = text("WebView independiente de Chrome · v0.2.1",11,GOLD);
         root.addView(address,new LinearLayout.LayoutParams(-1,dp(26)));
         web = new WebView(this);
         root.addView(web,new LinearLayout.LayoutParams(-1,0,1));
@@ -174,7 +174,7 @@ public class ProbeActivity extends Activity {
         });
     }
     private void showSnapshot(String value) {
-        if (value == null || value.equals("null") || cleaning || !isPortal(web.getUrl())) return;
+        if (value == null || value.equals("null") || cleaning || returnStarted || !isPortal(web.getUrl())) return;
         try {
             Object outer = new JSONTokener(value).nextValue();
             if (!(outer instanceof String)) return;

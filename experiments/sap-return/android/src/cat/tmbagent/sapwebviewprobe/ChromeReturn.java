@@ -1,5 +1,6 @@
 package cat.tmbagent.sapwebviewprobe;
 import android.app.Activity;
+import android.util.Log;
 import android.content.ComponentName;
 import android.content.Intent;
 import android.net.Uri;
@@ -52,11 +53,13 @@ final class ChromeReturn {
       if(browser==null){fail("chrome-unavailable");return;}
       connection=new CustomTabsServiceConnection(){
         @Override public void onCustomTabsServiceConnected(ComponentName name,CustomTabsClient client){
+          Log.i("TmbReturn","browser-connected");
           client.warmup(0);
           session=client.newSession(callback);
           if(session==null){fail("session-unavailable");return;}
           listener.status("Chrome está verificando el canal de retorno…");
           boolean accepted=session.validateRelationship(CustomTabsService.RELATION_USE_AS_ORIGIN,origin,null);
+          Log.i("TmbReturn","validation-request="+accepted);
           if(!accepted){fail("validation-not-supported");return;}
           CustomTabsIntent tab=new CustomTabsIntent.Builder(session).setShareState(CustomTabsIntent.SHARE_STATE_OFF).build();
           tab.intent.setPackage(browser);
@@ -71,14 +74,17 @@ final class ChromeReturn {
   }
   private final CustomTabsCallback callback=new CustomTabsCallback(){
     @Override public void onRelationshipValidationResult(int relation,Uri requestedOrigin,boolean result,Bundle extras){
-      if(!origin.equals(requestedOrigin)||relation!=CustomTabsService.RELATION_USE_AS_ORIGIN)return;
+      Log.i("TmbReturn","validation-result="+result+" origin="+requestedOrigin+" relation="+relation);
+      if(!sameOrigin(origin,requestedOrigin)||relation!=CustomTabsService.RELATION_USE_AS_ORIGIN)return;
       validated=result;if(!result){fail("origin-validation-failed");return;}requestChannel();
     }
     @Override public void onNavigationEvent(int event,Bundle extras){
+      Log.i("TmbReturn","navigation="+event);
       if(event==CustomTabsCallback.NAVIGATION_FINISHED){navigated=true;requestChannel();}
       else if(event==CustomTabsCallback.NAVIGATION_FAILED)fail("page-load-failed");
     }
     @Override public void onMessageChannelReady(Bundle extras){
+      Log.i("TmbReturn","channel-ready");
       try{send(new JSONObject().put("type","hello").put("id",id));}catch(Exception e){fail("handshake-error");}
     }
     @Override public void onPostMessage(String message,Bundle extras){
@@ -87,6 +93,7 @@ final class ChromeReturn {
         JSONObject m=new JSONObject(message);
         if(!id.equals(m.optString("id")))return;
         String type=m.optString("type");
+        Log.i("TmbReturn","received="+type);
         if(type.equals("ready"))send(new JSONObject().put("type","begin").put("id",id).put("length",length).put("count",count).put("period",period).put("sha256",hash));
         else if(type.equals("begin-ack")&&next==0)sendNext();
         else if(type.equals("ack")&&m.optInt("seq",-1)==next-1)sendNext();
@@ -101,7 +108,9 @@ final class ChromeReturn {
   private void requestChannel(){
     if(finished||requested||!validated||!navigated||session==null)return;
     requested=true;
-    if(!session.requestPostMessageChannel(origin,origin,new Bundle()))fail("channel-rejected");
+    boolean channelAccepted=session.requestPostMessageChannel(origin,origin,new Bundle());
+    Log.i("TmbReturn","channel-request="+channelAccepted);
+    if(!channelAccepted)fail("channel-rejected");
   }
   private void sendNext(){
     if(finished)return;
@@ -117,8 +126,13 @@ final class ChromeReturn {
     if(session.postMessage(message.toString(),null)!=CustomTabsService.RESULT_SUCCESS)fail("message-rejected");
   }
   private void fail(String code){
-    if(finished)return;finished=true;handler.removeCallbacks(timeout);chunks.clear();
+    if(finished)return;Log.i("TmbReturn","failed="+code);finished=true;handler.removeCallbacks(timeout);chunks.clear();
     activity.runOnUiThread(()->listener.error(code));
+  }
+  private boolean sameOrigin(Uri a,Uri b){
+    if(b==null)return false;
+    int ap=a.getPort()==-1?443:a.getPort(),bp=b.getPort()==-1?443:b.getPort();
+    return a.getScheme().equalsIgnoreCase(b.getScheme())&&a.getHost().equalsIgnoreCase(b.getHost())&&ap==bp;
   }
   void close(){handler.removeCallbacks(timeout);if(bound&&connection!=null){try{activity.unbindService(connection);}catch(Exception ignored){}}chunks.clear();}
 }

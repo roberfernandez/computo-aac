@@ -13,7 +13,7 @@ async function save(record){
 }
 function parse(value){if(typeof value!=="string"||value.length>50000)throw Error("invalid-message");return JSON.parse(value);}
 if(!/^[a-f0-9]{32}$/.test(id))failure("missing-operation");
-else window.addEventListener("message",event=>{
+else window.__returnAcceptChannel=event=>{
   if(event.origin!==location.origin||!event.ports||!event.ports[0]||port)return;
   let hello;try{hello=parse(event.data);}catch{return;}
   if(hello.type!=="hello"||hello.id!==id)return;
@@ -35,7 +35,9 @@ else window.addEventListener("message",event=>{
     }).catch(error=>{failure(error.message);try{port.postMessage(JSON.stringify({type:"error",id,code:error.message}));}catch{}});
   };
   port.start();port.postMessage(JSON.stringify({type:"ready",id}));
-});
+};
+for(const event of window.__returnBootQueue||[])window.__returnAcceptChannel?.(event);
+window.__returnBootQueue=[];
 $("erase").onclick=async()=>{
   const db=await openDb();
   try{await new Promise((resolve,reject)=>{const tx=db.transaction("active","readwrite");tx.objectStore("active").clear();tx.oncomplete=resolve;tx.onerror=reject;});$("storage").textContent="Dades de la prova esborrades d'aquest navegador.";}

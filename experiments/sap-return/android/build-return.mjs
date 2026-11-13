@@ -24,7 +24,7 @@ await run(aapt,["add",join(work,"unsigned.apk"),...(await readdir(join(work,"dex
 await run(join(bt,"zipalign"+(win?".exe":"")),["-f","-p","4",join(work,"unsigned.apk"),join(work,"aligned.apk")]);
 const keystore=join(work,"probe-debug.p12");
 if(!await stat(keystore).catch(()=>null))await run(tool("keytool"),["-genkeypair","-keystore",keystore,"-storetype","PKCS12","-storepass","android","-keypass","android","-alias","androiddebugkey","-dname","CN=TMB WebView Probe,O=Local Test,C=ES","-keyalg","RSA","-keysize","2048","-validity","3650"]);
-const apk=join(out,"tmb-sap-webview-probe-v0.2.0.apk");
+const apk=join(out,"tmb-sap-webview-probe-v0.2.1.apk");
 await run(tool("java"),["-jar",join(bt,"lib/apksigner.jar"),"sign","--ks",keystore,"--ks-key-alias","androiddebugkey","--ks-pass","pass:android","--key-pass","pass:android","--out",apk,join(work,"aligned.apk")]);
 console.log(await run(tool("java"),["-jar",join(bt,"lib/apksigner.jar"),"verify","--verbose",apk]));
 console.log(apk);
