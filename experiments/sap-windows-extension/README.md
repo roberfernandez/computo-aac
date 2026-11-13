@@ -27,7 +27,7 @@ L'extensió és Manifest V3. **Un instal·lador `.exe` no pot activar una extens
 - El portal TMB gestiona la seva autenticació; el pont **no demana, llegeix ni guarda contrasenyes ni cookies corporatives**.
 - El servidor d'autorització comprova el tiquet signat HMAC. Les extensions poden **verificar** tiquets, però **no emetre'ls**. La concessió és d'un compte, any i operació, i caduca als 15 minuts.
 - Abans d'obrir TMB i abans de desar, el navegador verifica el compte privat de Còmput i l'operació pendent amb el mateix nonce. L'emmagatzematge IndexedDB de Còmput es modifica **atòmicament**: substitució anual + historial + consum del nonce.
-- Només es conserven localment dates, conceptes, unitats i codi de concepte de les valoracions. **Ni SAP ni les seves credencials passen per Supabase**, ni les valoracions SAP passen per la missatgeria `window.postMessage`; el missatge de la web a l'extensió conté exclusivament el tiquet temporal.
+- Només es conserven localment dates, conceptes, unitats i codi de concepte de les valoracions. **El pont no envia directament valoracions ni credencials SAP a Supabase.** Després de la importació, Còmput sincronitza una còpia reduïda de valoracions al compte privat de l'usuari a Supabase, amb RLS; no envia credencials ni el calendari SAP complet. Les valoracions no passen per la missatgeria `window.postMessage`; el missatge de la web a l'extensió conté exclusivament el tiquet temporal.
 - Un resultat SAP incomplet, de més antiguitat o d'un altre any **no substitueix** la còpia activa.
 - La separació entre usuaris es basa en autenticació Supabase i claus `uid:year`, no en un UUID embegut al repositori.
 - Cal confirmar les polítiques internes de TMB sobre aquesta forma d'accés abans de distribuir a altres treballadors.
@@ -45,4 +45,4 @@ La validació en GitHub pot comprovar sintaxi, congruència del protocol, autori
 
 - Publicació i revisió a Chrome Web Store (paquet de pujada preparat, encara no publicat).
 - Autorització general per a companys, encara desactivada al servidor.
-- Sincronització de registres SAP entre dispositius (per decisió de disseny). Les **diferències acceptades** sí que es desen en l'espai privat de cada usuari.
+- La sincronització privada de valoracions SAP entre dispositius està implementada a la web Còmput AAC. Les **diferències acceptades** també es desen en l'espai privat de cada usuari. L'extracció directa encara depèn d'un pont compatible (Android o Windows Chrome).

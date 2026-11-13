@@ -36,7 +36,7 @@ L'EXE no té signatura digital i Windows pot mostrar advertiments. No cal ni es 
 - Si no es detecta i hi ha un ID vàlid publicat, apareix el botó directe a la botiga.
 - Si encara no hi ha ID vàlid, ofereix una descàrrega directa de l'EXE de prova, amb una guia curta dels passos manuals imprescindibles de Chrome. No es redirigeix l'usuari a un ZIP.
 - A Android es manté l'instal·lador APK actual sense canvis.
-- No es modifica IndexedDB ni les còpies SAP, els tiquets, les comparacions ni les revisions privades.
+- El pont manté la seva extracció i els tiquets actuals. Independentment de la instal·lació, **Còmput sincronitza les valoracions mínimes SAP** entre dispositius mitjançant el compte privat de Supabase; es conserva la còpia local i les revisions privades.
 
 ## Validació
 

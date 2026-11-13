@@ -5,6 +5,7 @@ import {storePending,verifiedOwner} from "../public/sap-return/storage.mjs";
 import {readSharedSession,SUPABASE_PUBLIC_KEY,SUPABASE_URL} from "./tmb-session";
 import {comparisonReviewKey,comparisonFingerprint,isAcceptedReview,pendingGroup} from "@/lib/sap-difference-reviews";
 import {compareSapToComputo,sapChangeCount,validateSapExport} from "@/lib/sap-comparison";
+import {decideSapCloudSync,minimalSapRecord,readSapCloudPayload,sapCloudByteSize,sapCloudKey,MAX_SAP_CLOUD_BYTES} from "@/lib/sap-cloud-sync";
 
 type ValueRow = {Date:string;LongText:string;Number:string;Wagetype?:string};
 type ExportDoc = {ano:number;extraido:string;valoraciones:Record<string,ValueRow[]>};
@@ -63,6 +64,87 @@ async function replaceSaved(uid:string,doc:ExportDoc):Promise<{record:StoredDoc;
     });
   }finally{db.close();}
 }
+
+type CloudSapRecord={version:1;doc:ExportDoc;history:StoredDoc["history"]};
+// The existing approved-account RLS on computo_sync isolates annual SAP snapshots.
+// Only the reduced valuations (not the TMB calendar or SAP credentials) are sent.
+async function loadPrivateSap(uid:string,year:number):Promise<CloudSapRecord|null>{
+  const session=await reviewSession(uid);
+  const response=await fetch(SUPABASE_URL+"/rest/v1/computo_sync?user_id=eq."+encodeURIComponent(uid)+"&storage_key=eq."+encodeURIComponent(sapCloudKey(year))+"&select=payload",{
+    headers:reviewHeaders(session.access_token),cache:"no-store",signal:AbortSignal.timeout(15000)
+  });
+  if(!response.ok)throw Error("No s'ha pogut consultar la còpia SAP del núvol ("+response.status+").");
+  const rows=await response.json();
+  if(!Array.isArray(rows))throw Error("Resposta SAP del núvol desconeguda.");
+  return rows[0]?.payload?readSapCloudPayload(rows[0].payload,year) as CloudSapRecord:null;
+}
+async function uploadPrivateSap(uid:string,year:number,local:StoredDoc):Promise<boolean>{
+  const payload=minimalSapRecord(local,year) as CloudSapRecord;
+  if(sapCloudByteSize(payload)>MAX_SAP_CLOUD_BYTES)throw Error("Les valoracions SAP superen la mida màxima de sincronització.");
+  // Re-read immediately before writing so an older extraction cannot normally replace
+  // a newer one saved by another device. Equal-date divergences remain local.
+  const latest=await loadPrivateSap(uid,year);
+  if(latest){
+    const decision=decideSapCloudSync({doc:payload.doc},latest);
+    if(decision==="download"||decision==="same")return false;
+    if(decision==="conflict")throw Error("Hi ha dues còpies SAP diferents amb la mateixa data. No s'ha sobreescrit cap dada.");
+  }
+  const session=await reviewSession(uid);
+  const response=await fetch(SUPABASE_URL+"/rest/v1/computo_sync?on_conflict=user_id,storage_key",{
+    method:"POST",headers:{...reviewHeaders(session.access_token),Prefer:"resolution=merge-duplicates,return=minimal"},
+    body:JSON.stringify({user_id:uid,storage_key:sapCloudKey(year),payload,updated_at:new Date().toISOString()}),
+    signal:AbortSignal.timeout(20000)
+  });
+  if(!response.ok)throw Error("No s'ha pogut desar la còpia SAP privada ("+response.status+").");
+  return true;
+}
+async function adoptPrivateSap(uid:string,year:number,cloud:CloudSapRecord):Promise<StoredDoc>{
+  const db=await openPrivateDb();
+  try {
+    return await new Promise((resolve,reject)=>{
+      const tx=db.transaction(STORE,"readwrite"),store=tx.objectStore(STORE);
+      const key=uid+":"+year,request=store.get(key);
+      let result:StoredDoc|null=null;
+      request.onsuccess=()=>{
+        const current=(request.result||null) as StoredDoc|null;
+        const decision=decideSapCloudSync(current,cloud);
+        if(decision==="upload"||decision==="same"){
+          result=current;return;
+        }
+        if(decision==="conflict"){tx.abort();return;}
+        if(current){
+          // Preserve the previous complete local copy, even when the cloud is newer.
+          store.put({...current,key:key+":cloud-backup:"+Date.now()});
+        }
+        const record:StoredDoc={key,doc:cloud.doc,history:cloud.history.slice(-12)};
+        store.put(record);result=record;
+      };
+      tx.oncomplete=()=>result?resolve(result):reject(Error("No s'ha pogut carregar la còpia SAP del núvol."));
+      tx.onabort=()=>reject(Error("Conflicte de còpies SAP. Es conserva la còpia local."));
+      tx.onerror=()=>reject(tx.error||Error("No s'ha pogut guardar la còpia SAP recuperada."));
+    });
+  }finally{db.close();}
+}
+async function synchronizePrivateSap(uid:string,year:number):Promise<StoredDoc|null>{
+  // Never delete an existing local snapshot on a network/authentication failure.
+  const local=await getSaved(uid,year);
+  const remote=await loadPrivateSap(uid,year);
+  const safeLocal=local?{...local,...minimalSapRecord(local,year)}:null;
+  const decision=decideSapCloudSync(safeLocal,remote);
+  if(decision==="empty"||decision==="same")return local;
+  if(decision==="conflict")throw Error("Dues còpies SAP diferents amb la mateixa extracció. Es conserven sense substituir.");
+  if(decision==="download"){
+    if(!remote)throw Error("Falta la còpia SAP remota.");
+    return adoptPrivateSap(uid,year,remote);
+  }
+  if(!local)throw Error("Falta la còpia SAP local.");
+  await uploadPrivateSap(uid,year,local);
+  // A newer cloud snapshot can appear between the initial read and the upload guard.
+  const newer=await loadPrivateSap(uid,year);
+  if(newer&&decideSapCloudSync(safeLocal,newer)==="download")return adoptPrivateSap(uid,year,newer);
+  return local;
+}
+
 function localFacts(year:number):unknown{
   try{return JSON.parse(localStorage.getItem("metro-payroll-facts-v1-"+year)||"null");}
   catch{return null;}
@@ -100,6 +182,9 @@ export default function SapReviewPanel({year,facts}:SapReviewPanelProps){
   const [bridgePlatform,setBridgePlatform]=useState<"checking"|"android"|"desktop"|"unsupported">("checking");
   const [androidGuide,setAndroidGuide]=useState(false);
   const [saved,setSaved]=useState<StoredDoc|null>(null);
+  const [sapSyncState,setSapSyncState]=useState<"checking"|"empty"|"synced"|"offline"|"error">("checking");
+  const [sapSyncError,setSapSyncError]=useState("");
+  const [sapSyncRetry,setSapSyncRetry]=useState(0);
   const [checked,setChecked]=useState(false);
   const [busy,setBusy]=useState(false);
   const [notice,setNotice]=useState("");
@@ -144,11 +229,33 @@ export default function SapReviewPanel({year,facts}:SapReviewPanelProps){
   },[]);
   useEffect(()=>{
     if(auth!=="owner"||!uid)return;
-    let active=true;
-    queueMicrotask(()=>{if(active)setSaved(null);});
-    void getSaved(uid,year).then(record=>{if(active)setSaved(record);}).catch(e=>{if(active)setNotice(e instanceof Error?e.message:"No se puede leer el historial.");});
-    return()=>{active=false;};
-  },[uid,auth,year,revision]);
+    let active=true,running=false;
+    queueMicrotask(()=>{if(active){setSaved(null);setSapSyncState("checking");setSapSyncError("");}});
+    async function syncNow(){
+      if(running||!active)return;
+      running=true;
+      try{
+        const local=await getSaved(uid,year);
+        if(active)setSaved(local);
+        const latest=await synchronizePrivateSap(uid,year);
+        if(active){setSaved(latest);setSapSyncState(latest?"synced":"empty");setSapSyncError("");}
+      }catch(e){
+        if(active){
+          const message=e instanceof Error?e.message:"No s'han pogut sincronitzar les valoracions SAP.";
+          setSapSyncError(message);
+          setSapSyncState(typeof navigator!=="undefined"&&!navigator.onLine?"offline":"error");
+        }
+      }finally{running=false;}
+    }
+    const focus=()=>{void syncNow();};
+    const visibility=()=>{if(!document.hidden)void syncNow();};
+    window.addEventListener("focus",focus);
+    window.addEventListener("online",focus);
+    window.addEventListener("pageshow",focus);
+    document.addEventListener("visibilitychange",visibility);
+    void syncNow();
+    return()=>{active=false;window.removeEventListener("focus",focus);window.removeEventListener("online",focus);window.removeEventListener("pageshow",focus);document.removeEventListener("visibilitychange",visibility);};
+  },[uid,auth,year,revision,sapSyncRetry]);
   useEffect(()=>{
     if(auth!=="owner"||!uid)return;
     let active=true;
@@ -157,8 +264,8 @@ export default function SapReviewPanel({year,facts}:SapReviewPanelProps){
       .catch(error=>{if(active){setReviewState("error");setNotice(error instanceof Error?error.message:"No s'han pogut carregar les revisions.");}});
     return()=>{active=false;};
   },[auth,uid,year]);
-  // SAP resta local; només les decisions explícites de revisió es desen
-  // al registre privat del compte, amb les polítiques RLS existents.
+  // Les valoracions mínimes SAP i les revisions es desen a l'espai privat amb RLS.
+  // Les credencials TMB, el calendari complet i els tiquets segueixen fora del núvol.
   if(auth!=="owner")return null;
   const comparison=saved?compareSapToComputo(saved.doc,facts??localFacts(year)):null;
   const differences:Difference[]=comparison?.ready?comparison.rows.filter((r:Difference)=>r.status==="diff"||r.status==="temporal"):[];
@@ -224,8 +331,8 @@ export default function SapReviewPanel({year,facts}:SapReviewPanelProps){
       setRevision(v=>v+1);
       setExpanded(true);
       setNotice(result.record.history.length>1
-        ?"SAP "+year+" actualizado. "+result.cambios+" registros de valoración añadidos, retirados o modificados."
-        :"Datos SAP "+year+" importados y guardados en este dispositivo.");
+        ?"SAP "+year+" actualizado. "+result.cambios+" registros de valoración añadidos, retirados o modificados. Sincronització privada iniciada."
+        :"Dades SAP "+year+" importades. Sincronització privada iniciada.");
     }catch(error){setNotice(error instanceof Error?error.message:"El JSON no se ha podido leer.");}
     finally{setBusy(false);}
   }
@@ -262,8 +369,12 @@ export default function SapReviewPanel({year,facts}:SapReviewPanelProps){
           <p className="text-xs text-emerald-200">Pont de Chrome detectat. Ja pots contrastar les dades amb TMB des d&apos;aquest ordinador.</p>}
         {bridgePlatform==="desktop"&&!desktopBridge&&
           <div className="space-y-3 rounded-lg border border-amber-400/35 bg-[#091b23] p-3">
-            <p className="text-sm font-semibold text-amber-200">Instal·la el pont SAP per a Chrome</p>
-            <p className="text-xs text-white/70">Còmput no detecta l&apos;extensió en aquesta pestanya. Només cal instal·lar-la una vegada a Chrome (prova privada per a Windows).</p>
+            <p className="text-sm font-semibold text-amber-200">{saved?"Pots consultar el contrast SAP en aquest ordinador":"Encara no hi ha dades SAP per consultar"}</p>
+            <p className="text-xs text-white/70">{saved?"Les valoracions s&apos;han recuperat del teu compte privat. No necessites instal·lar cap extensió per consultar-les.":"Pots importar els registres des de l&apos;Android i es recuperaran automàticament aquí amb el mateix compte de Còmput."}</p>
+            <details className="rounded border border-white/20 p-2">
+              <summary className="cursor-pointer text-xs text-white/70">Opció avançada: extreure dades noves des de Windows (prova)</summary>
+              <div className="mt-3 space-y-3">
+                <p className="text-xs text-white/70">La instal·lació provisional del pont de Chrome requereix passos manuals. No és necessària per consultar les dades sincronitzades.</p>
             {SAP_BRIDGE_CHROME_WEBSTORE_URL?<>
               <a href={SAP_BRIDGE_CHROME_WEBSTORE_URL} target="_blank" rel="noopener noreferrer"
                 className="block rounded-lg bg-[#f7ca6e] px-3 py-2.5 text-center text-sm font-semibold text-[#10212a]">
@@ -287,6 +398,8 @@ export default function SapReviewPanel({year,facts}:SapReviewPanelProps){
             <button type="button" className="w-full rounded border border-white/30 px-3 py-2 text-xs font-medium"
               onClick={()=>window.location.reload()}>Comprovar instal·lació · Recarregar Còmput</button>
             <p className="text-[11px] text-white/55">Pilot limitat a comptes autoritzats. Utilitza només el teu perfil de Chrome i la teva sessió corporativa.</p>
+              </div>
+            </details>
           </div>}
         {bridgePlatform==="android"&&
           <div className="space-y-2">
@@ -314,7 +427,7 @@ export default function SapReviewPanel({year,facts}:SapReviewPanelProps){
       </div>
       <details><summary className="cursor-pointer text-xs text-white/60">Importació manual existent</summary>
       <p className="text-sm font-semibold text-[#f7ca6e]">2 · Importar i contrastar les dades</p>
-      <p className="text-xs text-white/60">Torna aquí i selecciona el JSON de Descàrregues. Només es guarden dates, conceptes i unitats en aquest dispositiu; el fitxer no s&apos;envia a Supabase.</p>
+      <p className="text-xs text-white/60">Torna aquí i selecciona el JSON de Descàrregues. Només sincronitzem dates, conceptes i unitats SAP al teu compte privat de Supabase; no hi enviem l&apos;arxiu original ni les credencials corporatives.</p>
       <label className="flex items-start gap-2 text-xs text-white/80">
         <input type="checkbox" checked={checked} onChange={e=>setChecked(e.target.checked)} className="mt-0.5" />
         <span>Confirmo que el fitxer conté les meves dades laborals. El JSON actual no identifica l&apos;empleat de forma verificable; només es desen dates, conceptes i unitats.</span>
@@ -324,6 +437,12 @@ export default function SapReviewPanel({year,facts}:SapReviewPanelProps){
         <input className="sr-only" type="file" accept=".json,application/json" disabled={!checked||busy} onChange={e=>{const f=e.currentTarget.files?.[0];if(f)void importFile(f);e.currentTarget.value="";}} />
       </label>
       </details>
+      <div className="rounded-lg border border-white/15 bg-[#0b2029] p-3 text-xs" role="status">
+        <p className="font-medium text-white/85">Valoracions SAP entre dispositius · {sapSyncState==="synced"?"Sincronitzades":sapSyncState==="checking"?"Comprovant…":sapSyncState==="empty"?"Sense importacions SAP":sapSyncState==="offline"?"Sense connexió":"Sincronització pendent"}</p>
+        <p className="mt-1 text-white/65">Les dates, els conceptes i les unitats de valoració SAP es desen al teu compte privat de Còmput a Supabase, sense contrasenyes ni calendari SAP complet. Pots consultar-les des d&apos;Android, Windows o iPhone amb el mateix compte.</p>
+        {sapSyncError&&<p className="mt-1 text-amber-200">{sapSyncError} La còpia d&apos;aquest dispositiu es conserva.</p>}
+        {sapSyncState!=="synced"&&sapSyncState!=="empty"&&<button type="button" className="mt-2 rounded border border-white/30 px-3 py-1.5" onClick={()=>setSapSyncRetry(v=>v+1)}>Tornar a sincronitzar</button>}
+      </div>
       {notice&&<p role="status" className="text-xs text-amber-200">{notice}</p>}
       {saved&&<>
         <div className="rounded-lg border border-white/10 bg-[#0b2029] p-3 text-xs">
