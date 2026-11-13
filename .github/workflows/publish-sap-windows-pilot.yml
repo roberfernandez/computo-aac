@@ -9,9 +9,17 @@ on:
       - scripts/prepare-sap-chrome-store.py
       - tests/sap-windows-bridge.test.mjs
       - tests/sap-bridge-onboarding.test.mjs
+  pull_request:
+    paths:
+      - .github/workflows/publish-sap-windows-pilot.yml
+      - experiments/sap-windows-extension/**
+      - experiments/sap-windows-installer/**
+      - scripts/prepare-sap-chrome-store.py
+      - tests/sap-windows-bridge.test.mjs
+      - tests/sap-bridge-onboarding.test.mjs
   workflow_dispatch:
 permissions:
-  contents: write
+  contents: read
 jobs:
   package:
     if: github.repository == 'roberfernandez/computo-aac'
@@ -74,19 +82,29 @@ jobs:
           name: pont-sap-windows-installer-v0.1.1
           path: ${{ steps.installer.outputs.file }}
           retention-days: 30
+  publish:
+    needs: package
+    if: github.ref == 'refs/heads/main' && github.repository == 'roberfernandez/computo-aac'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: pont-sap-windows-installer-v0.1.1
       - name: Publish direct EXE for Còmput download button
-        if: github.ref == 'refs/heads/main'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: roberfernandez/computo-aac
         run: |
           set -euo pipefail
-          VERSION="${{ steps.bundle.outputs.version }}"
-          TAG="sap-windows-installer-v$VERSION"
-          FILE="${{ steps.installer.outputs.file }}"
+          TAG="sap-windows-installer-v0.1.1"
+          FILE="PontSAP-Windows-Instalador-Prueba-v0.1.1.exe"
+          test -s "$FILE"
           if ! gh release view "$TAG" >/dev/null 2>&1; then
             gh release create "$TAG" --target "$GITHUB_SHA" \
-              --title "Pont SAP Windows v$VERSION — instal·lador de prova" \
+              --title "Pont SAP Windows v0.1.1 — instal·lador de prova" \
               --notes "Instal·lador Windows x64 sense signatura digital, només per a proves d'usuaris autoritzats. Prepara els fitxers i obre chrome://extensions. L'usuari ha d'activar el mode desenvolupador i Carregar descomprimida. No és una instal·lació silenciosa ni una publicació avalada per TMB."
           fi
           gh release upload "$TAG" "$FILE" --clobber
