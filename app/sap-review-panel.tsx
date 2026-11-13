@@ -132,7 +132,12 @@ export default function SapReviewPanel({year,facts}:SapReviewPanelProps){
   if(auth!=="owner")return null;
   const comparison=saved?compareSapToComputo(saved.doc,facts??localFacts(year)):null;
   const differences:Difference[]=comparison?.ready?comparison.rows.filter((r:Difference)=>r.status==="diff"||r.status==="temporal"):[];
-  const pending:Difference[]=comparison?.ready?comparison.rows.filter((r:Difference)=>r.status==="pending"):[];
+  // Un període obert/futur no és una discrepància ni una comprovació
+  // que l'usuari hagi de resoldre: només presentem manca de dades ja tancades.
+  const extractedMonth=saved?.doc.extraido?.slice(0,7)||"";
+  const pending:Difference[]=comparison?.ready?comparison.rows.filter(
+    (r:Difference)=>r.status==="pending"&&r.period<extractedMonth
+  ):[];
   const accepted=differences.filter(r=>isAcceptedReview(r,reviews[comparisonReviewKey(r)]));
   const toReview=differences.filter(r=>!isAcceptedReview(r,reviews[comparisonReviewKey(r)]));
   const completed=(comparison?.summary?.match||0)+(comparison?.summary?.diff||0)+(comparison?.summary?.temporal||0);
@@ -317,7 +322,10 @@ export default function SapReviewPanel({year,facts}:SapReviewPanelProps){
             </details>
           </details>}
           {(comparison.summary?.temporal||0)>0&&<p className="text-xs text-sky-200">{comparison.summary.temporal} diferències atribuïbles a la data d&apos;imputació, amb les mateixes unitats totals.</p>}
-          <p className="text-xs text-white/50">{pending.length} comparacions pendents o amb períodes encara oberts. Concepts SAP no equivalents o pendents de validació: {comparison.unmapped.map((r:{category:string})=>r.category).join(", ")||"cap"}.</p>
+          {comparison.unmapped.length>0&&<details className="rounded border border-white/10 p-2 text-xs text-white/60">
+            <summary className="cursor-pointer">Altres conceptes SAP sense equivalència validada</summary>
+            <p className="mt-2">{comparison.unmapped.map((r:{category:string})=>r.category).join(", ")}.</p>
+          </details>}
         </>}
       </>}
     </section>
