@@ -68,7 +68,7 @@ test("rejects data for another employee or month",async()=>{
   for(const patch of [{Pernr:"00000002"},{Date:"/Date("+Date.UTC(2026,10,1)+")/"}]){
     const data=rows(1);Object.assign(data[0],patch);
     const p=setup({responses:[{d:{results:data}}]});p.observe();await settle();
-    assert.equal(p.state().phase,"error");assert.ok(["identity-mismatch","wrong-period"].includes(p.state().error));
+    assert.equal(p.state().phase,"error");assert.ok(p.state().error.startsWith("identity-mismatch")||p.state().error==="wrong-period");
   }
 });
 test("follows validated pagination and checks the declared total",async()=>{
@@ -136,7 +136,7 @@ test("ignores the zero personnel sentinel on shared legend records",async()=>{
 
 test('requires an authorized operation before installing the extractor',()=>{const p=setup({grant:false});assert.equal(p.installed,'unauthorized');assert.equal(p.calls.length,0);});
 test('extracts all twelve periods and validates full calendar before returning annual data',async()=>{
- const cal=Array.from({length:365},(_,i)=>({Pernr:EMP,Date:'/Date('+ (Date.UTC(2026,0,1)+i*86400000)+')/'}));
+ const cal=Array.from({length:365},(_,i)=>({Pernr:i%3===0?'':i%3===1?'00000000':undefined,Date:'/Date('+ (Date.UTC(2026,0,1)+i*86400000)+')/'}));
  const response=[{d:{results:cal}},...Array.from({length:12},(_,i)=>({d:{results:[{...rows(1)[0],Date:'/Date('+Date.UTC(2026,i,1)+')/'}]}}))];
  const p=setup({annual:true,responses:response});p.observe();for(let i=0;i<20;i++)await settle();assert.equal(p.state().phase,'success');assert.equal(p.calls.length,13);const doc=p.context.__tmbWebviewProbe.exportResult();assert.equal(doc.period,'2026');assert.equal(doc.rows.length,12);assert.equal(doc.calendar.length,365);assert.equal(doc.completedPeriods.length,12);
 });

@@ -73,3 +73,11 @@ test("detects retroactive official changes without overwriting previous evidence
   after.valoraciones["2026-10"][0].Number="0.50";
   assert.equal(sapChangeCount(before,after),2);
 });
+
+test('night units assigned to the next civil date are temporal, not an invented unpaid claim',()=>{
+ const doc=fixture(),f=facts();doc.valoraciones['2026-10']=[{Date:'/Date('+Date.UTC(2026,9,20)+')/',LongText:'Nocturnidad Variable',Number:'1.00'}];f.months[10].days[18].metrics.nightPayableHours.value=1;const r=compareSapToComputo(validateSapExport(doc),f).rows.find(r=>r.period==='2026-10'&&r.concept==='Nocturnidad variable');assert.equal(r.status,'temporal');assert.equal(r.sap,1);assert.equal(r.computed,1);assert.equal(r.difference,0);
+});
+test('worked-holiday E uses actual entitlement conditions instead of raw Sunday metric',()=>{
+ const doc=fixture(),f=facts(),m=f.months[10];m.period='2026-10';m.profile={percent:85.81};for(const d of m.days){d.schedule='—';d.activity={version:1,status:'FEST',working:false,ordinary:false,weeklyRest:true,scheduleResolved:true,vacation:false};d.metrics.plusFestiuDays.value=1;}
+ const d=m.days[10];d.schedule='18:00–19:00';d.activity={...d.activity,status:'AGCG',working:true,ordinary:true,weeklyRest:false};doc.valoraciones['2026-10'].push({Date:'/Date('+Date.UTC(2026,9,11)+')/',LongText:'P.Festivo Trabajado E',Number:'1'});let row=compareSapToComputo(validateSapExport(doc),f).rows.find(r=>r.period==='2026-10'&&r.concept==='P.Festivo Trabajado E');assert.equal(row.computed,0);assert.equal(row.status,'diff');d.schedule='18:00–20:00';row=compareSapToComputo(validateSapExport(doc),f).rows.find(r=>r.period==='2026-10'&&r.concept==='P.Festivo Trabajado E');assert.equal(row.computed,1);assert.equal(row.status,'match');
+});

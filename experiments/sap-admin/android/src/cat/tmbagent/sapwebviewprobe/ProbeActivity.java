@@ -77,7 +77,7 @@ public class ProbeActivity extends Activity {
         int pad = dp(12); root.setPadding(pad,pad,pad,pad);
         TextView title = text("Còmput · Contrast amb TMB", 19, GOLD);
         root.addView(title);
-        TextView intro = text("Inicia sesión en el portal oficial. La consulta de octubre se ejecutará al abrir Consultes Bàsiques.", 13, Color.WHITE);
+        TextView intro = text("Inicia sesión en el portal oficial. La consulta autorizada se ejecutará al abrir Consultes Bàsiques.", 13, Color.WHITE);
         intro.setPadding(0,dp(5),0,dp(5)); root.addView(intro);
         LinearLayout actions = new LinearLayout(this);
         startButton = new Button(this); startButton.setText("Iniciar prueba");
@@ -93,7 +93,7 @@ public class ProbeActivity extends Activity {
         ScrollView statusScroll = new ScrollView(this);
         statusScroll.addView(status);
         root.addView(statusScroll,new LinearLayout.LayoutParams(-1,dp(102)));
-        address = text("Pont privat · v0.3.0",11,GOLD);
+        address = text("Pont privat · v0.3.1",11,GOLD);
         root.addView(address,new LinearLayout.LayoutParams(-1,dp(26)));
         web = new WebView(this);
         root.addView(web,new LinearLayout.LayoutParams(-1,0,1));
@@ -145,6 +145,7 @@ public class ProbeActivity extends Activity {
         });
         startButton.setOnClickListener(v -> begin());
         retryButton.setOnClickListener(v -> {
+            if(returnBridge!=null){returnBridge.close();returnBridge=null;}returnStarted=false;
             if (isPortal(web.getUrl())) web.evaluateJavascript("window.__tmbWebviewProbe && window.__tmbWebviewProbe.retry()",null);
         });
         verifyLaunch();
@@ -207,11 +208,11 @@ public class ProbeActivity extends Activity {
             if (phase.equals("success")) {
                 int count = s.getInt("records");
                 status.setText("HTTP " + s.getInt("http") + " · "+s.optString("period")+" · " + count + " registros\n"
-                    + (count == 127 ? "El recuento coincide con los 127 de Chrome." : "El recuento difiere de los 127 anteriores; debe revisarse.")
+                    + ("year".equals(grant.optString("scope")) ? "Consulta anual de los doce meses completada." : count == 127 ? "El recuento coincide con los 127 de Chrome." : "El recuento difiere de los 127 anteriores; debe revisarse.")
                     + "\n" + s.optString("firstDate","") + " → " + s.optString("lastDate","")
                     + " · " + s.optInt("pages") + " página(s) · " + (s.optInt("elapsedMs")/1000.0) + " s"
                     + "\nSesión y extracción locales; no se han enviado a Còmput.");
-                status.setTextColor(count == 127 ? Color.rgb(154,230,180) : GOLD);
+                status.setTextColor(("year".equals(grant.optString("scope")) || count == 127) ? Color.rgb(154,230,180) : GOLD);
                 if (authorized && !returnStarted) startReturn();
             } else {
                 status.setTextColor(Color.WHITE);

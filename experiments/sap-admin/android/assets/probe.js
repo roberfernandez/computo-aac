@@ -86,7 +86,7 @@
         if(!data||!Array.isArray(data.results))throw Error("invalid-odata");
         if(data.__count!=null){var n=Number(data.__count);if(!Number.isInteger(n)||n<0||expected!==null&&n!==expected)throw Error("invalid-total");expected=n;}
         data.results.forEach(function(row){
-          if(row.Pernr!==identity)throw Error("identity-mismatch");
+          if(entity==="CalendarioSet" ? row.Pernr&&row.Pernr!=="00000000"&&row.Pernr!==identity : row.Pernr!==identity)throw Error("identity-mismatch:"+entity+":"+(month||PERIOD)+":"+(row.Pernr==null?"missing":row.Pernr===""?"empty":row.Pernr==="00000000"?"shared":"different"));
           var date=dateOf(row.Date);if(!date.startsWith(month||PERIOD))throw Error("wrong-period");
           if(entity==="CalendarioSet")rows.push({Date:row.Date});
           else{
