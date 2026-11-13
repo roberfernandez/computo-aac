@@ -110,6 +110,7 @@ type DayData = {
   endExtraMinutes?: number;
   customStart?: string;
   customEnd?: string;
+  paidExtensionMinutes?: number;
   medicalStart?: string;
   medicalEnd?: string;
   permissionKind?: "FAMILY_MEDICAL_FULL_DAY";
@@ -894,6 +895,14 @@ function ordinaryBreakdown(d: DayData, start: string, minutes: number) {
   return {minutes:day+night,sapHours:Math.round((Math.round(day/60*100)/100+Math.round(night/60*100)/100)*100)/100};
 }
 
+function sapOrdinaryHoursFor(d: DayData,c: DayCalculation){
+  if(d.status==="COMPUTO_ANTERIOR")return 0;
+  if(c.ordinaryHours===0)return 0;
+  const duration=Number(c.hours.split(":")[0])*60+Number(c.hours.split(":")[1]),paid=d.paidExtensionMinutes||0;
+  if(!Number.isInteger(paid)||paid<0||paid>duration)return NaN;
+  return ordinaryBreakdown(d,c.shift.split("–")[0],duration-paid).sapHours;
+}
+
 function calcDay(
   d: DayData,
   all: DayData[],
@@ -1239,6 +1248,8 @@ function payrollFactsFor(plan: YearPlan, year: number, profile: UserProfile) {
           medicalInterval: d.status === "REVISION_MEDICA" && d.medicalStart && d.medicalEnd ? {start:d.medicalStart,end:d.medicalEnd} : null,
           permissionKind: d.status === "PERMISO" ? d.permissionKind || null : null,
           officialHolidayMode: d.officialHolidayMode || null,
+          ordinarySapBasis: d.status === "COMPUTO_ANTERIOR" ? "prior-year-recovery" : d.paidExtensionMinutes ? "paid-extra-excluded" : "day-night-rounded",
+          paidExtensionMinutes: d.paidExtensionMinutes || 0,
           priorOrigin: d.priorOrigin || null,
           // Original scheduled work dates survive vacations, RJ and other overlays.
           calendarWorkingDay: (d.calendarOriginalStatus || d.baseStatus) === "AGCG" ? true : ["FEST","DCOM"].includes(d.calendarOriginalStatus || d.baseStatus) ? false : null,
@@ -1250,7 +1261,7 @@ function payrollFactsFor(plan: YearPlan, year: number, profile: UserProfile) {
         },
         metrics: {
           ordinaryHours: metric(schedulePending ? NaN : c.ordinaryHours, "h"),
-          ordinarySapHours: metric(schedulePending ? NaN : c.ordinaryHours === 0 ? 0 : ordinaryBreakdown(d,c.shift.split("–")[0],Number(c.hours.split(":")[0])*60+Number(c.hours.split(":")[1])).sapHours,"h"),
+          ordinarySapHours: metric(schedulePending ? NaN : c.ordinaryHours === 0 ? 0 : sapOrdinaryHoursFor(d,c),"h"),
           nightPayableMinutes: metric(schedulePending || c.nightReason ? NaN : c.nightPayableMinutes, "min"),
           nightPayableHours: metric(schedulePending || c.nightReason ? NaN : c.nightHours, "h"),
           horaNonaHours: metric(schedulePending ? NaN : c.horaNona, "h"),
@@ -7445,6 +7456,7 @@ export default function Home() {
                   <p className="text-xs text-white/60">Resta només de les hores ordinàries treballades. Es conserva el crèdit de jornada, el saldo, la nocturnitat i la Hora Nona.</p>
                 </div>}
                 {selected.status === "PERMISO" && <label className="flex gap-2 text-sm"><input type="checkbox" checked={selected.permissionKind==="FAMILY_MEDICAL_FULL_DAY"} onChange={e=>setSelected({...selected,permissionKind:e.target.checked?"FAMILY_MEDICAL_FULL_DAY":undefined})}/>Acompanyament mèdic familiar de jornada completa · sense Plus Convenio</label>}
+                {!!selected.paidExtensionMinutes&&<p className="rounded border border-emerald-400/25 p-2 text-xs text-emerald-200">Prolongació física de {selected.paidExtensionMinutes} min abonada a part. Dues compensacions econòmiques confirmades; no s’afegeix una segona hora física ni cap reclamació pendent.</p>}
                 {isWorking(selected.status) && <div className="space-y-2"><Label>Plus Festivo Oficial · modalitat confirmada</Label><select className="w-full rounded bg-[#102b35] p-2" value={selected.officialHolidayMode||""} onChange={e=>setSelected({...selected,officialHolidayMode:e.target.value?(e.target.value as "PROPORTIONAL"|"E"):undefined})}><option value="">Regla existent / pendent de verificar</option><option value="PROPORTIONAL">Proporcional al percentatge de jornada</option><option value="E">E · import íntegre (100 %)</option></select><p className="text-xs text-white/50">No equival a P.Festivo Trabajado E. Marca una modalitat només amb una valoració o nòmina contrastada.</p></div>}
 
               {selected.special === "MODIFICACION" && (
