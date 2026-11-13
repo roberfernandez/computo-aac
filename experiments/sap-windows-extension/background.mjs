@@ -83,7 +83,7 @@ async function saveToComputo(job,doc,hash,employeeNumber){
      if(user.id!==grant.uid||user.app_metadata?.computo_sap_admin!==true)throw Error("account-changed");
      let profile;try{profile=JSON.parse(localStorage.getItem("metro-profile-v2")||localStorage.getItem("metro-profile-v1")||"null");}catch{}
      const expectedEmployee=String(profile?.employeeNumber||"").trim();
-     if(!/^\\d{1,8}$/.test(expectedEmployee)||!/^[0-9]{8}$/.test(sapEmployeeNumber)||
+     if(!/^[0-9]{1,8}$/.test(expectedEmployee)||!/^[0-9]{8}$/.test(sapEmployeeNumber)||
         expectedEmployee.padStart(8,"0")!==sapEmployeeNumber)
        throw Error("employee-mismatch");
      if(doc.period!==String(grant.year)||!Array.isArray(doc.rows)||doc.completedPeriods.length!==12)throw Error("wrong-period");
