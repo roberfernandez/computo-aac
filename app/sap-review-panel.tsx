@@ -1,6 +1,7 @@
 "use client";
 
 import {useEffect,useState} from "react";
+import {storePending} from "../public/sap-return/storage.mjs";
 import {authenticatedUserId,readSharedSession} from "./tmb-session";
 import {compareSapToComputo,sapChangeCount,validateSapExport} from "@/lib/sap-comparison";
 
@@ -12,8 +13,8 @@ const DB_NAME="computo-sap-private-v1",STORE="exports";
 const dayFmt=(date:string)=>new Date(date).toLocaleString("es-ES",{dateStyle:"medium",timeStyle:"short"});
 function openPrivateDb():Promise<IDBDatabase>{
   return new Promise((resolve,reject)=>{
-    const r=indexedDB.open(DB_NAME,1);
-    r.onupgradeneeded=()=>{if(!r.result.objectStoreNames.contains(STORE))r.result.createObjectStore(STORE,{keyPath:"key"});};
+    const r=indexedDB.open(DB_NAME,2);
+    r.onupgradeneeded=()=>{for(const name of [STORE,"pending","tests"])if(!r.result.objectStoreNames.contains(name))r.result.createObjectStore(name,{keyPath:"key"});};
     r.onsuccess=()=>resolve(r.result);
     r.onerror=()=>reject(r.error||Error("No hay acceso al almacenamiento local."));
   });
@@ -61,6 +62,7 @@ type SapReviewPanelProps={year:number};
 export default function SapReviewPanel({year}:SapReviewPanelProps){
   const [auth,setAuth]=useState<"checking"|"owner"|"hidden">("checking");
   const [uid,setUid]=useState("");
+  const [testProof,setTestProof]=useState("");
   const [saved,setSaved]=useState<StoredDoc|null>(null);
   const [checked,setChecked]=useState(false);
   const [busy,setBusy]=useState(false);
@@ -82,6 +84,7 @@ export default function SapReviewPanel({year}:SapReviewPanelProps){
     if(auth!=="owner"||!uid)return;
     let active=true;
     setSaved(null);
+    void openPrivateDb().then(db=>{const tx=db.transaction("tests","readonly"),r=tx.objectStore("tests").get(uid+":2026-10");r.onsuccess=()=>{if(active&&r.result){const n=r.result.doc.valoraciones["2026-10"]?.length||0;setTestProof("Última prova de retorn: "+n+" registres d’octubre · "+dayFmt(r.result.doc.extraido));}};tx.oncomplete=()=>db.close();});
     void getSaved(uid,year).then(record=>{if(active)setSaved(record);}).catch(e=>{if(active)setNotice(e instanceof Error?e.message:"No se puede leer el historial.");});
     return()=>{active=false;};
   },[uid,auth,year,revision]);
@@ -90,6 +93,19 @@ export default function SapReviewPanel({year}:SapReviewPanelProps){
   const comparison=saved?compareSapToComputo(saved.doc,localFacts(year)):null;
   const differences=comparison?.ready?comparison.rows.filter((r:{status:string})=>r.status==="diff"):[];
   const pending=comparison?.ready?comparison.rows.filter((r:{status:string})=>r.status==="pending"):[];
+  async function launchSap(scope:"year"|"october-test"){
+    setBusy(true);setNotice("");
+    try{
+      const session=readSharedSession();
+      if(!session||await authenticatedUserId(session)!==OWNER_USER_ID)throw Error("Cal iniciar sessió amb el compte administrador.");
+      const response=await fetch("https://hhenkvendzengggrgook.supabase.co/functions/v1/sap-admin-ticket",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+session.access_token},body:JSON.stringify({action:"issue",year,scope}),signal:AbortSignal.timeout(15000)});
+      const result=await response.json();if(!response.ok)throw Error(result.error||"No s’ha autoritzat el contrast.");
+      await storePending(result.grant);
+      const ticket=encodeURIComponent(result.ticket);
+      window.location.href="intent://sync?ticket="+ticket+"#Intent;scheme=computo-tmb;package=cat.tmbagent.sapwebviewprobe;end";
+      setNotice("Obrint el pont TMB. Si Android no l’obre, instal·la la versió 0.3.0 del pont privat.");
+    }catch(e){setNotice(e instanceof Error?e.message:"No s’ha pogut obrir SAP.");}finally{setBusy(false);}
+  }
   async function importFile(file:File){
     if(!checked){setNotice("Confirma primero que el archivo SAP corresponde a tus propios datos.");return;}
     if(file.size<100||file.size>6*1024*1024){setNotice("El archivo no tiene un tamaño válido (máximo 6 MB).");return;}
@@ -102,7 +118,7 @@ export default function SapReviewPanel({year}:SapReviewPanelProps){
       // completo de actividades, contingentes ni campos SAP ajenos al cálculo.
       const doc:ExportDoc={ano:verified.ano,extraido:verified.extraido,
         valoraciones:Object.fromEntries(Object.entries(verified.valoraciones).map(([key,rows])=>[
-          key,rows.map((row:{Date:string;LongText:string;Number:string;Wagetype?:string})=>({
+          key,(rows as ValueRow[]).map((row:{Date:string;LongText:string;Number:string;Wagetype?:string})=>({
             Date:row.Date,LongText:row.LongText,Number:row.Number,Wagetype:row.Wagetype
           }))
         ]))};
@@ -123,12 +139,12 @@ export default function SapReviewPanel({year}:SapReviewPanelProps){
         <span className="rounded border border-amber-400/40 px-2 py-0.5 text-[11px] text-amber-200">Prova privada</span>
       </div>
       <p className="text-xs text-white/60">Contrasta les dades de Còmput amb les valoracions laborals que TMB ha registrat. Cap diferència implica per si sola un error de TMB ni de Còmput.</p>
-      {year===2026 ? <div className="space-y-2 rounded-lg border border-white/15 bg-[#0b2029] p-3">
-        <p className="text-sm font-semibold text-[#f7ca6e]">1 · Obtenir les dades de TMB</p>
-        <p className="text-xs text-white/70">Al mòbil, obre el portal oficial i entra a Consultes Bàsiques. Amb la pàgina oberta, escriu <b>ZZSAP123</b> a la barra de Chrome i toca el marcador. Introdueix el teu número SAP, fes la consulta anual i prem <b>DESCARGAR DATOS TMB {year}</b>.</p>
-        <a href="https://launcher.tmb.cat/apps#Shell-home" target="_blank" rel="noopener noreferrer" className="block rounded-lg border border-[#f7ca6e]/60 bg-[#f7ca6e]/10 px-3 py-2 text-center text-sm font-semibold text-[#f7ca6e]">Obrir el portal TMB</a>
-        <p className="text-[11px] text-white/55">La descàrrega s&apos;executa dins del portal TMB, no des d&apos;aquesta pàgina. Chrome encara no permet a Còmput llegir SAP ni seleccionar automàticament els arxius de Descàrregues.</p>
-      </div> : <p className="rounded border border-amber-400/30 p-3 text-xs text-amber-200">La prova amb el marcador ZZSAP123 està preparada només per a 2026. No l&apos;executis per descarregar l&apos;any {year}.</p>}
+      <div className="space-y-2 rounded-lg border border-white/15 bg-[#0b2029] p-3">
+        <button type="button" disabled={busy} onClick={()=>void launchSap("year")} className="w-full rounded-lg border border-[#f7ca6e]/60 bg-[#f7ca6e]/10 px-3 py-3 font-semibold text-[#f7ca6e]">{busy?"Verificant accés…":"Contrastar dades amb TMB · "+year}</button>
+        <p className="text-xs text-white/65">Android · S’obre el portal oficial. Autentica’t si TMB ho demana; les valoracions tornen directament a Còmput, sense fitxers ni contrasenyes compartides.</p>
+        {year===2026&&<button type="button" disabled={busy} onClick={()=>void launchSap("october-test")} className="w-full rounded border border-white/20 px-3 py-2 text-xs">Comprovar retorn · Octubre 2026 (referència: 127 registres)</button>}
+      </div>
+      <details><summary className="cursor-pointer text-xs text-white/60">Importació manual existent</summary>
       <p className="text-sm font-semibold text-[#f7ca6e]">2 · Importar i contrastar les dades</p>
       <p className="text-xs text-white/60">Torna aquí i selecciona el JSON de Descàrregues. Només es guarden dates, conceptes i unitats en aquest dispositiu; el fitxer no s&apos;envia a Supabase.</p>
       <label className="flex items-start gap-2 text-xs text-white/80">
@@ -139,6 +155,8 @@ export default function SapReviewPanel({year}:SapReviewPanelProps){
         {busy?"Verificant i desant…":"Importar dades SAP "+year}
         <input className="sr-only" type="file" accept=".json,application/json" disabled={!checked||busy} onChange={e=>{const f=e.currentTarget.files?.[0];if(f)void importFile(f);e.currentTarget.value="";}} />
       </label>
+      </details>
+      {testProof&&<p className="text-xs text-emerald-200">{testProof}</p>}
       {notice&&<p role="status" className="text-xs text-amber-200">{notice}</p>}
       {saved&&<>
         <div className="rounded-lg border border-white/10 bg-[#0b2029] p-3 text-xs">
@@ -148,9 +166,9 @@ export default function SapReviewPanel({year}:SapReviewPanelProps){
         </div>
         {!comparison?.ready?<p className="text-sm text-amber-200">{comparison?.reason||"No hi ha dades de Còmput per comparar."}</p>:<>
           <div className="grid grid-cols-3 gap-2 text-center">
-            <div className="rounded-lg bg-[#0b2029] p-2"><b className="block text-lg">{comparison.summary.match}</b><span className="text-[11px] text-white/60">Coincidències</span></div>
-            <div className="rounded-lg bg-[#0b2029] p-2"><b className="block text-lg text-amber-200">{comparison.summary.diff}</b><span className="text-[11px] text-white/60">Diferències</span></div>
-            <div className="rounded-lg bg-[#0b2029] p-2"><b className="block text-lg">{comparison.summary.pending}</b><span className="text-[11px] text-white/60">Pendents</span></div>
+            <div className="rounded-lg bg-[#0b2029] p-2"><b className="block text-lg">{comparison.summary?.match}</b><span className="text-[11px] text-white/60">Coincidències</span></div>
+            <div className="rounded-lg bg-[#0b2029] p-2"><b className="block text-lg text-amber-200">{comparison.summary?.diff}</b><span className="text-[11px] text-white/60">Diferències</span></div>
+            <div className="rounded-lg bg-[#0b2029] p-2"><b className="block text-lg">{comparison.summary?.pending}</b><span className="text-[11px] text-white/60">Pendents</span></div>
           </div>
           <p className="text-xs text-white/60">Les diferències són indicis a investigar, no errors atribuïts automàticament a TMB o a Còmput. El mes en curs no es compara com a tancat.</p>
           <button type="button" className="w-full rounded border border-white/20 px-3 py-2 text-sm" onClick={()=>setExpanded(v=>!v)}>
