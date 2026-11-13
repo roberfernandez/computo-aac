@@ -13,6 +13,8 @@ type Difference = {period:string;id:string;concept:string;unit:string;sap:number
 type Reviewed = {fingerprint:string;note:string;reviewedAt:string};
 type ReviewMap = Record<string,Reviewed>;
 const DB_NAME="computo-sap-private-v1",STORE="exports";
+const SAP_BRIDGE_ANDROID_APK="https://raw.githubusercontent.com/roberfernandez/computo-aac/5cd483fba1d0ab1c8aa1928bf44d64bd3fa7430f/releases/sap-bridge-0.3.2/computo-pont-tmb-v0.3.2.apk";
+const SAP_BRIDGE_WINDOWS_ZIP="https://github.com/roberfernandez/computo-aac/releases/download/sap-windows-pilot-v0.1.0/computo-pont-sap-chrome-v0.1.0.zip";
 const dayFmt=(date:string)=>new Date(date).toLocaleString("es-ES",{dateStyle:"medium",timeStyle:"short"});
 function openPrivateDb():Promise<IDBDatabase>{
   return new Promise((resolve,reject)=>{
@@ -90,6 +92,8 @@ export default function SapReviewPanel({year,facts}:SapReviewPanelProps){
   const [auth,setAuth]=useState<"checking"|"owner"|"hidden">("checking");
   const [uid,setUid]=useState("");
   const [desktopBridge,setDesktopBridge]=useState(false);
+  const [bridgePlatform,setBridgePlatform]=useState<"checking"|"android"|"desktop"|"unsupported">("checking");
+  const [androidGuide,setAndroidGuide]=useState(false);
   const [saved,setSaved]=useState<StoredDoc|null>(null);
   const [checked,setChecked]=useState(false);
   const [busy,setBusy]=useState(false);
@@ -101,6 +105,12 @@ export default function SapReviewPanel({year,facts}:SapReviewPanelProps){
   const [reviewSaving,setReviewSaving]=useState("");
   const [reviewDrafts,setReviewDrafts]=useState<Record<string,string>>({});
   useEffect(()=>{
+    const ua=navigator.userAgent;
+    setBridgePlatform(/Android/i.test(ua)?"android":/Windows|Macintosh|Linux/i.test(ua)?"desktop":"unsupported");
+    if(new URLSearchParams(window.location.search).get("pont")==="instala-android"){
+      setAndroidGuide(true);
+      setNotice("No s'ha pogut obrir el pont Android. Segueix les instruccions d'instal·lació i torna a provar-ho.");
+    }
     const onDesktopBridge=(event:MessageEvent)=>{
       if(event.source!==window||event.origin!==window.location.origin||
         event.data?.source!=="computo-sap-chrome-v1")return;
@@ -156,8 +166,12 @@ export default function SapReviewPanel({year,facts}:SapReviewPanelProps){
   const pendingGroups=Object.entries(pending.reduce((acc:Record<string,number>,r)=>{const group=pendingGroup(r.reason);acc[group]=(acc[group]||0)+1;return acc;},{}));
   async function launchSap(){
     // En ordinador cal el pont de Chrome; no generem tiquets inútils.
-    if(!desktopBridge&&!/Android/i.test(navigator.userAgent)){
-      setNotice("Per contrastar des de Windows cal instal·lar el pont privat de Chrome. La versió mòbil continua utilitzant Android.");
+    if(bridgePlatform==="desktop"&&!desktopBridge){
+      setNotice("Per fer el contrast des d'aquest ordinador, segueix la guia d'instal·lació del pont de Chrome que tens just a sota.");
+      return;
+    }
+    if(bridgePlatform!=="android"&&!desktopBridge){
+      setNotice("El pont actual funciona amb Chrome d'ordinador o amb l'auxiliar Android.");
       return;
     }
     setBusy(true);setNotice("");
@@ -173,8 +187,10 @@ export default function SapReviewPanel({year,facts}:SapReviewPanelProps){
         setNotice("Enviant la sol·licitud al pont de Chrome…");
       }else{
         const ticket=encodeURIComponent(result.ticket);
-        window.location.href="intent://sync?ticket="+ticket+"#Intent;scheme=computo-tmb;package=cat.tmbagent.sapwebviewprobe;end";
-        setNotice("Obrint el pont TMB per Android. Si no s’obre, revisa la versió 0.3.2.");
+        const fallback=encodeURIComponent("https://roberfernandez.github.io/computo-aac/?pont=instala-android");
+        window.location.href="intent://sync?ticket="+ticket+
+          "#Intent;scheme=computo-tmb;package=cat.tmbagent.sapwebviewprobe;S.browser_fallback_url="+fallback+";end";
+        setNotice("Obrint el pont TMB per Android… Si no s'obre, tens la guia d'instal·lació a Còmput.");
       }
     }catch(e){setNotice(e instanceof Error?e.message:"No s’ha pogut obrir SAP.");}finally{setBusy(false);}
   }
@@ -227,9 +243,55 @@ export default function SapReviewPanel({year,facts}:SapReviewPanelProps){
         <span className="rounded border border-amber-400/40 px-2 py-0.5 text-[11px] text-amber-200">Prova privada</span>
       </div>
       <p className="text-xs text-white/60">Contrasta les dades de Còmput amb les valoracions laborals que TMB ha registrat. Cap diferència implica per si sola un error de TMB ni de Còmput.</p>
-      <div className="space-y-2 rounded-lg border border-white/15 bg-[#0b2029] p-3">
-        <button type="button" disabled={busy} onClick={()=>void launchSap()} className="w-full rounded-lg border border-[#f7ca6e]/60 bg-[#f7ca6e]/10 px-3 py-3 font-semibold text-[#f7ca6e]">{busy?"Verificant accés…":"Contrastar dades amb TMB · "+year}</button>
-        <p className="text-xs text-white/65">{desktopBridge?"Windows · Pont Chrome detectat.":/Android/i.test(typeof navigator!=="undefined"?navigator.userAgent:"")?"Android · Pont privat.":"Windows · Cal instal·lar el pont de Chrome."} S’obre el portal oficial de TMB. Autentica’t si cal; les valoracions es guarden només en aquest navegador.</p>
+      <div className="space-y-3 rounded-lg border border-white/15 bg-[#0b2029] p-3">
+        <button type="button" disabled={busy||bridgePlatform==="checking"||(bridgePlatform==="desktop"&&!desktopBridge)||bridgePlatform==="unsupported"}
+          onClick={()=>void launchSap()}
+          className="w-full rounded-lg border border-[#f7ca6e]/60 bg-[#f7ca6e]/10 px-3 py-3 font-semibold text-[#f7ca6e] disabled:cursor-not-allowed disabled:opacity-50">
+          {busy?"Verificant accés…":"Contrastar dades amb TMB · "+year}
+        </button>
+        {bridgePlatform==="desktop"&&desktopBridge&&
+          <p className="text-xs text-emerald-200">Pont de Chrome detectat. Ja pots contrastar les dades amb TMB des d'aquest ordinador.</p>}
+        {bridgePlatform==="desktop"&&!desktopBridge&&
+          <div className="space-y-3 rounded-lg border border-amber-400/35 bg-[#091b23] p-3">
+            <p className="text-sm font-semibold text-amber-200">Instal·la el pont SAP per a Chrome</p>
+            <p className="text-xs text-white/70">Còmput no detecta l'extensió en aquesta pestanya. Només cal instal·lar-la una vegada a Chrome (prova privada per a Windows).</p>
+            <a href={SAP_BRIDGE_WINDOWS_ZIP} className="block rounded-lg bg-[#f7ca6e] px-3 py-2.5 text-center text-sm font-semibold text-[#10212a]">
+              Descarregar pont Chrome · Windows 0.1.0
+            </a>
+            <ol className="list-decimal space-y-1.5 pl-5 text-xs text-white/80">
+              <li>Descomprimeix el ZIP descarregat.</li>
+              <li>Obre <b>chrome://extensions</b> des de la barra d'adreces.</li>
+              <li>Activa <b>Mode de desenvolupador</b> i prem <b>Carrega sense empaquetar</b>.</li>
+              <li>Selecciona la carpeta <b>sap-windows-extension</b> que conté <b>manifest.json</b>.</li>
+              <li>Torna a Còmput i recarrega la pàgina per activar el pont.</li>
+            </ol>
+            <button type="button" className="w-full rounded border border-white/30 px-3 py-2 text-xs font-medium"
+              onClick={()=>window.location.reload()}>Ja està instal·lat? Recarrega Còmput</button>
+            <p className="text-[11px] text-white/55">Pilot limitat a comptes autoritzats. Utilitza només el teu perfil de Chrome i la teva sessió corporativa.</p>
+          </div>}
+        {bridgePlatform==="android"&&
+          <div className="space-y-2">
+            <p className="text-xs text-white/70">Android · El pont TMB s'obrirà en la seva aplicació. Inicia sessió al portal oficial quan ho demani.</p>
+            <button type="button" aria-expanded={androidGuide} onClick={()=>setAndroidGuide(v=>!v)}
+              className="w-full rounded border border-white/25 px-3 py-2 text-xs font-medium text-white/85">
+              {androidGuide?"Amagar guia d'instal·lació":"No tens el pont Android? Descarrega'l i instal·la'l"}
+            </button>
+            {androidGuide&&<div className="space-y-2 rounded border border-white/15 p-3">
+              <a href={SAP_BRIDGE_ANDROID_APK} className="block rounded-lg bg-[#f7ca6e] px-3 py-2.5 text-center text-sm font-semibold text-[#10212a]">
+                Descarregar pont TMB · Android 0.3.2
+              </a>
+              <ol className="list-decimal space-y-1.5 pl-5 text-xs text-white/80">
+                <li>Descarrega l'APK des de l'enllaç anterior.</li>
+                <li>Obre el fitxer descarregat i confirma la instal·lació. Si Android ho demana, autoritza aquesta font només per a aquest instal·lador.</li>
+                <li>Torna a Còmput i prem <b>Contrastar dades amb TMB</b>.</li>
+              </ol>
+              <p className="text-[11px] text-white/55">El navegador no pot confirmar sempre si l'APK ja està instal·lada. Si el pont s'obre bé, no cal tornar-la a instal·lar.</p>
+            </div>}
+          </div>}
+        {bridgePlatform==="unsupported"&&
+          <p className="text-xs text-amber-200">Actualment el contrast automàtic requereix Chrome d'ordinador amb extensió o l'auxiliar Android.</p>}
+        {bridgePlatform==="desktop"&&desktopBridge&&
+          <p className="text-xs text-white/60">Les dades SAP es guarden localment al teu Chrome, sense compartir-les amb altres usuaris.</p>}
       </div>
       <details><summary className="cursor-pointer text-xs text-white/60">Importació manual existent</summary>
       <p className="text-sm font-semibold text-[#f7ca6e]">2 · Importar i contrastar les dades</p>
