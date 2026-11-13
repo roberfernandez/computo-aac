@@ -8,3 +8,17 @@ test('user-editable metadata cannot grant administrator permission',async()=>{
  const h=ticketHandler({secret:'test-only-secret',authenticate:async()=>({id:'synthetic-user',user_metadata:{computo_sap_admin:true}})});
  assert.equal((await h(request({action:'issue',year:2026,scope:'year'}))).status,403);
 });
+
+test('Chrome extension can verify a signed ticket but cannot issue one',async()=>{
+ const origin='chrome-extension://'+'a'.repeat(32);
+ const h=ticketHandler({secret:'test-only-secret',authenticate:async()=>({id:OWNER,app_metadata:{computo_sap_admin:true}}),now:()=>Date.UTC(2026,10,13)});
+ const issued=await(await h(request({action:'issue',year:2026,scope:'year'}))).json();
+ const permitted=await h(request({action:'verify',ticket:issued.ticket},'',origin));
+ assert.equal(permitted.status,200);
+ assert.equal(permitted.headers.get('Access-Control-Allow-Origin'),origin);
+ assert.equal((await h(request({action:'issue',year:2026,scope:'year'},'Bearer valid',origin))).status,403);
+ assert.equal((await h(request({action:'verify',ticket:issued.ticket},'','https://attacker.example'))).status,403);
+ const preflight=await h(new Request('https://example.test',{method:'OPTIONS',headers:{Origin:origin,'Access-Control-Request-Method':'POST','Access-Control-Request-Headers':'content-type'}}));
+ assert.equal(preflight.status,204);
+ assert.equal(preflight.headers.get('Access-Control-Allow-Origin'),origin);
+});
