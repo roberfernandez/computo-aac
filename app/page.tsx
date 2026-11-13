@@ -7963,50 +7963,8 @@ function MonthView({
             {multiSelectActive ? "Salir de selección" : "Seleccionar varios"}
           </Button>
         </div>
-        <div className="month-kpis">
-          <div className="month-kpi">
-            <span>Horas ordinarias</span>
-            <strong>{formatHours(monthOrdinaryHours)}</strong>
-          </div>
-          {(!Number.isFinite(monthNightHours) || monthNightHours > 0 || calculations.some(({ c }) => c.scheduleReview || (c.nightReason && c.nightOverlapMinutes > 0))) && <div className="month-kpi night">
-            <span>
-              <Moon size={13} />
-              Nocturnidad Variable
-            </span>
-            <strong>{nightLabel(profile, monthNightHours)}</strong>
-          </div>}
-          {(!Number.isFinite(monthHoraNona) || monthHoraNona > 0) && (
-            <div className="month-kpi payroll">
-              <span>
-                <Clock3 size={13} />
-                Prima Hora Nona
-              </span>
-              <strong>{isFullTime(profile) ? "Pendiente" : iso(monthHoraNona)}</strong>
-            </div>
-          )}
-          {payrollConcepts.filter(item => item.value === null || item.value > 0).map(item => (
-            <div key={item.id} className="month-kpi payroll" title={item.reason}>
-              <span><CalendarDays size={13} /> {item.name}</span>
-              <strong>{item.value === null ? "Pendiente" : `${item.value} ${item.value === 1 ? "día" : "días"}`}</strong>
-              {item.value === null && <span role="status">{item.reason}</span>}
-            </div>
-          ))}
-          {(monthPlusConvenio > 0 || review > 0) && <div className="month-kpi payroll">
-            <span><CalendarDays size={13} /> Plus Convenio{isFullTime(profile) ? " · provisional" : ""}</span>
-            <strong>{monthPlusConvenio} {monthPlusConvenio === 1 ? "día" : "días"}</strong>
-            {review > 0 && <span>Provisional · hay días por revisar</span>}
-          </div>}
-          <Badge variant="outline" className="whitespace-normal border-white/15 text-white/60">
-            {worked} trabajados · {review} pendientes de revisión
-            {isFullTime(profile) && ` · ${calculations.filter(({ c }) => c.scheduleReview).length} horarios por confirmar`}
-          </Badge>
-        </div>
+
       </div>
-      {isFullTime(profile) && <p className="mx-4 mt-4 rounded-lg border border-amber-400/30 p-3 text-sm text-amber-200" role="status">
-        {profileLabel(profile, year)} · Las horas son una previsión de horario. El saldo, la nocturnidad abonable, la Hora Nona y los abonos por ausencias están pendientes de validar.
-        {["T1", "T2"].includes(profileTurn(profile)) && " Los sábados y non stop usan un horario histórico por confirmar; puedes corregir la jornada en cada día."}
-      </p>}
-      <p className="mx-4 mt-2 text-[10px] text-white/45">Unidades estimadas según condiciones · by Roberspierre</p>
       <Tabs defaultValue="calendar" className="p-4 md:p-6">
         <TabsList className="mb-5 bg-[#0b2029]">
           <TabsTrigger value="calendar">Calendario</TabsTrigger>
@@ -8077,6 +8035,51 @@ function MonthView({
               </button>
             ))}
           </div>
+          <section className="mt-5 border-t border-white/10 pt-4" aria-label="Resum retributiu del mes">
+        <div className="month-kpis month-kpis-below">
+          <div className="month-kpi">
+            <span>Horas ordinarias</span>
+            <strong>{formatHours(monthOrdinaryHours)}</strong>
+          </div>
+          {(!Number.isFinite(monthNightHours) || monthNightHours > 0 || calculations.some(({ c }) => c.scheduleReview || (c.nightReason && c.nightOverlapMinutes > 0))) && <div className="month-kpi night">
+            <span>
+              <Moon size={13} />
+              Nocturnidad Variable
+            </span>
+            <strong>{nightLabel(profile, monthNightHours)}</strong>
+          </div>}
+          {(!Number.isFinite(monthHoraNona) || monthHoraNona > 0) && (
+            <div className="month-kpi payroll">
+              <span>
+                <Clock3 size={13} />
+                Prima Hora Nona
+              </span>
+              <strong>{isFullTime(profile) ? "Pendiente" : iso(monthHoraNona)}</strong>
+            </div>
+          )}
+          {payrollConcepts.filter(item => item.value !== null && Number.isFinite(item.value) && item.value !== 0).map(item => (
+            <div key={item.id} className="month-kpi payroll" title={item.reason}>
+              <span><CalendarDays size={13} /> {item.name}</span>
+              <strong>{`${item.value} ${item.value === 1 ? "día" : "días"}`}</strong>
+            </div>
+          ))}
+          {(monthPlusConvenio > 0 || review > 0) && <div className="month-kpi payroll">
+            <span><CalendarDays size={13} /> Plus Convenio{isFullTime(profile) ? " · provisional" : ""}</span>
+            <strong>{monthPlusConvenio} {monthPlusConvenio === 1 ? "día" : "días"}</strong>
+            {review > 0 && <span>Provisional · hay días por revisar</span>}
+          </div>}
+          <Badge variant="outline" className="whitespace-normal border-white/15 text-white/60">
+            {worked} trabajados · {review} pendientes de revisión
+            {isFullTime(profile) && ` · ${calculations.filter(({ c }) => c.scheduleReview).length} horarios por confirmar`}
+          </Badge>
+        </div>
+      {isFullTime(profile) && <p className="mt-4 rounded-lg border border-amber-400/30 p-3 text-sm text-amber-200" role="status">
+        {profileLabel(profile, year)} · Las horas son una previsión de horario. El saldo, la nocturnidad abonable, la Hora Nona y los abonos por ausencias están pendientes de validar.
+        {["T1", "T2"].includes(profileTurn(profile)) && " Los sábados y non stop usan un horario histórico por confirmar; puedes corregir la jornada en cada día."}
+      </p>}
+      <p className="mt-2 text-[10px] text-white/45">Unidades estimadas según condiciones · by Roberspierre</p>
+          </section>
+
           {multiSelectActive && (
             <div className="sticky bottom-3 z-30 mt-4 rounded-xl border border-[#eeb64b]/35 bg-[#0d222b]/95 p-3 shadow-xl backdrop-blur">
               <div className="mb-3 flex items-center justify-between gap-3">
