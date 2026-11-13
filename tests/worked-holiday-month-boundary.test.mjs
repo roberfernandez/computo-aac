@@ -30,7 +30,8 @@ test("worked Sunday premium belongs to Saturday shift at month boundaries",()=>{
   assert.equal([1,2,3].reduce((sum,m)=>sum+result(months,m).labour.value,0),6);
 });
 test("Sunday-only service still belongs to Sunday",()=>{
-  const months={2:month(2026,2)};
+  // També necessitem el calendari del mes anterior per al diumenge 1.
+  const months={1:month(2026,1),2:month(2026,2)};
   serve(months,"2026-02-08","18:46–00:50");
   const r=result(months,2);
   assert.equal(r.labour.value,1);assert.deepEqual(r.dates,["2026-02-08"]);
