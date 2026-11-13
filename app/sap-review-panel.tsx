@@ -148,7 +148,7 @@ export default function SapReviewPanel({year,facts}:SapReviewPanelProps){
       await storePending(result.grant);
       const ticket=encodeURIComponent(result.ticket);
       window.location.href="intent://sync?ticket="+ticket+"#Intent;scheme=computo-tmb;package=cat.tmbagent.sapwebviewprobe;end";
-      setNotice("Obrint el pont TMB. Si Android no l’obre, instal·la la versió 0.3.1 del pont privat.");
+      setNotice("Obrint el pont TMB. Si Android no l’obre, instal·la la versió 0.3.2 del pont privat.");
     }catch(e){setNotice(e instanceof Error?e.message:"No s’ha pogut obrir SAP.");}finally{setBusy(false);}
   }
   async function importFile(file:File){
@@ -226,31 +226,97 @@ export default function SapReviewPanel({year,facts}:SapReviewPanelProps){
           <p className="mt-1 text-white/60">Les importacions noves vàlides substitueixen la còpia activa. Una extracció incompleta o anterior no la pot substituir.</p>
         </div>
         {!comparison?.ready?<p className="text-sm text-amber-200">{comparison?.reason||"No hi ha dades de Còmput per comparar."}</p>:<>
-          <div className="grid grid-cols-2 gap-2 text-center">
-            <div className="rounded-lg bg-[#0b2029] p-2"><b className="block text-lg">{comparison.summary?.match}</b><span className="text-[11px] text-white/60">Coincidències</span></div>
-            <div className="rounded-lg bg-[#0b2029] p-2"><b className="block text-lg text-amber-200">{comparison.summary?.diff}</b><span className="text-[11px] text-white/60">Diferències</span></div>
-            <div className="rounded-lg bg-[#0b2029] p-2"><b className="block text-lg">{comparison.summary?.pending}</b><span className="text-[11px] text-white/60">Pendents</span></div>
-            <div className="rounded-lg bg-[#0b2029] p-2"><b className="block text-lg text-sky-200">{comparison.summary?.temporal||0}</b><span className="text-[11px] text-white/60">Imputació temporal</span></div>
+          <div className="rounded-lg border border-emerald-400/20 bg-[#0b2029] p-3">
+            <p className="font-semibold text-emerald-200">La majoria de les dades coincideixen</p>
+            <p className="mt-1 text-xs text-white/70">
+              {comparison.summary.match} comprovacions correctes de les {completed} que s&apos;han pogut completar.
+              Cada comprovació correspon a un concepte laboral en un mes, no a un dia ni a una nòmina.
+            </p>
           </div>
-          <p className="text-xs text-white/60">Les diferències són indicis a investigar, no errors atribuïts automàticament a TMB o a Còmput. El mes en curs no es compara com a tancat.</p>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="rounded-lg border border-amber-400/25 bg-[#0b2029] p-3">
+              <b className="block text-2xl text-amber-200">{toReview.length}</b>
+              <span className="text-xs">Diferències per revisar</span>
+            </div>
+            <div className="rounded-lg border border-white/15 bg-[#0b2029] p-3">
+              <b className="block text-2xl text-emerald-200">{accepted.length}</b>
+              <span className="text-xs">Revisades i acceptades</span>
+            </div>
+          </div>
+          {toReview.length===0?
+            <p className="text-sm text-emerald-200">No tens diferències pendents de revisar.</p>:
+            <div className="rounded-lg border border-amber-400/20 bg-[#0b2029] p-3">
+              <p className="text-sm font-semibold text-amber-200">Què cal revisar?</p>
+              <ul className="mt-2 space-y-1 text-sm">
+                {categories.map(([concept,count])=><li key={concept} className="flex justify-between gap-3"><span>{concept}</span><b>{count}</b></li>)}
+              </ul>
+            </div>
+          }
+          {reviewState==="error"&&<p role="alert" className="text-xs text-amber-200">No s&apos;han pogut carregar les revisions privades. No es poden desar acceptacions fins a recuperar la connexió.</p>}
+          <p className="text-xs text-white/60">
+            Una diferència no implica necessàriament una reclamació. Pots marcar-la com a revisada sense alterar els càlculs;
+            si les dades de SAP o de Còmput canvien, reapareixerà automàticament.
+          </p>
           <button type="button" className="w-full rounded border border-white/20 px-3 py-2 text-sm" onClick={()=>setExpanded(v=>!v)}>
-            {expanded?"Amagar detall":"Veure discrepàncies"} ({differences.length})
+            {expanded?"Amagar diferències":"Veure detall de les diferències"} ({toReview.length})
           </button>
-          {expanded&&<div className="max-h-[28rem] space-y-2 overflow-y-auto">
-            {differences.length===0?<p className="text-xs">No hi ha diferències en els conceptes que podem comparar.</p>:differences.map((r:{period:string;concept:string;unit:string;sap:number;computed:number|null;difference:number|null;days:{date:string;sap:number;computed:number;difference:number}[];note:string},i:number)=>(
-              <details key={r.period+"-"+r.concept+i} className="rounded-lg border border-amber-400/25 bg-[#0b2029] p-2">
+          {expanded&&<div className="max-h-[30rem] space-y-2 overflow-y-auto">
+            {toReview.map(r=>{
+              const key=comparisonReviewKey(r);
+              return <details key={key} className="rounded-lg border border-amber-400/25 bg-[#0b2029] p-3">
                 <summary className="cursor-pointer text-xs">
-                  <b>{r.period} · {r.concept}</b><br/>
-                  SAP {showNum(r.sap)} / Còmput {showNum(r.computed)} {r.unit} · diferència {showNum(r.difference)}
+                  <b>{r.period} · {r.concept}</b>
+                  <span className="mt-1 block">TMB {showNum(r.sap)} / Còmput {showNum(r.computed)} {r.unit} · diferència {showNum(r.difference)}</span>
                 </summary>
-                {r.note&&<p className="mt-2 text-[11px] text-white/60">{r.note}</p>}
-                <ul className="mt-2 space-y-1">
-                  {r.days.slice(0,35).map(d=><li key={d.date} className="text-xs">{d.date.slice(8,10)}: SAP {showNum(d.sap)}, Còmput {showNum(d.computed)}, Δ {showNum(d.difference)}</li>)}
-                </ul>
-              </details>
-            ))}
+                {r.note&&<p className="mt-2 text-xs text-white/70">{r.note}</p>}
+                <ul className="mt-2 space-y-1">{r.days.slice(0,35).map(d=><li key={d.date} className="text-xs">
+                  {d.date}: TMB {showNum(d.sap)}, Còmput {showNum(d.computed)}
+                </li>)}</ul>
+                <label className="mt-3 block text-xs text-white/80" htmlFor={"sap-review-"+key}>Observació opcional</label>
+                <textarea id={"sap-review-"+key} rows={2} maxLength={500}
+                  className="mt-1 w-full rounded border border-white/25 bg-[#091820] p-2 text-sm text-white"
+                  placeholder="Explica per què la consideres revisada"
+                  value={reviewDrafts[key]??reviews[key]?.note??""}
+                  onChange={e=>setReviewDrafts(prev=>({...prev,[key]:e.target.value}))}/>
+                <button type="button" disabled={reviewState!=="ready"||!!reviewSaving}
+                  className="mt-2 rounded border border-emerald-400/40 px-3 py-2 text-xs font-semibold text-emerald-200 disabled:opacity-50"
+                  onClick={()=>void recordReview(r,true)}>
+                    {reviewSaving===key?"Desant…":"Marcar com a revisada"}
+                </button>
+              </details>;
+            })}
           </div>}
-          {expanded&&pending.length>0&&<details className="rounded border border-white/15 p-2 text-xs"><summary>Per què hi ha comparacions pendents?</summary><ul className="mt-2 space-y-2">{pending.map((r:{period:string;concept:string;reason:string},i:number)=><li key={r.period+r.concept+i}><b>{r.period} · {r.concept}</b>: {r.reason}</li>)}</ul></details>}
+          {accepted.length>0&&<details className="rounded border border-emerald-400/25 p-3 text-xs">
+            <summary className="cursor-pointer font-medium">Veure les {accepted.length} diferències revisades i acceptades</summary>
+            <div className="mt-2 space-y-2">
+              {accepted.map(r=>{
+                const key=comparisonReviewKey(r),review=reviews[key];
+                return <div key={key} className="rounded border border-white/10 p-2">
+                  <b>{r.period} · {r.concept}</b>
+                  <p className="mt-1">TMB {showNum(r.sap)} / Còmput {showNum(r.computed)} {r.unit}</p>
+                  {review.note&&<p className="mt-1 text-white/70">Observació: {review.note}</p>}
+                  <button type="button" disabled={reviewState!=="ready"||!!reviewSaving}
+                    className="mt-2 rounded border border-white/25 px-3 py-1.5 disabled:opacity-50"
+                    onClick={()=>void recordReview(r,false)}>
+                      {reviewSaving===key?"Desant…":"Tornar a revisar"}
+                  </button>
+                </div>;
+              })}
+            </div>
+          </details>}
+          {pending.length>0&&<details className="rounded border border-white/15 p-3 text-xs">
+            <summary className="cursor-pointer">{pending.length} comprovacions que encara no es poden completar</summary>
+            <ul className="mt-2 space-y-1">
+              {pendingGroups.map(([reason,count])=><li key={reason} className="flex justify-between gap-3"><span>{reason}</span><b>{count}</b></li>)}
+            </ul>
+            <details className="mt-3 border-t border-white/10 pt-2">
+              <summary>Veure els mesos i motius</summary>
+              <ul className="mt-2 space-y-2">
+                {pending.map(r=><li key={r.period+":"+r.id}><b>{r.period} · {r.concept}</b>: {r.reason}</li>)}
+              </ul>
+            </details>
+          </details>}
+          {(comparison.summary?.temporal||0)>0&&<p className="text-xs text-sky-200">{comparison.summary.temporal} diferències atribuïbles a la data d&apos;imputació, amb les mateixes unitats totals.</p>}
           <p className="text-xs text-white/50">{pending.length} comparacions pendents o amb períodes encara oberts. Concepts SAP no equivalents o pendents de validació: {comparison.unmapped.map((r:{category:string})=>r.category).join(", ")||"cap"}.</p>
         </>}
       </>}
