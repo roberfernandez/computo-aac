@@ -353,12 +353,17 @@ export default function SapReviewPanel({year,facts}:SapReviewPanelProps){
     finally{setReviewSaving("");}
   }
   return (
-    <section className="panel space-y-3 p-5" aria-label="Contrast experimental amb TMB">
-      <div className="flex items-center justify-between gap-2">
-        <h2 className="font-semibold text-[#f7ca6e]">Contrastar dades amb TMB</h2>
-        <span className="rounded border border-amber-400/40 px-2 py-0.5 text-[11px] text-amber-200">Prova privada</span>
-      </div>
-      <p className="text-xs text-white/60">Contrasta les dades de Còmput amb les valoracions laborals que TMB ha registrat. Cap diferència implica per si sola un error de TMB ni de Còmput.</p>
+    <section className="panel !p-0 overflow-hidden" aria-label="Contrast experimental amb TMB">
+      <details className="group">
+        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 [&::-webkit-details-marker]:hidden">
+          <span className="text-sm font-semibold text-[#f7ca6e]">Contrastar dades amb TMB</span>
+          <span className="flex shrink-0 items-center gap-2">
+            {saved&&<span className="text-[11px] text-emerald-200">SAP {year}</span>}
+            <span aria-hidden="true" className="text-sm text-white/60 transition-transform group-open:rotate-180">⌄</span>
+          </span>
+        </summary>
+        <div className="space-y-3 border-t border-white/15 p-3 sm:p-4">
+          <p className="text-xs text-white/60">Contrasta les dades de Còmput amb les valoracions laborals que TMB ha registrat. Cap diferència implica per si sola un error de TMB ni de Còmput. <span className="text-amber-200">Prova privada.</span></p>
       <div className="space-y-3 rounded-lg border border-white/15 bg-[#0b2029] p-3">
         <button type="button" disabled={busy||bridgePlatform==="checking"||(bridgePlatform==="desktop"&&!desktopBridge)||bridgePlatform==="unsupported"}
           onClick={()=>void launchSap()}
@@ -548,6 +553,8 @@ export default function SapReviewPanel({year,facts}:SapReviewPanelProps){
           </details>}
         </>}
       </>}
+        </div>
+      </details>
     </section>
   );
 }
