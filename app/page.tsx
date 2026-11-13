@@ -99,6 +99,7 @@ type PeriodRecord = {
 type DayData = {
   day: number;
   baseStatus: BaseStatus;
+  calendarOriginalStatus?: BaseStatus;
   status: Status;
   officialHoliday: boolean;
   special: Special;
@@ -1234,16 +1235,16 @@ function payrollFactsFor(plan: YearPlan, year: number, profile: UserProfile) {
         activity: {
           version: 1,
           status: d.status,
-          calendarBaseStatus: d.baseStatus || null,
+          calendarBaseStatus: d.calendarOriginalStatus || d.baseStatus || null,
           medicalInterval: d.status === "REVISION_MEDICA" && d.medicalStart && d.medicalEnd ? {start:d.medicalStart,end:d.medicalEnd} : null,
           permissionKind: d.status === "PERMISO" ? d.permissionKind || null : null,
           officialHolidayMode: d.officialHolidayMode || null,
           priorOrigin: d.priorOrigin || null,
           // Original scheduled work dates survive vacations, RJ and other overlays.
-          calendarWorkingDay: d.baseStatus === "AGCG" ? true : d.baseStatus === "FEST" || d.baseStatus === "DCOM" ? false : null,
+          calendarWorkingDay: (d.calendarOriginalStatus || d.baseStatus) === "AGCG" ? true : ["FEST","DCOM"].includes(d.calendarOriginalStatus || d.baseStatus) ? false : null,
           working: uncertain ? null : isWorking(d.status),
           ordinary: uncertain ? null : d.status === "AGCG" && d.baseStatus === "AGCG",
-          weeklyRest: d.baseStatus === "FEST" ? true : d.baseStatus === "AGCG" || d.baseStatus === "DCOM" ? false : null,
+          weeklyRest: (d.calendarOriginalStatus || d.baseStatus) === "FEST" ? true : ["AGCG","DCOM"].includes(d.calendarOriginalStatus || d.baseStatus) ? false : null,
           scheduleResolved: !schedulePending,
           vacation: uncertain || (d.status === "VAC_ANTERIOR" && !d.priorOrigin) ? null : d.status === "VACACIONES" || (d.status === "VAC_ANTERIOR" && d.priorOrigin === "VACACIONES"),
         },

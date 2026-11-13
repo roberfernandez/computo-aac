@@ -189,6 +189,7 @@ export default function SapReviewPanel({year}:SapReviewPanelProps){
               </details>
             ))}
           </div>}
+          {expanded&&pending.length>0&&<details className="rounded border border-white/15 p-2 text-xs"><summary>Per què hi ha comparacions pendents?</summary><ul className="mt-2 space-y-2">{pending.map((r:{period:string;concept:string;reason:string},i:number)=><li key={r.period+r.concept+i}><b>{r.period} · {r.concept}</b>: {r.reason}</li>)}</ul></details>}
           <p className="text-xs text-white/50">{pending.length} comparacions pendents o amb períodes encara oberts. Concepts SAP no equivalents o pendents de validació: {comparison.unmapped.map((r:{category:string})=>r.category).join(", ")||"cap"}.</p>
         </>}
       </>}
