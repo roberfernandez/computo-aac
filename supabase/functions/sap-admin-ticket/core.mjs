@@ -6,15 +6,19 @@ export function ticketHandler({secret,authenticate,now=Date.now}){
   const signing=crypto.subtle.importKey('raw',enc.encode(secret),{name:'HMAC',hash:'SHA-256'},false,['sign','verify']);
   return async req=>{
     const origin=req.headers.get('Origin');
-    const headers={'Content-Type':'application/json','Cache-Control':'no-store','Access-Control-Allow-Origin':WEB,'Access-Control-Allow-Headers':'authorization,apikey,content-type','Access-Control-Allow-Methods':'POST,OPTIONS','Vary':'Origin'};
+    // Chrome MV3 may verify an already-signed ticket without receiving SAP
+    // data or authorisation to issue tickets. Issuance remains website-only.
+    const chromeExtension=!!origin&&/^chrome-extension:\/\/[a-p]{32}$/.test(origin);
+    const headers={'Content-Type':'application/json','Cache-Control':'no-store','Access-Control-Allow-Origin':chromeExtension?origin:WEB,'Access-Control-Allow-Headers':'authorization,apikey,content-type','Access-Control-Allow-Methods':'POST,OPTIONS','Vary':'Origin'};
     const reply=(status,data)=>new Response(JSON.stringify(data),{status,headers});
-    if(origin&&origin!==WEB)return reply(403,{error:'origin-denied'});
+    if(origin&&origin!==WEB&&!chromeExtension)return reply(403,{error:'origin-denied'});
     if(req.method==='OPTIONS')return new Response(null,{status:204,headers});
     if(req.method!=='POST')return reply(405,{error:'method-denied'});
     try{
       const text=await req.text();if(text.length>4096)return reply(413,{error:'too-large'});
       const body=JSON.parse(text),key=await signing;
       if(body.action==='issue'){
+        if(chromeExtension)return reply(403,{error:'extension-cannot-issue'});
         const auth=req.headers.get('Authorization')||'';
         if(!/^Bearer [^\s]+$/.test(auth))return reply(401,{error:'authentication-required'});
         const user=await authenticate(auth);
