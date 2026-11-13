@@ -6,9 +6,9 @@ const panel=readFileSync("app/sap-review-panel.tsx","utf8");
 test("Windows direct install is exposed only when the bridge is absent",()=>{
  assert.match(panel,/bridgePlatform==="desktop"&&!desktopBridge&&/);
  assert.match(panel,/NEXT_PUBLIC_SAP_BRIDGE_CHROME_WEBSTORE_ID/);
- assert.match(panel,/chromewebstore\\.google\\.com\\/detail/);
+ assert.match(panel,/chromewebstore\.google\.com\/detail/);
  assert.match(panel,/Instal·lar Pont SAP a Chrome/);
- assert.match(panel,/onClick=\\{\\(\\)=>window\\.location\\.reload\\(\\)\\}/);
+ assert.match(panel,/onClick=\{\(\)=>window\.location\.reload\(\)\}/);
  assert.doesNotMatch(panel,/SAP_BRIDGE_WINDOWS_ZIP|Carrega sense empaquetar|Descomprimeix el ZIP/);
 });
 test("Android installer is offered in-app and appears on Chrome intent fallback",()=>{
@@ -27,9 +27,9 @@ test("installer guides never replace local SAP comparison or erase accepted revi
 });
 test("Chrome Web Store upload has manifest at the archive root, not a public user ZIP",()=>{
  const workflow=readFileSync(".github/workflows/publish-sap-windows-pilot.yml","utf8");
- assert.match(workflow,/zip -q.*manifest\\.json/);
- assert.match(workflow,/actions\\/upload-artifact@v4/);
+ assert.match(workflow,/zip -q.*manifest\.json/);
+ assert.match(workflow,/actions\/upload-artifact@v4/);
  assert.doesNotMatch(workflow,/gh release upload|contents: write/);
  const pages=readFileSync(".github/workflows/pages.yml","utf8");
- assert.match(pages,/vars\\.SAP_BRIDGE_CHROME_WEBSTORE_ID/);
+ assert.match(pages,/vars\.SAP_BRIDGE_CHROME_WEBSTORE_ID/);
 });
