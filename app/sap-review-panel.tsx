@@ -182,7 +182,7 @@ export default function SapReviewPanel({year,facts}:SapReviewPanelProps){
   const [bridgePlatform,setBridgePlatform]=useState<"checking"|"android"|"desktop"|"unsupported">("checking");
   const [androidGuide,setAndroidGuide]=useState(false);
   const [saved,setSaved]=useState<StoredDoc|null>(null);
-  const [sapSyncState,setSapSyncState]=useState<"checking"|"synced"|"offline"|"error">("checking");
+  const [sapSyncState,setSapSyncState]=useState<"checking"|"empty"|"synced"|"offline"|"error">("checking");
   const [sapSyncError,setSapSyncError]=useState("");
   const [sapSyncRetry,setSapSyncRetry]=useState(0);
   const [checked,setChecked]=useState(false);
@@ -238,7 +238,7 @@ export default function SapReviewPanel({year,facts}:SapReviewPanelProps){
         const local=await getSaved(uid,year);
         if(active)setSaved(local);
         const latest=await synchronizePrivateSap(uid,year);
-        if(active){setSaved(latest);setSapSyncState("synced");setSapSyncError("");}
+        if(active){setSaved(latest);setSapSyncState(latest?"synced":"empty");setSapSyncError("");}
       }catch(e){
         if(active){
           const message=e instanceof Error?e.message:"No s'han pogut sincronitzar les valoracions SAP.";
@@ -432,10 +432,10 @@ export default function SapReviewPanel({year,facts}:SapReviewPanelProps){
       </label>
       </details>
       <div className="rounded-lg border border-white/15 bg-[#0b2029] p-3 text-xs" role="status">
-        <p className="font-medium text-white/85">Valoracions SAP entre dispositius · {sapSyncState==="synced"?"Sincronitzades":sapSyncState==="checking"?"Comprovant…":sapSyncState==="offline"?"Sense connexió":"Sincronització pendent"}</p>
+        <p className="font-medium text-white/85">Valoracions SAP entre dispositius · {sapSyncState==="synced"?"Sincronitzades":sapSyncState==="checking"?"Comprovant…":sapSyncState==="empty"?"Sense importacions SAP":sapSyncState==="offline"?"Sense connexió":"Sincronització pendent"}</p>
         <p className="mt-1 text-white/65">Les dates, els conceptes i les unitats de valoració SAP es desen al teu compte privat de Còmput a Supabase, sense contrasenyes ni calendari SAP complet. Pots consultar-les des d&apos;Android, Windows o iPhone amb el mateix compte.</p>
         {sapSyncError&&<p className="mt-1 text-amber-200">{sapSyncError} La còpia d&apos;aquest dispositiu es conserva.</p>}
-        {sapSyncState!=="synced"&&<button type="button" className="mt-2 rounded border border-white/30 px-3 py-1.5" onClick={()=>setSapSyncRetry(v=>v+1)}>Tornar a sincronitzar</button>}
+        {sapSyncState!=="synced"&&sapSyncState!=="empty"&&<button type="button" className="mt-2 rounded border border-white/30 px-3 py-1.5" onClick={()=>setSapSyncRetry(v=>v+1)}>Tornar a sincronitzar</button>}
       </div>
       {notice&&<p role="status" className="text-xs text-amber-200">{notice}</p>}
       {saved&&<>
