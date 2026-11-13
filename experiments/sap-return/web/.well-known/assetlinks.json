@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.use_as_origin"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "cat.tmbagent.sapwebviewprobe",
+      "sha256_cert_fingerprints": [
+        "07:8C:97:34:0B:73:58:C2:27:2D:74:DB:01:87:A3:AA:38:63:1E:EB:75:2D:61:6F:8A:16:2E:5C:75:6B:3C:3F"
+      ]
+    }
+  }
+]
