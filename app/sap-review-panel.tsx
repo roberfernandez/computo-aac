@@ -16,6 +16,7 @@ const DB_NAME="computo-sap-private-v1",STORE="exports";
 const SAP_BRIDGE_ANDROID_APK="https://raw.githubusercontent.com/roberfernandez/computo-aac/5cd483fba1d0ab1c8aa1928bf44d64bd3fa7430f/releases/sap-bridge-0.3.2/computo-pont-tmb-v0.3.2.apk";
 // Chrome only allows normal Windows users to install an extension through Chrome Web Store.
 // The ID is set only after Google approves the private pilot; never link a manual ZIP as the default.
+const SAP_BRIDGE_WINDOWS_EXE="https://github.com/roberfernandez/computo-aac/releases/download/sap-windows-installer-v0.1.1/PontSAP-Windows-Instalador-Prueba-v0.1.1.exe";
 const SAP_BRIDGE_CHROME_WEBSTORE_ID=process.env.NEXT_PUBLIC_SAP_BRIDGE_CHROME_WEBSTORE_ID||"";
 const SAP_BRIDGE_CHROME_WEBSTORE_URL=/^[a-p]{32}$/.test(SAP_BRIDGE_CHROME_WEBSTORE_ID)
   ?"https://chromewebstore.google.com/detail/"+SAP_BRIDGE_CHROME_WEBSTORE_ID:null;
@@ -269,9 +270,20 @@ export default function SapReviewPanel({year,facts}:SapReviewPanelProps){
                 Instal·lar Pont SAP a Chrome
               </a>
               <p className="text-xs text-white/80">Chrome obrirà la fitxa de l&apos;extensió a Chrome Web Store. Prem «Afegeix a Chrome», confirma els permisos i torna aquí. No cal descarregar cap ZIP ni buscar carpetes.</p>
-            </>:<p role="status" className="text-xs text-amber-200">
-              La instal·lació directa encara està pendent de la publicació de l&apos;extensió a Chrome Web Store. No instal·lis paquets desconeguts ni canviïs la configuració de Chrome. Si ja tens el pont pilot, pots continuar utilitzant-lo.
-            </p>}
+            </>:<>
+              <a href={SAP_BRIDGE_WINDOWS_EXE} target="_blank" rel="noopener noreferrer"
+                className="block rounded-lg bg-[#f7ca6e] px-3 py-2.5 text-center text-sm font-semibold text-[#10212a]">
+                Descarregar instal·lador Pont SAP · Windows
+              </a>
+              <p className="text-xs text-white/80">Descàrrega directa de l&apos;instal·lador provisional (EXE) de la versió 0.1.1. No cal descarregar ni descomprimir cap ZIP.</p>
+              <ol className="list-decimal space-y-1.5 pl-5 text-xs text-white/80">
+                <li>Obre el fitxer EXE que acaba de descarregar Chrome. És una versió de prova sense signatura digital.</li>
+                <li>L&apos;instal·lador prepararà els fitxers, copiarà la ruta de la carpeta i obrirà Chrome a extensions.</li>
+                <li>A Chrome, activa <b>Mode de desenvolupador</b>, prem <b>Carrega sense empaquetar</b> i enganxa la carpeta copiada.</li>
+                <li>Torna a Còmput i recarrega aquesta pàgina per detectar el pont.</li>
+              </ol>
+              <p className="text-[11px] text-amber-200">Instal·lació de prova només per a comptes autoritzats. Google encara ha de revisar la instal·lació directa des de Chrome Web Store. No desactivis la protecció de Windows ni modificis polítiques de Chrome.</p>
+            </>}
             <button type="button" className="w-full rounded border border-white/30 px-3 py-2 text-xs font-medium"
               onClick={()=>window.location.reload()}>Comprovar instal·lació · Recarregar Còmput</button>
             <p className="text-[11px] text-white/55">Pilot limitat a comptes autoritzats. Utilitza només el teu perfil de Chrome i la teva sessió corporativa.</p>
