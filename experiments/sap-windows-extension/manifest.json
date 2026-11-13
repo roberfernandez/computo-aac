@@ -1,0 +1,44 @@
+{
+  "manifest_version": 3,
+  "name": "Còmput AAC · Pont SAP Windows",
+  "version": "0.1.0",
+  "description": "Contrast SAP des de Chrome. Consulta dades només de la sessió TMB pròpia i les desa a Còmput d'aquest navegador.",
+  "permissions": [
+    "scripting",
+    "tabs",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://launcher.tmb.cat/apps*",
+    "https://roberfernandez.github.io/computo-aac/*",
+    "https://hhenkvendzengggrgook.supabase.co/*"
+  ],
+  "background": {
+    "service_worker": "background.mjs",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://roberfernandez.github.io/computo-aac/*"
+      ],
+      "js": [
+        "computo-bridge.js"
+      ],
+      "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "https://launcher.tmb.cat/apps*"
+      ],
+      "js": [
+        "portal-monitor.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "Còmput AAC · Pont SAP"
+  },
+  "minimum_chrome_version": "120"
+}
