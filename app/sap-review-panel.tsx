@@ -268,9 +268,9 @@ export default function SapReviewPanel({year,facts}:SapReviewPanelProps){
                 className="block rounded-lg bg-[#f7ca6e] px-3 py-2.5 text-center text-sm font-semibold text-[#10212a]">
                 Instal·lar Pont SAP a Chrome
               </a>
-              <p className="text-xs text-white/80">Chrome obrirà la fitxa de l'extensió a Chrome Web Store. Prem «Afegeix a Chrome», confirma els permisos i torna aquí. No cal descarregar cap ZIP ni buscar carpetes.</p>
+              <p className="text-xs text-white/80">Chrome obrirà la fitxa de l&apos;extensió a Chrome Web Store. Prem «Afegeix a Chrome», confirma els permisos i torna aquí. No cal descarregar cap ZIP ni buscar carpetes.</p>
             </>:<p role="status" className="text-xs text-amber-200">
-              La instal·lació directa encara està pendent de la publicació de l'extensió a Chrome Web Store. No instal·lis paquets desconeguts ni canviïs la configuració de Chrome. Si ja tens el pont pilot, pots continuar utilitzant-lo.
+              La instal·lació directa encara està pendent de la publicació de l&apos;extensió a Chrome Web Store. No instal·lis paquets desconeguts ni canviïs la configuració de Chrome. Si ja tens el pont pilot, pots continuar utilitzant-lo.
             </p>}
             <button type="button" className="w-full rounded border border-white/30 px-3 py-2 text-xs font-medium"
               onClick={()=>window.location.reload()}>Comprovar instal·lació · Recarregar Còmput</button>
