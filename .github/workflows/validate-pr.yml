@@ -18,6 +18,7 @@ jobs:
       - run: node --test tests/payroll-sync.test.mjs
       - run: node --test tests/computo-compensaciones.test.mjs
       - run: node --test tests/sap-comparison.test.mjs
+      - run: node --test tests/sap-cloud-sync.test.mjs
       - run: node --check experiments/sap-windows-extension/background.mjs && node --check experiments/sap-windows-extension/computo-bridge.js && node --check experiments/sap-windows-extension/portal-monitor.js
       - run: node --test tests/sap-windows-bridge.test.mjs
       - run: node --test tests/sap-bridge-onboarding.test.mjs
