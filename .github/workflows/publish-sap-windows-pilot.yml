@@ -1,15 +1,17 @@
-name: Prepare SAP Chrome Web Store package
+name: Prepare SAP Chrome Web Store package and Windows pilot
 on:
   push:
     branches: [main]
     paths:
       - .github/workflows/publish-sap-windows-pilot.yml
       - experiments/sap-windows-extension/**
+      - experiments/sap-windows-installer/**
+      - scripts/prepare-sap-chrome-store.py
       - tests/sap-windows-bridge.test.mjs
       - tests/sap-bridge-onboarding.test.mjs
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write
 jobs:
   package:
     if: github.repository == 'roberfernandez/computo-aac'
@@ -41,6 +43,7 @@ jobs:
           test "$(unzip -Z1 "$FILE" | head -1)" = "manifest.json"
           ! unzip -Z1 "$FILE" | grep -q '^sap-windows-extension/'
           echo "file=$FILE" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           sha256sum "$FILE"
       - name: Save developer-only Web Store upload artifact
         uses: actions/upload-artifact@v4
@@ -48,3 +51,42 @@ jobs:
           name: sap-chrome-webstore-upload
           path: ${{ steps.bundle.outputs.file }}
           retention-days: 30
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.2'
+      - name: Build unsigned Windows pilot installer
+        id: installer
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.bundle.outputs.version }}"
+          test "$VERSION" = "0.1.1"
+          cp "${{ steps.bundle.outputs.file }}" experiments/sap-windows-installer/pont-sap-extension.zip
+          cd experiments/sap-windows-installer
+          FILE="PontSAP-Windows-Instalador-Prueba-v$VERSION.exe"
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="-H windowsgui -s -w" -o "$GITHUB_WORKSPACE/$FILE" main.go
+          echo "file=$FILE" >> "$GITHUB_OUTPUT"
+          cd "$GITHUB_WORKSPACE"
+          sha256sum "$FILE"
+      - name: Archive developer pilot installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: pont-sap-windows-installer-v0.1.1
+          path: ${{ steps.installer.outputs.file }}
+          retention-days: 30
+      - name: Publish direct EXE for Còmput download button
+        if: github.ref == 'refs/heads/main'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.bundle.outputs.version }}"
+          TAG="sap-windows-installer-v$VERSION"
+          FILE="${{ steps.installer.outputs.file }}"
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --target "$GITHUB_SHA" \
+              --title "Pont SAP Windows v$VERSION — instal·lador de prova" \
+              --notes "Instal·lador Windows x64 sense signatura digital, només per a proves d'usuaris autoritzats. Prepara els fitxers i obre chrome://extensions. L'usuari ha d'activar el mode desenvolupador i Carregar descomprimida. No és una instal·lació silenciosa ni una publicació avalada per TMB."
+          fi
+          gh release upload "$TAG" "$FILE" --clobber
