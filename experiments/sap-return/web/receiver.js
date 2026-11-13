@@ -14,14 +14,18 @@ async function save(record){
 function parse(value){if(typeof value!=="string"||value.length>50000)throw Error("invalid-message");return JSON.parse(value);}
 if(!/^[a-f0-9]{32}$/.test(id))failure("missing-operation");
 else window.__returnAcceptChannel=event=>{
-  if(event.origin!==location.origin||!event.ports||!event.ports[0]||port)return;
-  let hello;try{hello=parse(event.data);}catch{return;}
-  if(hello.type!=="hello"||hello.id!==id)return;
+  if(event.origin!=="android-app://"+location.host||!event.ports||!event.ports[0]||port)return;
+  let hello;try{hello=parse(event.data);}catch{}
+  let handshaken=false;
   port=event.ports[0];receiver=new Receiver(id,save);
   $("state").textContent="Canal de Chrome verificat";$("detail").textContent="Rebent les dades de la prova…";
   port.onmessage=event=>{
     queue=queue.then(async()=>{
       const message=parse(event.data);
+      if(!handshaken){
+        if(message.type!=="hello"||message.id!==id)throw Error("invalid-handshake");
+        handshaken=true;port.postMessage(JSON.stringify({type:"ready",id}));return;
+      }
       const response=await receiver.accept(message);
       if(response.type==="complete"){
         document.body.className="ok";$("symbol").textContent="✓";$("state").textContent="Dades rebudes i desades a Chrome";
@@ -34,7 +38,8 @@ else window.__returnAcceptChannel=event=>{
       port.postMessage(JSON.stringify(response));
     }).catch(error=>{failure(error.message);try{port.postMessage(JSON.stringify({type:"error",id,code:error.message}));}catch{}});
   };
-  port.start();port.postMessage(JSON.stringify({type:"ready",id}));
+  port.start();
+  if(hello&&hello.type==="hello"&&hello.id===id){handshaken=true;port.postMessage(JSON.stringify({type:"ready",id}));}
 };
 for(const event of window.__returnBootQueue||[])window.__returnAcceptChannel?.(event);
 window.__returnBootQueue=[];
