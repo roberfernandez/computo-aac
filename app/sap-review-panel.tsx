@@ -91,7 +91,7 @@ export default function SapReviewPanel({year}:SapReviewPanelProps){
   // No solicitudes a SAP ni subida del fichero: todo permanece en IndexedDB de este dispositivo.
   if(auth!=="owner")return null;
   const comparison=saved?compareSapToComputo(saved.doc,localFacts(year)):null;
-  const differences=comparison?.ready?comparison.rows.filter((r:{status:string})=>r.status==="diff"):[];
+  const differences=comparison?.ready?comparison.rows.filter((r:{status:string})=>r.status==="diff"||r.status==="temporal"):[];
   const pending=comparison?.ready?comparison.rows.filter((r:{status:string})=>r.status==="pending"):[];
   async function launchSap(scope:"year"|"october-test"){
     setBusy(true);setNotice("");
@@ -103,7 +103,7 @@ export default function SapReviewPanel({year}:SapReviewPanelProps){
       await storePending(result.grant);
       const ticket=encodeURIComponent(result.ticket);
       window.location.href="intent://sync?ticket="+ticket+"#Intent;scheme=computo-tmb;package=cat.tmbagent.sapwebviewprobe;end";
-      setNotice("Obrint el pont TMB. Si Android no l’obre, instal·la la versió 0.3.0 del pont privat.");
+      setNotice("Obrint el pont TMB. Si Android no l’obre, instal·la la versió 0.3.1 del pont privat.");
     }catch(e){setNotice(e instanceof Error?e.message:"No s’ha pogut obrir SAP.");}finally{setBusy(false);}
   }
   async function importFile(file:File){
@@ -161,14 +161,15 @@ export default function SapReviewPanel({year}:SapReviewPanelProps){
       {saved&&<>
         <div className="rounded-lg border border-white/10 bg-[#0b2029] p-3 text-xs">
           <p>Última extracció: <b>{dayFmt(saved.doc.extraido)}</b></p>
-          <p className="mt-1">Còpia activa: {year} · {saved.history.length} importacions registrades (màxim 12).</p>
+          <p className="mt-1">Còpia activa: {year} · {Object.keys(saved.doc.valoraciones).length} mesos · {Object.values(saved.doc.valoraciones).reduce((sum,rows)=>sum+rows.length,0)} registres · {saved.history.length} importacions registrades (màxim 12).</p>
           <p className="mt-1 text-white/60">Les importacions noves vàlides substitueixen la còpia activa. Una extracció incompleta o anterior no la pot substituir.</p>
         </div>
         {!comparison?.ready?<p className="text-sm text-amber-200">{comparison?.reason||"No hi ha dades de Còmput per comparar."}</p>:<>
-          <div className="grid grid-cols-3 gap-2 text-center">
+          <div className="grid grid-cols-2 gap-2 text-center">
             <div className="rounded-lg bg-[#0b2029] p-2"><b className="block text-lg">{comparison.summary?.match}</b><span className="text-[11px] text-white/60">Coincidències</span></div>
             <div className="rounded-lg bg-[#0b2029] p-2"><b className="block text-lg text-amber-200">{comparison.summary?.diff}</b><span className="text-[11px] text-white/60">Diferències</span></div>
             <div className="rounded-lg bg-[#0b2029] p-2"><b className="block text-lg">{comparison.summary?.pending}</b><span className="text-[11px] text-white/60">Pendents</span></div>
+            <div className="rounded-lg bg-[#0b2029] p-2"><b className="block text-lg text-sky-200">{comparison.summary?.temporal||0}</b><span className="text-[11px] text-white/60">Imputació temporal</span></div>
           </div>
           <p className="text-xs text-white/60">Les diferències són indicis a investigar, no errors atribuïts automàticament a TMB o a Còmput. El mes en curs no es compara com a tancat.</p>
           <button type="button" className="w-full rounded border border-white/20 px-3 py-2 text-sm" onClick={()=>setExpanded(v=>!v)}>
@@ -188,7 +189,7 @@ export default function SapReviewPanel({year}:SapReviewPanelProps){
               </details>
             ))}
           </div>}
-          <p className="text-xs text-white/50">{pending.length} comparacions pendents o amb períodes encara oberts. Concepts SAP sense equivalència confirmada: {comparison.unmapped.map((r:{category:string})=>r.category).join(", ")||"cap"}.</p>
+          <p className="text-xs text-white/50">{pending.length} comparacions pendents o amb períodes encara oberts. Concepts SAP no equivalents o pendents de validació: {comparison.unmapped.map((r:{category:string})=>r.category).join(", ")||"cap"}.</p>
         </>}
       </>}
     </section>

@@ -46,6 +46,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { deleteStorageKeys, markStorageKeyPending, pushPayrollSnapshot, pushStorageKey, syncComputoStorage, type SyncState } from "./computo-sync";
 import { loadAnnualCalendarImage, saveAnnualCalendarImage, removeAnnualCalendarImage } from "./annual-calendar-cloud";
 import SapReviewPanel from "./sap-review-panel";
+import {authenticatedUserId,readSharedSession} from "./tmb-session";
+import {migrateConfirmedPilot} from "@/lib/confirmed-pilot";
 import {
   Table,
   TableBody,
@@ -107,6 +109,10 @@ type DayData = {
   endExtraMinutes?: number;
   customStart?: string;
   customEnd?: string;
+  medicalStart?: string;
+  medicalEnd?: string;
+  permissionKind?: "FAMILY_MEDICAL_FULL_DAY";
+  officialHolidayMode?: "PROPORTIONAL" | "E";
   note: string;
   periodId?: string;
   priorOrigin?: PriorOrigin;
@@ -868,6 +874,25 @@ function nightForDay(d: DayData, profile: UserProfile, code: string | null | und
   return { overlap, payable, reason };
 }
 
+// Ordinary work and SAP segment rounding are separate from credited service time.
+function ordinaryBreakdown(d: DayData, start: string, minutes: number) {
+  if(!/^\d{2}:\d{2}$/.test(start)||!Number.isFinite(minutes)||minutes<0||minutes>2880)return {minutes:NaN,sapHours:NaN};
+  const begin=clockMinutes(start),end=begin+minutes;
+  let absentStart=Infinity,absentEnd=Infinity;
+  if(d.status==="REVISION_MEDICA"&&d.medicalStart&&d.medicalEnd){
+    absentStart=clockMinutes(d.medicalStart);absentEnd=clockMinutes(d.medicalEnd);
+    if(absentEnd<=absentStart)absentEnd+=1440;
+    if(absentEnd<=begin){absentStart+=1440;absentEnd+=1440;}
+  }
+  let day=0,night=0;
+  for(let t=begin;t<end;t++){
+    if(t>=absentStart&&t<absentEnd)continue;
+    const clock=((t%1440)+1440)%1440;
+    if(clock>=360&&clock<1320)day++;else night++;
+  }
+  return {minutes:day+night,sapHours:Math.round((Math.round(day/60*100)/100+Math.round(night/60*100)/100)*100)/100};
+}
+
 function calcDay(
   d: DayData,
   all: DayData[],
@@ -976,7 +1001,7 @@ function calcDay(
       nightOverlapMinutes: nightResult.overlap,
       nightPayableMinutes: nightResult.payable,
       nightReason: nightResult.reason,
-      ordinaryHours: decimalHoursFromMinutes(minutes),
+      ordinaryHours: decimalHoursFromMinutes(ordinaryBreakdown(d,start,minutes).minutes),
       horaNona: fullTime ? 0 : Number.isFinite(minutes) ? Math.max(0, Math.ceil((minutes - 480) / 15) * 0.25) : NaN,
       creditedMinutes: fullTime || (!toPreviousYear && !toCurrentYear) ? 0 : minutes,
       reason: "Categoría oficial no disponible · solo los cálculos dependientes quedan pendientes",
@@ -1062,7 +1087,7 @@ function calcDay(
       ? decimalHoursFromMinutes(actualNightMinutes)
       : NaN,
     actualOrdinaryHours = Number.isFinite(actualWorkedMinutes)
-      ? decimalHoursFromMinutes(actualWorkedMinutes)
+      ? decimalHoursFromMinutes(ordinaryBreakdown(d,start,actualWorkedMinutes).minutes)
       : NaN,
     actualHoraNona =
       !isFullTime(profile) && Number.isFinite(actualWorkedMinutes) && actualWorkedMinutes > 480
@@ -1187,7 +1212,7 @@ function plusFestiuCount(days: DayData[], year: number, month: number) {
   ).length;
 }
 function plusConvenioCount(days: DayData[]) {
-  return days.filter((d) => d.status !== "FEST").length;
+  return days.filter((d) => d.status !== "FEST" && !(d.status === "PERMISO" && d.permissionKind === "FAMILY_MEDICAL_FULL_DAY")).length;
 }
 function specialRetributiveDaysCount(days: DayData[], year: number, month: number) {
   return days.filter(
@@ -1209,6 +1234,10 @@ function payrollFactsFor(plan: YearPlan, year: number, profile: UserProfile) {
         activity: {
           version: 1,
           status: d.status,
+          calendarBaseStatus: d.baseStatus || null,
+          medicalInterval: d.status === "REVISION_MEDICA" && d.medicalStart && d.medicalEnd ? {start:d.medicalStart,end:d.medicalEnd} : null,
+          permissionKind: d.status === "PERMISO" ? d.permissionKind || null : null,
+          officialHolidayMode: d.officialHolidayMode || null,
           priorOrigin: d.priorOrigin || null,
           // Original scheduled work dates survive vacations, RJ and other overlays.
           calendarWorkingDay: d.baseStatus === "AGCG" ? true : d.baseStatus === "FEST" || d.baseStatus === "DCOM" ? false : null,
@@ -1220,6 +1249,7 @@ function payrollFactsFor(plan: YearPlan, year: number, profile: UserProfile) {
         },
         metrics: {
           ordinaryHours: metric(schedulePending ? NaN : c.ordinaryHours, "h"),
+          ordinarySapHours: metric(schedulePending ? NaN : c.ordinaryHours === 0 ? 0 : ordinaryBreakdown(d,c.shift.split("–")[0],Number(c.hours.split(":")[0])*60+Number(c.hours.split(":")[1])).sapHours,"h"),
           nightPayableMinutes: metric(schedulePending || c.nightReason ? NaN : c.nightPayableMinutes, "min"),
           nightPayableHours: metric(schedulePending || c.nightReason ? NaN : c.nightHours, "h"),
           horaNonaHours: metric(schedulePending ? NaN : c.horaNona, "h"),
@@ -1246,7 +1276,7 @@ function retributiveSummaryFor(plan: YearPlan, year: number, profile: UserProfil
   const facts = exported.months[month];
   const history: any[] = Object.values(exported.months);
   if (previousYearExport?.schema === "metro-payroll-facts-v1" && previousYearExport.year === year - 1 && previousYearExport.months?.[12]) history.push(previousYearExport.months[12]);
-  const concepts = [["official-holiday", "Plus Festivo Oficial"], ["worked-holiday-e", "P.Festivo Trabajado E"], ["special-day", "Plus día Especial"]].map(([id, name]) => {
+  const concepts = [["official-holiday", "Plus Festivo Oficial"], ["official-holiday-e", "P.Festivo Oficial E"], ["worked-holiday-e", "P.Festivo Trabajado E"], ["special-day", "Plus día Especial"]].map(([id, name]) => {
     const result = calculateEntitlement(id, { facts, profile: exported.profile, period: facts?.period || `${year}-${String(month).padStart(2, "0")}`, history });
     return { id, name, value: result.labour?.value ?? null, reason: result.message || "" };
   });
@@ -5346,6 +5376,10 @@ export default function Home() {
   useEffect(() => {
     (async () => {
       await syncComputoStorage(setSyncState);
+      try{
+        const session=readSharedSession(),uid=session?await authenticatedUserId(session):null;
+        if(uid){const corrected=await migrateConfirmedPilot(uid,localStorage);if(corrected.changed){markStorageKeyPending("metro-year-2026");await pushStorageKey("metro-year-2026");}}
+      }catch{setMessage("No se han aplicado las correcciones privadas: se conserva la planificación anterior.");}
       loadYear(INITIAL_YEAR);
       try {
         const stored = localStorage.getItem("metro-profile-v2"),
@@ -6031,6 +6065,7 @@ export default function Home() {
   }
   function updateSelected() {
     if (!selected) return;
+    if(selected.status === "REVISION_MEDICA" && Boolean(selected.medicalStart)!==Boolean(selected.medicalEnd)){setMessage("Completa el inicio y el fin de la revisión médica, o deja ambos vacíos.");return;}
     const invalid = modificationError(selected, days, year, month, profile);
     if (invalid) { setMessage(invalid); return; }
     commitMonth(
@@ -7403,6 +7438,14 @@ export default function Home() {
                   <Button variant="outline" onClick={() => setSelected(hourlyAdjustment(selected))}>Ajustar por horas en este día</Button>
                 </div>
               )}
+                {selected.status === "REVISION_MEDICA" && <div className="space-y-2 rounded border border-white/15 p-3">
+                  <Label>Interval de revisió mèdica (opcional)</Label>
+                  <div className="grid grid-cols-2 gap-2"><Input aria-label="Inici revisió mèdica" type="time" value={selected.medicalStart||""} onChange={e=>setSelected({...selected,medicalStart:e.target.value})}/><Input aria-label="Fi revisió mèdica" type="time" value={selected.medicalEnd||""} onChange={e=>setSelected({...selected,medicalEnd:e.target.value})}/></div>
+                  <p className="text-xs text-white/60">Resta només de les hores ordinàries treballades. Es conserva el crèdit de jornada, el saldo, la nocturnitat i la Hora Nona.</p>
+                </div>}
+                {selected.status === "PERMISO" && <label className="flex gap-2 text-sm"><input type="checkbox" checked={selected.permissionKind==="FAMILY_MEDICAL_FULL_DAY"} onChange={e=>setSelected({...selected,permissionKind:e.target.checked?"FAMILY_MEDICAL_FULL_DAY":undefined})}/>Acompanyament mèdic familiar de jornada completa · sense Plus Convenio</label>}
+                {isWorking(selected.status) && <div className="space-y-2"><Label>Plus Festivo Oficial · modalitat confirmada</Label><select className="w-full rounded bg-[#102b35] p-2" value={selected.officialHolidayMode||""} onChange={e=>setSelected({...selected,officialHolidayMode:e.target.value?(e.target.value as "PROPORTIONAL"|"E"):undefined})}><option value="">Regla existent / pendent de verificar</option><option value="PROPORTIONAL">Proporcional al percentatge de jornada</option><option value="E">E · import íntegre (100 %)</option></select><p className="text-xs text-white/50">No equival a P.Festivo Trabajado E. Marca una modalitat només amb una valoració o nòmina contrastada.</p></div>}
+
               {selected.special === "MODIFICACION" && (
                 <>
                   <ModificationFields day={selected} year={year} onChange={setSelected} />
