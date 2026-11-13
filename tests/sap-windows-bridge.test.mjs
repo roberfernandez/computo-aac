@@ -16,7 +16,10 @@ test("Windows extension is a narrow-scoped MV3 extension",()=>{
   assert.ok(!m.permissions.includes("cookies")&&!m.permissions.includes("webRequest"));
 });
 test("Windows and Android reuse the identical SAP extractor and validation protocol",()=>{
-  assert.equal(read("probe.js"),readFileSync("experiments/sap-admin/android/assets/probe.js","utf8"));
+  const extensionProbe=read("probe.js");
+  assert.equal(extensionProbe.replace(",employeeNumber:identity",""),
+    readFileSync("experiments/sap-admin/android/assets/probe.js","utf8"));
+  assert.match(extensionProbe,/employeeNumber:identity/);
   assert.equal(read("protocol.mjs"),readFileSync("public/sap-return/protocol.mjs","utf8"));
 });
 test("extension does not hardcode personal employee IDs or private credentials",()=>{
@@ -27,6 +30,7 @@ test("extension does not hardcode personal employee IDs or private credentials",
   }
   assert.match(read("background.mjs"),/verifyTicket\(ticket\)/);
   assert.match(read("background.mjs"),/verifyBrowserIdentity/);
+  assert.match(read("background.mjs"),/employee-mismatch/);
   assert.match(read("background.mjs"),/transaction\(\["pending","exports"\],"readwrite"\)/);
 });
 test("annual document schema accepts only legitimate units without employee identifier",()=>{
