@@ -1,26 +1,16 @@
 # SAP → Chrome: isolated return experiment
-The main Còmput application is unchanged. This branch adds only experiments/sap-return.
 
-- Android WebView query: proven on the user's Android tablet (127 October 2026 rows).
-- Receiver and Android Custom Tabs delivery: built, not yet verified on the tablet.
-- Tests: 22 passing tests for extraction, identity, period, chunk order, digest and commit acknowledgement.
-- Receiver: static HTML/JS/CSS. Corporate rows travel only through Chrome's local message channel and remain in the receiver's IndexedDB.
-- Digital Asset Links: development certificate fingerprint only; no private signing key or corporate data in this branch.
-- Android return origin: example.invalid placeholder until the independent receiver is deployed.
-- No SAP password, cookie, corporate token, personnel identifier, or real valuation row is present in this source.
+Return verified on the user's Android tablet with APK v0.2.1: 127 October 2026 records received, integrity-checked and committed to Chrome IndexedDB. See [RESULTADO.md](RESULTADO.md) for evidence and limits.
 
-## Rebuild
-Set JAVA_HOME and ANDROID_SDK_ROOT. Under android:
-1. node prepare-return-deps.mjs
-2. node --test tests/*.test.mjs
-3. node build-return.mjs
+Còmput main remains unchanged. This branch adds only experiments/sap-return. No real corporate data or credentials are committed.
 
-Use a valid own return origin in assets/return-config.json and its matching certificate in web/.well-known/assetlinks.json before testing on a device. The existing test signing key is retained privately with the owner's prototype files.
+Receiver: https://tmb-sap-return-probe.onrender.com
+Source branch: experiment/sap-return-20261113
+Static publish directory: experiments/sap-return/web
+Build command: true; SKIP_INSTALL_DEPS=true. Auto-deploy is disabled.
 
-## Isolated hosting configuration
-Repository: roberfernandez/computo-aac
-Branch: experiment/sap-return-20261113
-Publish directory: experiments/sap-return/web
-Build command: true
-Environment: SKIP_INSTALL_DEPS=true
-No backend, database, paid compute, or modification to Còmput is required.
+The receiver stores data only locally. Chrome validates the native app via Digital Asset Links. Its initial MessagePort event uses the exact native android-app:// origin; the hello message over that port carries the operation identifier.
+
+Rebuild: set JAVA_HOME and ANDROID_SDK_ROOT, run node prepare-return-deps.mjs and node build-return.mjs under android. The test signing key is retained privately by the owner; no private key is in this branch.
+
+Validated: real Android return and 25 automated extraction, protocol and native-origin tests. Pending: integration with the Còmput button, full-year transfer and iPhone.
