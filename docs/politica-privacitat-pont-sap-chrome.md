@@ -11,7 +11,7 @@ El projecte no és una aplicació oficial de Transports Metropolitans de Barcelo
 
 ## 2. Finalitat
 
-La finalitat única del **Pont SAP Windows** és permetre que l'usuari autoritzat de Còmput AAC, a petició seva, consulti **les pròpies** valoracions i dades de calendari laboral al portal corporatiu SAP i les desi localment a Còmput per contrastar-les amb el còmput de jornada.
+La finalitat del **Pont SAP Windows** és permetre que l'usuari autoritzat de Còmput AAC, a petició seva, consulti **les pròpies** valoracions i dades de calendari laboral al portal corporatiu SAP. Còmput en desa una còpia reduïda i la sincronitza al compte privat de l'usuari perquè el contrast es pugui consultar en altres dispositius.
 
 L'extensió no accedeix a dades d'altres empleats i verifica que el número d'empleat del portal coincideixi amb el perfil local de Còmput abans de desar la consulta.
 
@@ -32,14 +32,14 @@ No es recopilen amb aquesta extensió l'historial general de navegació, les com
 2. El pont verifica l'autorització amb el servei d'autenticació de **Supabase** utilitzat per Còmput i comprova la identitat del compte.
 3. El pont obre el portal corporatiu **launcher.tmb.cat**, on l'usuari s'identifica si cal; només consulta les dades necessàries del servei laboral de SAP.
 4. Les valoracions obtingudes es validen i s'emmagatzemen a **IndexedDB, dins l'emmagatzematge local de Còmput AAC al navegador de l'usuari**. L'estat temporal de l'operació es conserva a **chrome.storage.session** i s'elimina quan finalitza, es cancel·la o caduca l'operació; el tancament del navegador també posa fi a aquesta sessió.
-5. **L'extensió no envia el document de valoracions SAP a Supabase**. Les comunicacions amb aquest servei s'utilitzen per verificar la identitat i l'autorització temporal. La informació emmagatzemada per Còmput fora de la funcionalitat del pont pot estar subjecta a altres avisos de privacitat del projecte.
+5. **L'extensió no envia directament el document SAP a Supabase.** Després de rebre i validar les dades, la **web Còmput AAC** sincronitza automàticament al compte privat de Supabase una còpia limitada a **any, data d'extracció, dates, conceptes, unitats, codis de valoració i historial de les importacions**. No hi puja el calendari anual complet de SAP, el número d'empleat, credencials corporatives ni tiquets d'accés. La taula `computo_sync` aplica polítiques RLS que permeten accedir a les dades únicament al seu usuari autentificat i aprovat.
 
 Les comunicacions amb els serveis es fan mitjançant connexions HTTPS.
 
 ## 5. Destinataris i tercers
 
 - **TMB / portal SAP:** font de les dades laborals i servei corporatiu al qual accedeix l'usuari; no és un destinatari nou de les dades importades.
-- **Supabase:** servei de verificació del compte i de l'autorització temporal; rep les dades d'autenticació necessàries per a aquesta verificació, però no el document de valoracions SAP per mitjà del pont.
+- **Supabase:** servei de verificació del compte i de l'autorització temporal. La web Còmput AAC hi desa la còpia reduïda de valoracions laborals per sincronitzar-la entre dispositius sota el mateix compte, amb accés restringit per usuari (RLS). El pont no hi envia les credencials SAP.
 - **GitHub Pages:** allotjament de la interfície web de Còmput AAC i d'aquesta informació; les valoracions es conserven a l'emmagatzematge local del navegador, no als fitxers públics de GitHub.
 - **Google Chrome:** entorn on s'executa l'extensió i es mantenen les dades locals del navegador segons la configuració i les polítiques del producte.
 
@@ -47,11 +47,11 @@ No es venen dades personals ni s'utilitzen per a publicitat, perfils comercials,
 
 ## 6. Conservació i eliminació
 
-Les dades temporals d'una operació caduquen al cap de **15 minuts** com a màxim en el flux autoritzat. Les valoracions importades queden en l'emmagatzematge local de Còmput fins que l'usuari les substitueix o elimina les dades del lloc web al navegador. La desinstal·lació de l'extensió **no garanteix, per si sola, que s'esborri l'emmagatzematge local de Còmput**. Per eliminar-lo, cal esborrar les dades desades del lloc `roberfernandez.github.io` a la configuració de Chrome, tenint en compte que aquesta acció també pot eliminar altres dades locals de Còmput.
+Les dades temporals d'una operació caduquen al cap de **15 minuts** com a màxim en el flux autoritzat. Les valoracions anuals importades es mantenen tant a l'IndexedDB local com a la còpia privada de Supabase fins que se substitueixen o s'eliminen. **Esborrar la memòria del navegador o desinstal·lar l'extensió no elimina les valoracions sincronitzades al compte.** Per sol·licitar l'eliminació de la còpia remota, contacta amb el mantenidor mitjançant el canal indicat a la secció 7; no comparteixis les dades laborals en una incidència pública.
 
 ## 7. Drets i consultes
 
-Per consultar les dades locals o sol·licitar informació sobre el seu tractament, contacta amb el mantenidor des del [repositori del projecte](https://github.com/roberfernandez/computo-aac/issues). No hi publiquis números d'empleat, tokens, credencials ni dades laborals o mèdiques personals: utilitza la incidència pública només per demanar un canal privat de contacte.
+Per consultar les dades locals i sincronitzades, exercir el dret de supressió o sol·licitar informació sobre el seu tractament, contacta amb el mantenidor des del [repositori del projecte](https://github.com/roberfernandez/computo-aac/issues). No hi publiquis números d'empleat, tokens, credencials ni dades laborals o mèdiques personals: utilitza la incidència pública només per demanar un canal privat de contacte.
 
 ## 8. Canvis
 
