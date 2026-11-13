@@ -8037,10 +8037,10 @@ function MonthView({
           </div>
           <section className="mt-5 border-t border-white/10 pt-4" aria-label="Resum retributiu del mes">
         <div className="month-kpis month-kpis-below">
-          <div className="month-kpi">
+          {showMonthlyConcept(monthOrdinaryHours) && <div className="month-kpi">
             <span>Horas ordinarias</span>
             <strong>{formatHours(monthOrdinaryHours)}</strong>
-          </div>
+          </div>}
           {(!Number.isFinite(monthNightHours) || monthNightHours > 0 || calculations.some(({ c }) => c.scheduleReview || (c.nightReason && c.nightOverlapMinutes > 0))) && <div className="month-kpi night">
             <span>
               <Moon size={13} />
@@ -8063,7 +8063,7 @@ function MonthView({
               <strong>{`${item.value} ${item.value === 1 ? "día" : "días"}`}</strong>
             </div>
           ))}
-          {(monthPlusConvenio > 0 || review > 0) && <div className="month-kpi payroll">
+          {showMonthlyConcept(monthPlusConvenio) && <div className="month-kpi payroll">
             <span><CalendarDays size={13} /> Plus Convenio{isFullTime(profile) ? " · provisional" : ""}</span>
             <strong>{monthPlusConvenio} {monthPlusConvenio === 1 ? "día" : "días"}</strong>
             {review > 0 && <span>Provisional · hay días por revisar</span>}
