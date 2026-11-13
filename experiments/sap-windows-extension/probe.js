@@ -204,7 +204,7 @@
   window.__tmbWebviewProbe = {
     exportResult: function () {
       if (!done || state.phase !== "success") return null;
-      return {schema:"tmb-computo-bridge-v1",period:targetPeriod,extractedAt:state.capturedAt,rows:values,calendar:calendar,completedPeriods:completedPeriods};
+      return {schema:"tmb-computo-bridge-v1",period:targetPeriod,extractedAt:state.capturedAt,rows:values,calendar:calendar,completedPeriods:completedPeriods,employeeNumber:identity};
     },
     snapshot: function () { identifyFromPage(); identifyFromModels(); openCalendar(false); return Object.assign({}, state); },
     retry: function () { disabled = false; openCalendar(true); return "requested"; },
