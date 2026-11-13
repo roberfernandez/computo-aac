@@ -1,0 +1,47 @@
+{
+  "version": "0.3.2",
+  "version_code": 7,
+  "source_base_commit": "cbba8173e523ad351d303244c54ebb07a9ad2788",
+  "includes_privacy_correction": "9b8ff0135fa5079b703be15c8ede93802029ab8c",
+  "apk": "computo-pont-tmb-v0.3.2.apk",
+  "apk_bytes": 471515,
+  "apk_sha256": "b0901610b28d493df5ddd446d28bb3147a4eff41fa9202858e7857fb61ad2b1d",
+  "signer_sha256": "078c97340b7358c2272d74db0187a3aa38631eeb752d616f8a162e5c756b3c3f",
+  "signature_v2_verified": true,
+  "signature_v3_verified": true,
+  "certificate_matches_published_assetlinks": true,
+  "min_android_api": 26,
+  "target_android_api": 35,
+  "permissions": [
+    "android.permission.INTERNET"
+  ],
+  "debuggable": false,
+  "allow_backup": false,
+  "cleartext_traffic": false,
+  "source_file_sha256": {
+    "AndroidManifest.xml": "73b171e74fa05b738b0c2f989818a65011f0a30dade1def2be754f9b74941b0b",
+    "assets/probe.js": "01fbc118708dc6048f55cc37b9d7e9bb980e2352dc30b90854877f4f4bab2907",
+    "assets/return-config.json": "7ea67c035ff3de6ba994c055875ec6f0fda8a1f91ccff36a5fb7247435f16715",
+    "src/cat/tmbagent/sapwebviewprobe/ProbeActivity.java": "dad1e99362982a9d3d69d26851893cc124f65ca29ce982cc1445030aa26cdb9a",
+    "src/cat/tmbagent/sapwebviewprobe/ChromeReturn.java": "21fdc0428858a06c22cca1da415613ea9c390ef43c05ef8ee050158b2a501acf",
+    "build-return.mjs": "7eb342a438799f50deaa5f9387e0c41073bea6e99e0e27ab3da7dd0ce4fec08e",
+    "prepare-return-deps.mjs": "083cf1952f5386caf7ac66dd56c460bd27dbb6e7daba3100925f58f1f7ddc9aa"
+  },
+  "apk_audit": {
+    "fixed_uuid_matches": 0,
+    "email_matches": 0,
+    "individual_corrections_or_medical_markers": 0,
+    "assets_match_current_source": true,
+    "packaged_assets": [
+      "assets/probe.js",
+      "assets/return-config.json"
+    ]
+  },
+  "automated_tests": {
+    "passed": 25,
+    "failed": 0
+  },
+  "phone_validation": "PENDING_USER_INSTALLATION_AND_REAL_TEST",
+  "access": "Existing server-managed administrator permission only; not enabled for other users.",
+  "security_incident": "OPEN: historical Git objects, old artifacts and distributed APKs are not declared removed."
+}

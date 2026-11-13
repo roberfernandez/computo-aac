@@ -87,3 +87,9 @@ La conexión de GitHub no expone borrado de artefactos y el CLI no dispone de au
 - No desarrollar nuevas funciones hasta resolver o delimitar expresamente estos pendientes.
 
 Referencia sobre límites de retirada del historial y cachés: [documentación oficial de GitHub](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/removing-sensitive-data-from-a-repository).
+
+## Preparación de APK sustitutiva 0.3.2
+
+Se ha compilado un artefacto nuevo desde el código corregido, con versión 0.3.2 y código 7, conservando el certificado ya reconocido por el canal. La auditoría del APK empaquetado y sus comprobaciones están documentadas en [`releases/sap-bridge-0.3.2`](../releases/sap-bridge-0.3.2/README.md). No se ha instalado ni comprobado todavía esta versión en el móvil del usuario. Los recuentos de octubre y del año son referencias anteriores, no una nueva extracción validada.
+
+Esta distribución sustitutiva **no cierra la incidencia histórica** ni acredita retirada del historial, artefactos o APK distribuidas anteriormente. Tampoco amplía el permiso administrativo a otros trabajadores ni cambia datos, cálculos, reglas privadas o copias de restauración existentes.

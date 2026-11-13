@@ -93,7 +93,7 @@ public class ProbeActivity extends Activity {
         ScrollView statusScroll = new ScrollView(this);
         statusScroll.addView(status);
         root.addView(statusScroll,new LinearLayout.LayoutParams(-1,dp(102)));
-        address = text("Pont privat · v0.3.1",11,GOLD);
+        address = text("Pont privat · v0.3.2",11,GOLD);
         root.addView(address,new LinearLayout.LayoutParams(-1,dp(26)));
         web = new WebView(this);
         root.addView(web,new LinearLayout.LayoutParams(-1,0,1));

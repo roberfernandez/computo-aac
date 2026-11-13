@@ -1,10 +1,10 @@
-import {mkdir,readdir,stat} from "node:fs/promises";
+import {mkdir,readdir,stat,readFile} from "node:fs/promises";
 import {execFile} from "node:child_process";
 import {fileURLToPath} from "node:url";
 import {dirname,join,delimiter} from "node:path";
 import {homedir} from "node:os";
 const root=dirname(fileURLToPath(import.meta.url)), win=process.platform==="win32";
-const sdk=process.env.ANDROID_SDK_ROOT||join(homedir(),"AppData/Local/Android/Sdk");
+const sdk=process.env.ANDROID_SDK_ROOT||process.env.ANDROID_HOME||join(homedir(),win?"AppData/Local/Android/Sdk":"Android/Sdk");
 const javaHome=process.env.JAVA_HOME||(win?"C:/Program Files/Java/jdk-24":"/usr/lib/jvm/default-java");
 const tool=name=>join(javaHome,"bin",name+(win?".exe":""));
 const bt=join(sdk,"build-tools","35.0.0"), android=join(sdk,"platforms","android-35","android.jar");
@@ -22,9 +22,16 @@ await run(tool("java"),["-cp",join(bt,"lib/d8.jar"),"com.android.tools.r8.D8","-
 await run(aapt,["package","-f","-M",join(root,"AndroidManifest.xml"),"-I",android,"-A",join(root,"assets"),"-F",join(work,"unsigned.apk")]);
 await run(aapt,["add",join(work,"unsigned.apk"),...(await readdir(join(work,"dex"))).filter(name=>/^classes(?:[0-9]+)?\.dex$/.test(name))],{cwd:join(work,"dex")});
 await run(join(bt,"zipalign"+(win?".exe":"")),["-f","-p","4",join(work,"unsigned.apk"),join(work,"aligned.apk")]);
-const keystore=join(work,"probe-debug.p12");
-if(!await stat(keystore).catch(()=>null))await run(tool("keytool"),["-genkeypair","-keystore",keystore,"-storetype","PKCS12","-storepass","android","-keypass","android","-alias","androiddebugkey","-dname","CN=TMB WebView Probe,O=Local Test,C=ES","-keyalg","RSA","-keysize","2048","-validity","3650"]);
-const apk=join(out,"tmb-sap-webview-probe-v0.3.1.apk");
-await run(tool("java"),["-jar",join(bt,"lib/apksigner.jar"),"sign","--ks",keystore,"--ks-key-alias","androiddebugkey","--ks-pass","pass:android","--key-pass","pass:android","--out",apk,join(work,"aligned.apk")]);
+// Release signing is explicit: never silently create a different certificate.
+const keystore=process.env.TMB_SAP_KEYSTORE;
+if(!keystore||!await stat(keystore).catch(()=>null))throw Error("TMB_SAP_KEYSTORE must reference the private signing keystore.");
+if(!process.env.TMB_SAP_STORE_PASSWORD)throw Error("Set TMB_SAP_STORE_PASSWORD in the build environment.");
+const manifest=await readFile(join(root,"AndroidManifest.xml"),"utf8");
+const version=/android:versionName="([0-9]+\.[0-9]+\.[0-9]+)"/.exec(manifest)?.[1];
+if(!version)throw Error("Missing release version.");
+const apk=join(out,`computo-pont-tmb-v${version}.apk`);
+const signing=["-jar",join(bt,"lib/apksigner.jar"),"sign","--ks",keystore,"--ks-key-alias",process.env.TMB_SAP_KEY_ALIAS||"androiddebugkey","--ks-pass","env:TMB_SAP_STORE_PASSWORD"];
+if(process.env.TMB_SAP_KEY_PASSWORD)signing.push("--key-pass","env:TMB_SAP_KEY_PASSWORD");
+await run(tool("java"),[...signing,"--out",apk,join(work,"aligned.apk")]);
 console.log(await run(tool("java"),["-jar",join(bt,"lib/apksigner.jar"),"verify","--verbose",apk]));
 console.log(apk);

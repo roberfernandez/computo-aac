@@ -14,7 +14,7 @@
   var urls = new WeakMap();
   var identity = null, opened = false, running = false, done = false, disabled = false;
   var values = [], controller = null, generation = 0;
-  var state = {version: "0.1.1", phase: "waiting-shell", period: "2026-10", http: null, records: null, pages: 0, expected: null};
+  var state = {version: "0.3.2", phase: "waiting-shell", period: "2026-10", http: null, records: null, pages: 0, expected: null};
   function set(phase, extra) { state = Object.assign({}, state, extra || {}, {phase: phase}); }
   function serviceUrl(value) {
     try {
