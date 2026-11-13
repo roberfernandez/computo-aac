@@ -1,11 +1,10 @@
 {
   "manifest_version": 3,
   "name": "Còmput AAC · Pont SAP Windows",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Contrast SAP des de Chrome. Consulta dades només de la sessió TMB pròpia i les desa a Còmput d'aquest navegador.",
   "permissions": [
     "scripting",
-    "tabs",
     "storage"
   ],
   "host_permissions": [

@@ -9,17 +9,16 @@ Extensió Manifest V3 que executa el **mateix extractor SAP de l'auxiliar Androi
 - El codi no conté identificadors d'empleat, dades mèdiques, nòmines individuals ni credencials.
 - Un únic paquet d'extensió podrà servir a tots els usuaris quan el backend emeti tiquets individualment i s'hagi comprovat l'aïllament.
 
-## Instal·lació pilot
+## Instal·lació a Windows (distribució prevista)
 
-1. Des de **Còmput AAC → Contrastar dades amb TMB**, si no es detecta el pont, prem **Descarregar pont Chrome**. Descàrrega estable del pilot: https://github.com/roberfernandez/computo-aac/releases/download/sap-windows-pilot-v0.1.0/computo-pont-sap-chrome-v0.1.0.zip . Descomprimeix el fitxer.
-2. A Chrome, obre `chrome://extensions`, activa **Mode de desenvolupador** i prem **Carrega sense empaquetar**.
-3. Selecciona la carpeta `sap-windows-extension` descomprimida que conté `manifest.json`.
-4. Obre Còmput a `https://roberfernandez.github.io/computo-aac/`, inicia sessió i prem **Ja està instal·lat? Recarrega Còmput**.
-5. Al panell SAP hauria d'aparèixer **«Windows · Pont Chrome detectat»**. Prem **«Contrastar dades amb TMB»**.
-6. S'obre el portal oficial TMB. Inicia-hi sessió si cal, i entra a **Consultes Bàsiques de l'Empleat** si el portal no hi arriba automàticament.
-7. En completar la consulta, el pont retorna a Còmput. Comprova any, 12 mesos, número de valoracions, comparacions i diferències guardades.
+L'extensió és Manifest V3. **Un instal·lador `.exe` no pot activar una extensió no publicada a Chrome Web Store en un Chrome de Windows normal.** Els instal·ladors de tercers i els registres de Windows no poden eludir el consentiment del navegador. No oferim un fals instal·lador ni demanem manipular carpetes de perfil de Chrome.
 
-No cal enllaçar físicament el telèfon ni exportar JSON. No instal·lis aquesta prova en un ordinador compartit.
+1. Un desenvolupador autoritzat publica el paquet a Chrome Web Store amb visibilitat **Privada** per als comptes de prova, o **No llistada** quan s'aprovi la distribució. Vegeu [guia de publicació](../../docs/sap-chrome-webstore.md).
+2. Quan l'extensió estigui aprovada, s'estableix la variable del repositori `SAP_BRIDGE_CHROME_WEBSTORE_ID` amb el seu identificador de 32 lletres (a–p).
+3. En desplegar Còmput, els Windows sense el pont detectat veuran el botó **Instal·lar Pont SAP a Chrome** que obre directament la fitxa oficial. Chrome demanarà afegir-lo i autoritzar els permisos; en tornar i recarregar Còmput es detectarà automàticament.
+4. No cal cap ZIP públic, mode desenvolupador, carpeta local o executables externs. No cal instal·lar res si el pont ja està detectat.
+
+**Estat:** falta registrar/publicar l'extensió i validar-la amb la sessió corporativa de Windows. Fins que existeixi la fitxa real, Còmput informa explícitament que la instal·lació directa no està disponible. La versió pilot prèviament instal·lada es continuarà reconeixent. No s'obre l'accés als companys abans de la validació funcional i de privacitat.
 
 ## Seguretat i privacitat
 
@@ -44,6 +43,6 @@ La validació en GitHub pot comprovar sintaxi, congruència del protocol, autori
 
 ## Funcionalitats no incloses
 
-- Distribució per Chrome Web Store (encara no empaquetada/publicada).
+- Publicació i revisió a Chrome Web Store (paquet de pujada preparat, encara no publicat).
 - Autorització general per a companys, encara desactivada al servidor.
 - Sincronització de registres SAP entre dispositius (per decisió de disseny). Les **diferències acceptades** sí que es desen en l'espai privat de cada usuari.

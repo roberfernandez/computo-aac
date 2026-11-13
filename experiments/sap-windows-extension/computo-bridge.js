@@ -9,7 +9,7 @@
     if (event.source !== window || event.origin !== location.origin ||
       event.data?.source !== APP) return;
     if (event.data.type === "ping") {
-      respond("ready",{version:"0.1.0"});
+      respond("ready",{version:"0.1.1"});
       return;
     }
     if (event.data.type !== "start" || typeof event.data.ticket !== "string" ||
@@ -27,5 +27,5 @@
     if (message?.type !== "status" || typeof message.message !== "string") return;
     respond(message.error?"error":"status",{message:message.message.slice(0,240)});
   });
-  respond("ready",{version:"0.1.0"});
+  respond("ready",{version:"0.1.1"});
 })();

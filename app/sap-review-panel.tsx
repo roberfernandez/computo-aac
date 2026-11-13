@@ -14,7 +14,12 @@ type Reviewed = {fingerprint:string;note:string;reviewedAt:string};
 type ReviewMap = Record<string,Reviewed>;
 const DB_NAME="computo-sap-private-v1",STORE="exports";
 const SAP_BRIDGE_ANDROID_APK="https://raw.githubusercontent.com/roberfernandez/computo-aac/5cd483fba1d0ab1c8aa1928bf44d64bd3fa7430f/releases/sap-bridge-0.3.2/computo-pont-tmb-v0.3.2.apk";
-const SAP_BRIDGE_WINDOWS_ZIP="https://github.com/roberfernandez/computo-aac/releases/download/sap-windows-pilot-v0.1.0/computo-pont-sap-chrome-v0.1.0.zip";
+// Chrome only allows normal Windows users to install an extension through Chrome Web Store.
+// The ID is set only after Google approves the private pilot; never link a manual ZIP as the default.
+const SAP_BRIDGE_WINDOWS_EXE="https://github.com/roberfernandez/computo-aac/releases/download/sap-windows-installer-v0.1.1/PontSAP-Windows-Instalador-Prueba-v0.1.1.exe";
+const SAP_BRIDGE_CHROME_WEBSTORE_ID=process.env.NEXT_PUBLIC_SAP_BRIDGE_CHROME_WEBSTORE_ID||"";
+const SAP_BRIDGE_CHROME_WEBSTORE_URL=/^[a-p]{32}$/.test(SAP_BRIDGE_CHROME_WEBSTORE_ID)
+  ?"https://chromewebstore.google.com/detail/"+SAP_BRIDGE_CHROME_WEBSTORE_ID:null;
 const dayFmt=(date:string)=>new Date(date).toLocaleString("es-ES",{dateStyle:"medium",timeStyle:"short"});
 function openPrivateDb():Promise<IDBDatabase>{
   return new Promise((resolve,reject)=>{
@@ -259,18 +264,28 @@ export default function SapReviewPanel({year,facts}:SapReviewPanelProps){
           <div className="space-y-3 rounded-lg border border-amber-400/35 bg-[#091b23] p-3">
             <p className="text-sm font-semibold text-amber-200">Instal·la el pont SAP per a Chrome</p>
             <p className="text-xs text-white/70">Còmput no detecta l&apos;extensió en aquesta pestanya. Només cal instal·lar-la una vegada a Chrome (prova privada per a Windows).</p>
-            <a href={SAP_BRIDGE_WINDOWS_ZIP} className="block rounded-lg bg-[#f7ca6e] px-3 py-2.5 text-center text-sm font-semibold text-[#10212a]">
-              Descarregar pont Chrome · Windows 0.1.0
-            </a>
-            <ol className="list-decimal space-y-1.5 pl-5 text-xs text-white/80">
-              <li>Descomprimeix el ZIP descarregat.</li>
-              <li>Obre <b>chrome://extensions</b> des de la barra d&apos;adreces.</li>
-              <li>Activa <b>Mode de desenvolupador</b> i prem <b>Carrega sense empaquetar</b>.</li>
-              <li>Selecciona la carpeta <b>sap-windows-extension</b> que conté <b>manifest.json</b>.</li>
-              <li>Torna a Còmput i recarrega la pàgina per activar el pont.</li>
-            </ol>
+            {SAP_BRIDGE_CHROME_WEBSTORE_URL?<>
+              <a href={SAP_BRIDGE_CHROME_WEBSTORE_URL} target="_blank" rel="noopener noreferrer"
+                className="block rounded-lg bg-[#f7ca6e] px-3 py-2.5 text-center text-sm font-semibold text-[#10212a]">
+                Instal·lar Pont SAP a Chrome
+              </a>
+              <p className="text-xs text-white/80">Chrome obrirà la fitxa de l&apos;extensió a Chrome Web Store. Prem «Afegeix a Chrome», confirma els permisos i torna aquí. No cal descarregar cap ZIP ni buscar carpetes.</p>
+            </>:<>
+              <a href={SAP_BRIDGE_WINDOWS_EXE} target="_blank" rel="noopener noreferrer"
+                className="block rounded-lg bg-[#f7ca6e] px-3 py-2.5 text-center text-sm font-semibold text-[#10212a]">
+                Descarregar instal·lador Pont SAP · Windows
+              </a>
+              <p className="text-xs text-white/80">Descàrrega directa de l&apos;instal·lador provisional (EXE) de la versió 0.1.1. No cal descarregar ni descomprimir cap ZIP.</p>
+              <ol className="list-decimal space-y-1.5 pl-5 text-xs text-white/80">
+                <li>Obre el fitxer EXE que acaba de descarregar Chrome. És una versió de prova sense signatura digital.</li>
+                <li>L&apos;instal·lador prepararà els fitxers, copiarà la ruta de la carpeta i obrirà Chrome a extensions.</li>
+                <li>A Chrome, activa <b>Mode de desenvolupador</b>, prem <b>Carrega sense empaquetar</b> i enganxa la carpeta copiada.</li>
+                <li>Torna a Còmput i recarrega aquesta pàgina per detectar el pont.</li>
+              </ol>
+              <p className="text-[11px] text-amber-200">Instal·lació de prova només per a comptes autoritzats. Google encara ha de revisar la instal·lació directa des de Chrome Web Store. No desactivis la protecció de Windows ni modificis polítiques de Chrome.</p>
+            </>}
             <button type="button" className="w-full rounded border border-white/30 px-3 py-2 text-xs font-medium"
-              onClick={()=>window.location.reload()}>Ja està instal·lat? Recarrega Còmput</button>
+              onClick={()=>window.location.reload()}>Comprovar instal·lació · Recarregar Còmput</button>
             <p className="text-[11px] text-white/55">Pilot limitat a comptes autoritzats. Utilitza només el teu perfil de Chrome i la teva sessió corporativa.</p>
           </div>}
         {bridgePlatform==="android"&&

@@ -8,7 +8,7 @@ const read=name=>readFileSync(base+name,"utf8");
 test("Windows extension is a narrow-scoped MV3 extension",()=>{
   const m=JSON.parse(read("manifest.json"));
   assert.equal(m.manifest_version,3);
-  assert.deepEqual(m.permissions,["scripting","tabs","storage"]);
+  assert.deepEqual(m.permissions,["scripting","storage"]);
   assert.equal(m.background.type,"module");
   assert.ok(m.host_permissions.every(value=>value.startsWith("https://")));
   assert.equal(m.content_scripts.length,2);

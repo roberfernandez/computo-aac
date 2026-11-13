@@ -26,12 +26,21 @@ jobs:
       - run: npm run build
         env:
           NEXT_PUBLIC_GIT_SHA: ${{ github.event.pull_request.head.sha }}
-      - name: Package Windows SAP extension pilot
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Prepare Chrome Store icons
         run: |
-          cd experiments
-          zip -q -r sap-windows-extension-0.1.0.zip sap-windows-extension
+          python -m pip install Pillow==11.3.0
+          python scripts/prepare-sap-chrome-store.py
+      - name: Package extension for Web Store validation
+        run: |
+          cd experiments/sap-windows-extension
+          zip -q ../../sap-chrome-webstore-preview.zip manifest.json background.mjs computo-bridge.js portal-monitor.js probe.js protocol.mjs icon-16.png icon-48.png icon-128.png
+          cd ../..
+          test "$(unzip -Z1 sap-chrome-webstore-preview.zip | head -1)" = "manifest.json"
       - uses: actions/upload-artifact@v4
         with:
-          name: sap-windows-extension-0.1.0
-          path: experiments/sap-windows-extension-0.1.0.zip
+          name: sap-chrome-webstore-preview
+          path: sap-chrome-webstore-preview.zip
           retention-days: 14

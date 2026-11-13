@@ -28,6 +28,7 @@ jobs:
       - run: npm run build
         env:
           NEXT_PUBLIC_GIT_SHA: ${{ github.sha }}
+          NEXT_PUBLIC_SAP_BRIDGE_CHROME_WEBSTORE_ID: ${{ vars.SAP_BRIDGE_CHROME_WEBSTORE_ID }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: out

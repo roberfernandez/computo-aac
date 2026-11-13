@@ -1,32 +1,110 @@
-name: Publish SAP Chrome Windows pilot
+name: Prepare SAP Chrome Web Store package and Windows pilot
 on:
   push:
     branches: [main]
     paths:
       - .github/workflows/publish-sap-windows-pilot.yml
       - experiments/sap-windows-extension/**
+      - experiments/sap-windows-installer/**
+      - scripts/prepare-sap-chrome-store.py
+      - tests/sap-windows-bridge.test.mjs
+      - tests/sap-bridge-onboarding.test.mjs
+  pull_request:
+    paths:
+      - .github/workflows/publish-sap-windows-pilot.yml
+      - experiments/sap-windows-extension/**
+      - experiments/sap-windows-installer/**
+      - scripts/prepare-sap-chrome-store.py
+      - tests/sap-windows-bridge.test.mjs
+      - tests/sap-bridge-onboarding.test.mjs
   workflow_dispatch:
 permissions:
-  contents: write
+  contents: read
 jobs:
-  publish:
+  package:
     if: github.repository == 'roberfernandez/computo-aac'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Package only the browser extension
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate Chrome bridge
+        run: node --test tests/sap-windows-bridge.test.mjs tests/sap-bridge-onboarding.test.mjs
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Prepare Chrome Store icons
         run: |
+          python -m pip install Pillow==11.3.0
+          python scripts/prepare-sap-chrome-store.py
+      - name: Package extension for Chrome Web Store review
+        id: bundle
+        shell: bash
+        run: |
+          set -euo pipefail
           VERSION="$(node -p "JSON.parse(require('fs').readFileSync('experiments/sap-windows-extension/manifest.json','utf8')).version")"
-          echo "EXT_VERSION=$VERSION" >> "$GITHUB_ENV"
-          cd experiments
-          zip -q -r "../computo-pont-sap-chrome-v$VERSION.zip" sap-windows-extension
-      - name: Publish stable, versioned pilot download
+          FILE="computo-pont-sap-chrome-webstore-v$VERSION.zip"
+          cd experiments/sap-windows-extension
+          zip -q "$GITHUB_WORKSPACE/$FILE" manifest.json background.mjs computo-bridge.js portal-monitor.js probe.js protocol.mjs icon-16.png icon-48.png icon-128.png
+          cd "$GITHUB_WORKSPACE"
+          test "$(unzip -Z1 "$FILE" | head -1)" = "manifest.json"
+          ! unzip -Z1 "$FILE" | grep -q '^sap-windows-extension/'
+          echo "file=$FILE" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          sha256sum "$FILE"
+      - name: Save developer-only Web Store upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sap-chrome-webstore-upload
+          path: ${{ steps.bundle.outputs.file }}
+          retention-days: 30
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.2'
+      - name: Build unsigned Windows pilot installer
+        id: installer
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.bundle.outputs.version }}"
+          test "$VERSION" = "0.1.1"
+          cp "${{ steps.bundle.outputs.file }}" experiments/sap-windows-installer/pont-sap-extension.zip
+          cd experiments/sap-windows-installer
+          FILE="PontSAP-Windows-Instalador-Prueba-v$VERSION.exe"
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="-H windowsgui -s -w" -o "$GITHUB_WORKSPACE/$FILE" main.go
+          echo "file=$FILE" >> "$GITHUB_OUTPUT"
+          cd "$GITHUB_WORKSPACE"
+          sha256sum "$FILE"
+      - name: Archive developer pilot installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: pont-sap-windows-installer-v0.1.1
+          path: ${{ steps.installer.outputs.file }}
+          retention-days: 30
+  publish:
+    needs: package
+    if: github.ref == 'refs/heads/main' && github.repository == 'roberfernandez/computo-aac'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: pont-sap-windows-installer-v0.1.1
+      - name: Publish direct EXE for Còmput download button
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: roberfernandez/computo-aac
         run: |
-          TAG="sap-windows-pilot-v${EXT_VERSION}"
-          FILE="computo-pont-sap-chrome-v${EXT_VERSION}.zip"
+          set -euo pipefail
+          TAG="sap-windows-installer-v0.1.1"
+          FILE="PontSAP-Windows-Instalador-Prueba-v0.1.1.exe"
+          test -s "$FILE"
           if ! gh release view "$TAG" >/dev/null 2>&1; then
-            gh release create "$TAG" --target "$GITHUB_SHA" --title "Pont SAP Chrome Windows v${EXT_VERSION} (pilot)" --notes "Extensió de prova privada per a Chrome Windows. Requereix autorització a Còmput; no s'ha validat encara l'inici de sessió SAP de Windows. No distribuir a altres treballadors fins a validar l'accés corporatiu."
+            gh release create "$TAG" --target "$GITHUB_SHA" \
+              --title "Pont SAP Windows v0.1.1 — instal·lador de prova" \
+              --notes "Instal·lador Windows x64 sense signatura digital, només per a proves d'usuaris autoritzats. Prepara els fitxers i obre chrome://extensions. L'usuari ha d'activar el mode desenvolupador i Carregar descomprimida. No és una instal·lació silenciosa ni una publicació avalada per TMB."
           fi
           gh release upload "$TAG" "$FILE" --clobber
