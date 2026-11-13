@@ -21,6 +21,13 @@ jobs:
           node-version: '22'
       - name: Validate Chrome bridge
         run: node --test tests/sap-windows-bridge.test.mjs tests/sap-bridge-onboarding.test.mjs
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Prepare Chrome Store icons
+        run: |
+          python -m pip install Pillow==11.3.0
+          python scripts/prepare-sap-chrome-store.py
       - name: Package extension for Chrome Web Store review
         id: bundle
         shell: bash
@@ -29,7 +36,7 @@ jobs:
           VERSION="$(node -p "JSON.parse(require('fs').readFileSync('experiments/sap-windows-extension/manifest.json','utf8')).version")"
           FILE="computo-pont-sap-chrome-webstore-v$VERSION.zip"
           cd experiments/sap-windows-extension
-          zip -q "$GITHUB_WORKSPACE/$FILE" manifest.json background.mjs computo-bridge.js portal-monitor.js probe.js protocol.mjs
+          zip -q "$GITHUB_WORKSPACE/$FILE" manifest.json background.mjs computo-bridge.js portal-monitor.js probe.js protocol.mjs icon-16.png icon-48.png icon-128.png
           cd "$GITHUB_WORKSPACE"
           test "$(unzip -Z1 "$FILE" | head -1)" = "manifest.json"
           ! unzip -Z1 "$FILE" | grep -q '^sap-windows-extension/'
