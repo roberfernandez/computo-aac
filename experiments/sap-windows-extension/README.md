@@ -11,10 +11,10 @@ Extensió Manifest V3 que executa el **mateix extractor SAP de l'auxiliar Androi
 
 ## Instal·lació pilot
 
-1. Descarrega el repositori (ZIP) o clona'l al PC; extreu els fitxers.
+1. Des de **Còmput AAC → Contrastar dades amb TMB**, si no es detecta el pont, prem **Descarregar pont Chrome**. Descàrrega estable del pilot: https://github.com/roberfernandez/computo-aac/releases/download/sap-windows-pilot-v0.1.0/computo-pont-sap-chrome-v0.1.0.zip . Descomprimeix el fitxer.
 2. A Chrome, obre `chrome://extensions`, activa **Mode de desenvolupador** i prem **Carrega sense empaquetar**.
-3. Selecciona la carpeta `experiments/sap-windows-extension` que conté `manifest.json`.
-4. Obre Còmput a `https://roberfernandez.github.io/computo-aac/`, inicia sessió i recarrega la pàgina.
+3. Selecciona la carpeta `sap-windows-extension` descomprimida que conté `manifest.json`.
+4. Obre Còmput a `https://roberfernandez.github.io/computo-aac/`, inicia sessió i prem **Ja està instal·lat? Recarrega Còmput**.
 5. Al panell SAP hauria d'aparèixer **«Windows · Pont Chrome detectat»**. Prem **«Contrastar dades amb TMB»**.
 6. S'obre el portal oficial TMB. Inicia-hi sessió si cal, i entra a **Consultes Bàsiques de l'Empleat** si el portal no hi arriba automàticament.
 7. En completar la consulta, el pont retorna a Còmput. Comprova any, 12 mesos, número de valoracions, comparacions i diferències guardades.
