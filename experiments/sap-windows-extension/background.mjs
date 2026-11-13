@@ -68,10 +68,10 @@ async function verifyBrowserIdentity(tabId,grant){
  });
  return results?.[0]?.result===true;
 }
-async function saveToComputo(job,doc,hash){
+async function saveToComputo(job,doc,hash,employeeNumber){
  const result=await chrome.scripting.executeScript({target:{tabId:job.siteTabId},world:"ISOLATED",
-   args:[job.grant,doc,hash],
-   func:async (grant,doc,digest)=>{
+   args:[job.grant,doc,hash,employeeNumber],
+   func:async (grant,doc,digest,sapEmployeeNumber)=>{
      if(location.origin!=="https://roberfernandez.github.io"||!location.pathname.startsWith("/computo-aac/"))throw Error("wrong-site");
      let session;try{session=JSON.parse(localStorage.getItem("sb-hhenkvendzengggrgook-auth-token")||"null");}catch{}
      if(!session?.access_token||session.expires_at*1000<=Date.now())throw Error("login-required");
@@ -81,6 +81,11 @@ async function saveToComputo(job,doc,hash){
      if(!response.ok)throw Error("login-required");
      const user=await response.json();
      if(user.id!==grant.uid||user.app_metadata?.computo_sap_admin!==true)throw Error("account-changed");
+     let profile;try{profile=JSON.parse(localStorage.getItem("metro-profile-v2")||localStorage.getItem("metro-profile-v1")||"null");}catch{}
+     const expectedEmployee=String(profile?.employeeNumber||"").trim();
+     if(!/^\\d{1,8}$/.test(expectedEmployee)||!/^[0-9]{8}$/.test(sapEmployeeNumber)||
+        expectedEmployee.padStart(8,"0")!==sapEmployeeNumber)
+       throw Error("employee-mismatch");
      if(doc.period!==String(grant.year)||!Array.isArray(doc.rows)||doc.completedPeriods.length!==12)throw Error("wrong-period");
      const valoraciones=Object.fromEntries(doc.completedPeriods.map(period=>[
        period,doc.rows.filter(row=>new Date(Number(/^\/Date\((-?\d+)/.exec(row.Date)[1])).toISOString().startsWith(period))
@@ -155,9 +160,13 @@ async function poll(sender){
      func:()=>window.__tmbWebviewProbe?.exportResult()||null});
    const doc=result?.[0]?.result;
    if(!doc)throw Error("No s'han pogut llegir les valoracions completes.");
+   // SAP employee number is checked against the private Còmput profile and
+   // deliberately removed from the stored valuation document.
+   const employeeNumber=doc.employeeNumber;
+   if(!/^[0-9]{8}$/.test(employeeNumber||""))throw Error("No s'ha pogut verificar el número d'empleat de SAP.");
    const normalized=validateDocument(doc,doc.rows?.length,String(job.grant.year));
    const hash=await sha256(JSON.stringify(normalized));
-   if(!await saveToComputo(job,normalized,hash))throw Error("No s'han pogut desar les valoracions en Còmput.");
+   if(!await saveToComputo(job,normalized,hash,employeeNumber))throw Error("No s'han pogut desar les valoracions en Còmput.");
    await clearJob();
    try{await chrome.tabs.remove(job.portalTabId);}catch{}
    await chrome.tabs.update(job.siteTabId,{active:true,url:APP_URL});
