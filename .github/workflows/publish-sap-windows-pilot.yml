@@ -1,0 +1,32 @@
+name: Publish SAP Chrome Windows pilot
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/publish-sap-windows-pilot.yml
+      - experiments/sap-windows-extension/**
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  publish:
+    if: github.repository == 'roberfernandez/computo-aac'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Package only the browser extension
+        run: |
+          VERSION="$(node -p "JSON.parse(require('fs').readFileSync('experiments/sap-windows-extension/manifest.json','utf8')).version")"
+          echo "EXT_VERSION=$VERSION" >> "$GITHUB_ENV"
+          cd experiments
+          zip -q -r "../computo-pont-sap-chrome-v$VERSION.zip" sap-windows-extension
+      - name: Publish stable, versioned pilot download
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="sap-windows-pilot-v${EXT_VERSION}"
+          FILE="computo-pont-sap-chrome-v${EXT_VERSION}.zip"
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --target "$GITHUB_SHA" --title "Pont SAP Chrome Windows v${EXT_VERSION} (pilot)" --notes "Extensió de prova privada per a Chrome Windows. Requereix autorització a Còmput; no s'ha validat encara l'inici de sessió SAP de Windows. No distribuir a altres treballadors fins a validar l'accés corporatiu."
+          fi
+          gh release upload "$TAG" "$FILE" --clobber
