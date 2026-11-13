@@ -2,12 +2,16 @@
 
 import {useEffect,useState} from "react";
 import {storePending,verifiedOwner} from "../public/sap-return/storage.mjs";
-import {readSharedSession} from "./tmb-session";
+import {readSharedSession,SUPABASE_PUBLIC_KEY,SUPABASE_URL} from "./tmb-session";
+import {comparisonReviewKey,comparisonFingerprint,isAcceptedReview,pendingGroup} from "@/lib/sap-difference-reviews";
 import {compareSapToComputo,sapChangeCount,validateSapExport} from "@/lib/sap-comparison";
 
 type ValueRow = {Date:string;LongText:string;Number:string;Wagetype?:string};
 type ExportDoc = {ano:number;extraido:string;valoraciones:Record<string,ValueRow[]>};
 type StoredDoc = {key:string;doc:ExportDoc;history:{extraido:string;cambios:number}[]};
+type Difference = {period:string;id:string;concept:string;unit:string;sap:number;computed:number|null;difference:number|null;days:{date:string;sap:number;computed:number;difference:number}[];note:string;status:string;reason:string};
+type Reviewed = {fingerprint:string;note:string;reviewedAt:string};
+type ReviewMap = Record<string,Reviewed>;
 const DB_NAME="computo-sap-private-v1",STORE="exports";
 const dayFmt=(date:string)=>new Date(date).toLocaleString("es-ES",{dateStyle:"medium",timeStyle:"short"});
 function openPrivateDb():Promise<IDBDatabase>{
@@ -57,6 +61,30 @@ function localFacts(year:number):unknown{
   catch{return null;}
 }
 const showNum=(n:number|null)=>n===null?"—":n.toLocaleString("es-ES",{minimumFractionDigits:0,maximumFractionDigits:2});
+function reviewStorageKey(year:number){return "metro-sap-reviewed-v1-"+year;}
+function reviewHeaders(token:string){return {apikey:SUPABASE_PUBLIC_KEY,Authorization:"Bearer "+token,"Content-Type":"application/json"};}
+async function reviewSession(uid:string){
+ const session=readSharedSession();
+ if(!session||await verifiedOwner()!==uid)throw Error("Cal iniciar sessió amb el compte administrador.");
+ return session;
+}
+async function loadPrivateReviews(uid:string,year:number):Promise<ReviewMap>{
+ const session=await reviewSession(uid),key=encodeURIComponent(reviewStorageKey(year));
+ const response=await fetch(SUPABASE_URL+"/rest/v1/computo_sync?user_id=eq."+encodeURIComponent(uid)+"&storage_key=eq."+key+"&select=payload",{
+  headers:reviewHeaders(session.access_token),cache:"no-store"
+ });
+ if(!response.ok)throw Error("No s'han pogut carregar les revisions privades ("+response.status+").");
+ const rows=await response.json(),payload=rows[0]?.payload;
+ return payload?.version===1&&payload.reviews&&typeof payload.reviews==="object"&&!Array.isArray(payload.reviews)?payload.reviews:{};
+}
+async function savePrivateReviews(uid:string,year:number,reviews:ReviewMap){
+ const session=await reviewSession(uid);
+ const response=await fetch(SUPABASE_URL+"/rest/v1/computo_sync?on_conflict=user_id,storage_key",{
+  method:"POST",headers:{...reviewHeaders(session.access_token),Prefer:"resolution=merge-duplicates,return=minimal"},
+  body:JSON.stringify({user_id:uid,storage_key:reviewStorageKey(year),payload:{version:1,reviews},updated_at:new Date().toISOString()})
+ });
+ if(!response.ok)throw Error("No s'ha pogut desar la revisió privada ("+response.status+").");
+}
 type SapReviewPanelProps={year:number;facts?:unknown};
 export default function SapReviewPanel({year,facts}:SapReviewPanelProps){
   const [auth,setAuth]=useState<"checking"|"owner"|"hidden">("checking");
@@ -68,6 +96,10 @@ export default function SapReviewPanel({year,facts}:SapReviewPanelProps){
   const [notice,setNotice]=useState("");
   const [expanded,setExpanded]=useState(false);
   const [revision,setRevision]=useState(0);
+  const [reviews,setReviews]=useState<ReviewMap>({});
+  const [reviewState,setReviewState]=useState<"loading"|"ready"|"error">("loading");
+  const [reviewSaving,setReviewSaving]=useState("");
+  const [reviewDrafts,setReviewDrafts]=useState<Record<string,string>>({});
   useEffect(()=>{
     let active=true;
     const s=readSharedSession();
@@ -87,11 +119,25 @@ export default function SapReviewPanel({year,facts}:SapReviewPanelProps){
     void getSaved(uid,year).then(record=>{if(active)setSaved(record);}).catch(e=>{if(active)setNotice(e instanceof Error?e.message:"No se puede leer el historial.");});
     return()=>{active=false;};
   },[uid,auth,year,revision]);
-  // No solicitudes a SAP ni subida del fichero: todo permanece en IndexedDB de este dispositivo.
+  useEffect(()=>{
+    if(auth!=="owner"||!uid)return;
+    let active=true;
+    queueMicrotask(()=>{if(active){setReviews({});setReviewState("loading");}});
+    void loadPrivateReviews(uid,year).then(value=>{if(active){setReviews(value);setReviewState("ready");}})
+      .catch(error=>{if(active){setReviewState("error");setNotice(error instanceof Error?error.message:"No s'han pogut carregar les revisions.");}});
+    return()=>{active=false;};
+  },[auth,uid,year]);
+  // SAP resta local; només les decisions explícites de revisió es desen
+  // al registre privat del compte, amb les polítiques RLS existents.
   if(auth!=="owner")return null;
   const comparison=saved?compareSapToComputo(saved.doc,facts??localFacts(year)):null;
-  const differences=comparison?.ready?comparison.rows.filter((r:{status:string})=>r.status==="diff"||r.status==="temporal"):[];
-  const pending=comparison?.ready?comparison.rows.filter((r:{status:string})=>r.status==="pending"):[];
+  const differences:Difference[]=comparison?.ready?comparison.rows.filter((r:Difference)=>r.status==="diff"||r.status==="temporal"):[];
+  const pending:Difference[]=comparison?.ready?comparison.rows.filter((r:Difference)=>r.status==="pending"):[];
+  const accepted=differences.filter(r=>isAcceptedReview(r,reviews[comparisonReviewKey(r)]));
+  const toReview=differences.filter(r=>!isAcceptedReview(r,reviews[comparisonReviewKey(r)]));
+  const completed=(comparison?.summary?.match||0)+(comparison?.summary?.diff||0)+(comparison?.summary?.temporal||0);
+  const categories=Object.entries(toReview.reduce((acc:Record<string,number>,r)=>{acc[r.concept]=(acc[r.concept]||0)+1;return acc;},{}));
+  const pendingGroups=Object.entries(pending.reduce((acc:Record<string,number>,r)=>{const group=pendingGroup(r.reason);acc[group]=(acc[group]||0)+1;return acc;},{}));
   async function launchSap(scope:"year"|"october-test"){
     setBusy(true);setNotice("");
     try{
@@ -130,6 +176,22 @@ export default function SapReviewPanel({year,facts}:SapReviewPanelProps){
         :"Datos SAP "+year+" importados y guardados en este dispositivo.");
     }catch(error){setNotice(error instanceof Error?error.message:"El JSON no se ha podido leer.");}
     finally{setBusy(false);}
+  }
+  async function recordReview(row:Difference,accept:boolean){
+    const key=comparisonReviewKey(row);
+    if(reviewSaving||reviewState!=="ready")return;
+    setReviewSaving(key);setNotice("");
+    try{
+      // Relectura privada abans de cada canvi: evita sobreescriure una
+      // acceptació més recent guardada en un altre dispositiu.
+      const current=await loadPrivateReviews(uid,year),next={...current};
+      if(accept)next[key]={fingerprint:comparisonFingerprint(row),note:(reviewDrafts[key]??current[key]?.note??"").trim().slice(0,500),reviewedAt:new Date().toISOString()};
+      else delete next[key];
+      await savePrivateReviews(uid,year,next);
+      setReviews(next);
+      setNotice(accept?"Diferència marcada com a revisada i desada al teu compte.":"Diferència reoberta per revisar.");
+    }catch(error){setNotice(error instanceof Error?error.message:"No s'ha pogut desar la revisió.");}
+    finally{setReviewSaving("");}
   }
   return (
     <section className="panel space-y-3 p-5" aria-label="Contrast experimental amb TMB">
