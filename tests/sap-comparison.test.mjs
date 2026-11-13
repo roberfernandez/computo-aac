@@ -81,3 +81,27 @@ test('worked-holiday E uses actual entitlement conditions instead of raw Sunday 
  const doc=fixture(),f=facts(),m=f.months[10];m.period='2026-10';m.profile={percent:85.81};for(const d of m.days){d.schedule='—';d.activity={version:1,status:'FEST',working:false,ordinary:false,weeklyRest:true,scheduleResolved:true,vacation:false};d.metrics.plusFestiuDays.value=1;}
  const d=m.days[10];d.schedule='18:00–19:00';d.activity={...d.activity,status:'AGCG',working:true,ordinary:true,weeklyRest:false};doc.valoraciones['2026-10'].push({Date:'/Date('+Date.UTC(2026,9,11)+')/',LongText:'P.Festivo Trabajado E',Number:'1'});let row=compareSapToComputo(validateSapExport(doc),f).rows.find(r=>r.period==='2026-10'&&r.concept==='P.Festivo Trabajado E');assert.equal(row.computed,0);assert.equal(row.status,'diff');d.schedule='18:00–20:00';row=compareSapToComputo(validateSapExport(doc),f).rows.find(r=>r.period==='2026-10'&&r.concept==='P.Festivo Trabajado E');assert.equal(row.computed,1);assert.equal(row.status,'match');
 });
+
+test("a closed month with no confirmed official E and zero SAP E is a match, not pending",()=>{
+ const doc=fixture(),f=facts(),m=f.months[10];
+ // Un altre mes té la modalitat E: el comparador coneix el concepte.
+ doc.valoraciones["2026-09"].push({Date:"/Date("+Date.UTC(2026,8,11)+")/",LongText:"P.Festivo Oficial E",Number:"1"});
+ m.period="2026-10";m.profile={percent:85.81};
+ for(const d of m.days)d.activity={...d.activity,working:true,scheduleResolved:true,officialHolidayMode:null};
+ const row=compareSapToComputo(validateSapExport(doc),f).rows.find(r=>r.period==="2026-10"&&r.id==="official-holiday-e");
+ assert.equal(row.status,"match");assert.equal(row.sap,0);assert.equal(row.computed,0);
+});
+test("official E in SAP but no confirmed Còmput E is a difference requiring review",()=>{
+ const doc=fixture(),f=facts(),m=f.months[10];
+ m.period="2026-10";m.profile={percent:85.81};
+ for(const d of m.days)d.activity={...d.activity,working:true,scheduleResolved:true,officialHolidayMode:null};
+ doc.valoraciones["2026-10"].push({Date:"/Date("+Date.UTC(2026,9,12)+")/",LongText:"P.Festivo Oficial E",Number:"1"});
+ const row=compareSapToComputo(validateSapExport(doc),f).rows.find(r=>r.period==="2026-10"&&r.id==="official-holiday-e");
+ assert.equal(row.status,"diff");assert.equal(row.sap,1);assert.equal(row.computed,0);
+});
+test("old or incomplete Còmput activity data never turns missing E into a false match",()=>{
+ const doc=fixture(),f=facts();
+ doc.valoraciones["2026-10"].push({Date:"/Date("+Date.UTC(2026,9,12)+")/",LongText:"P.Festivo Oficial E",Number:"1"});
+ const row=compareSapToComputo(validateSapExport(doc),f).rows.find(r=>r.period==="2026-10"&&r.id==="official-holiday-e");
+ assert.equal(row.status,"pending");
+});
