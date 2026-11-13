@@ -254,17 +254,17 @@ export default function SapReviewPanel({year,facts}:SapReviewPanelProps){
           {busy?"Verificant accés…":"Contrastar dades amb TMB · "+year}
         </button>
         {bridgePlatform==="desktop"&&desktopBridge&&
-          <p className="text-xs text-emerald-200">Pont de Chrome detectat. Ja pots contrastar les dades amb TMB des d'aquest ordinador.</p>}
+          <p className="text-xs text-emerald-200">Pont de Chrome detectat. Ja pots contrastar les dades amb TMB des d&apos;aquest ordinador.</p>}
         {bridgePlatform==="desktop"&&!desktopBridge&&
           <div className="space-y-3 rounded-lg border border-amber-400/35 bg-[#091b23] p-3">
             <p className="text-sm font-semibold text-amber-200">Instal·la el pont SAP per a Chrome</p>
-            <p className="text-xs text-white/70">Còmput no detecta l'extensió en aquesta pestanya. Només cal instal·lar-la una vegada a Chrome (prova privada per a Windows).</p>
+            <p className="text-xs text-white/70">Còmput no detecta l&apos;extensió en aquesta pestanya. Només cal instal·lar-la una vegada a Chrome (prova privada per a Windows).</p>
             <a href={SAP_BRIDGE_WINDOWS_ZIP} className="block rounded-lg bg-[#f7ca6e] px-3 py-2.5 text-center text-sm font-semibold text-[#10212a]">
               Descarregar pont Chrome · Windows 0.1.0
             </a>
             <ol className="list-decimal space-y-1.5 pl-5 text-xs text-white/80">
               <li>Descomprimeix el ZIP descarregat.</li>
-              <li>Obre <b>chrome://extensions</b> des de la barra d'adreces.</li>
+              <li>Obre <b>chrome://extensions</b> des de la barra d&apos;adreces.</li>
               <li>Activa <b>Mode de desenvolupador</b> i prem <b>Carrega sense empaquetar</b>.</li>
               <li>Selecciona la carpeta <b>sap-windows-extension</b> que conté <b>manifest.json</b>.</li>
               <li>Torna a Còmput i recarrega la pàgina per activar el pont.</li>
@@ -275,7 +275,7 @@ export default function SapReviewPanel({year,facts}:SapReviewPanelProps){
           </div>}
         {bridgePlatform==="android"&&
           <div className="space-y-2">
-            <p className="text-xs text-white/70">Android · El pont TMB s'obrirà en la seva aplicació. Inicia sessió al portal oficial quan ho demani.</p>
+            <p className="text-xs text-white/70">Android · El pont TMB s&apos;obrirà en la seva aplicació. Inicia sessió al portal oficial quan ho demani.</p>
             <button type="button" aria-expanded={androidGuide} onClick={()=>setAndroidGuide(v=>!v)}
               className="w-full rounded border border-white/25 px-3 py-2 text-xs font-medium text-white/85">
               {androidGuide?"Amagar guia d'instal·lació":"No tens el pont Android? Descarrega'l i instal·la'l"}
@@ -285,15 +285,15 @@ export default function SapReviewPanel({year,facts}:SapReviewPanelProps){
                 Descarregar pont TMB · Android 0.3.2
               </a>
               <ol className="list-decimal space-y-1.5 pl-5 text-xs text-white/80">
-                <li>Descarrega l'APK des de l'enllaç anterior.</li>
+                <li>Descarrega l&apos;APK des de l&apos;enllaç anterior.</li>
                 <li>Obre el fitxer descarregat i confirma la instal·lació. Si Android ho demana, autoritza aquesta font només per a aquest instal·lador.</li>
                 <li>Torna a Còmput i prem <b>Contrastar dades amb TMB</b>.</li>
               </ol>
-              <p className="text-[11px] text-white/55">El navegador no pot confirmar sempre si l'APK ja està instal·lada. Si el pont s'obre bé, no cal tornar-la a instal·lar.</p>
+              <p className="text-[11px] text-white/55">El navegador no pot confirmar sempre si l&apos;APK ja està instal·lada. Si el pont s&apos;obre bé, no cal tornar-la a instal·lar.</p>
             </div>}
           </div>}
         {bridgePlatform==="unsupported"&&
-          <p className="text-xs text-amber-200">Actualment el contrast automàtic requereix Chrome d'ordinador amb extensió o l'auxiliar Android.</p>}
+          <p className="text-xs text-amber-200">Actualment el contrast automàtic requereix Chrome d&apos;ordinador amb extensió o l&apos;auxiliar Android.</p>}
         {bridgePlatform==="desktop"&&desktopBridge&&
           <p className="text-xs text-white/60">Les dades SAP es guarden localment al teu Chrome, sense compartir-les amb altres usuaris.</p>}
       </div>
