@@ -41,3 +41,13 @@ test("Chrome Web Store upload has manifest at the archive root, not a public use
  const pages=readFileSync(".github/workflows/pages.yml","utf8");
  assert.match(pages,/vars\.SAP_BRIDGE_CHROME_WEBSTORE_ID/);
 });
+
+test("SAP panel occupies only one compact expandable row by default",()=>{
+ assert.match(panel,/<section className="panel !p-0 overflow-hidden"/);
+ assert.match(panel,/<details className="group">\s*<summary className="flex min-h-11/);
+ assert.match(panel,/<span className="text-sm font-semibold text-\[#f7ca6e\]">Contrastar dades amb TMB<\/span>/);
+ assert.match(panel,/<div className="space-y-3 border-t border-white\/15 p-3 sm:p-4">/);
+ assert.doesNotMatch(panel,/<details className="group" open/);
+ assert.match(panel,/synchronizePrivateSap\(uid,year\)/);
+ assert.match(panel,/Veure detall de les diferències/);
+});
