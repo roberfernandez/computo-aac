@@ -18,6 +18,8 @@ jobs:
       - run: node --test tests/payroll-sync.test.mjs
       - run: node --test tests/computo-compensaciones.test.mjs
       - run: node --test tests/sap-comparison.test.mjs
+      - run: node --check experiments/sap-windows-extension/background.mjs && node --check experiments/sap-windows-extension/computo-bridge.js && node --check experiments/sap-windows-extension/portal-monitor.js
+      - run: node --test tests/sap-windows-bridge.test.mjs
       - run: node --test tests/sap-difference-reviews.test.mjs tests/worked-holiday-month-boundary.test.mjs
       - run: node --test tests/private-corrections.test.mjs tests/confirmed-corrections.test.mjs tests/sap-admin-ticket.test.mjs tests/sap-bridge-return.test.mjs experiments/sap-admin/android/tests/probe.test.mjs
       - run: npm run build
