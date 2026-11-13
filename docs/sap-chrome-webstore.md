@@ -13,7 +13,7 @@ Documentació oficial:
 
 ## Distribució prevista
 
-1. Executa el workflow **Prepare SAP Chrome Web Store package** (manualment o amb un canvi al pont de Windows). Descarrega l'artefacte de desenvolupament `sap-chrome-webstore-upload`. El ZIP conté `manifest.json` **a l'arrel**; **no** és un instal·lador destinat als usuaris.
+1. Executa el workflow **Prepare SAP Chrome Web Store package** (manualment o amb un canvi al pont de Windows). Descarrega l'artefacte de desenvolupament `sap-chrome-webstore-upload`. El ZIP conté `manifest.json` **a l'arrel** i les icones PNG 16/48/128 generades a partir de la icona de Còmput; **no** és un instal·lador destinat als usuaris.
 2. Registra un compte de desenvolupador a https://chromewebstore.google.com/ i crea la fitxa. Completa iconografia, captures, descripció, justificació dels permisos, declaració de tractament de dades i política de privacitat. El paquet accedeix només a Còmput, al portal TMB i a la funció d'autorització de Supabase. No afirmis que està aprovat per TMB si no existeix aquesta autorització.
 3. Comença amb visibilitat **Private**, només per als comptes de prova autoritzats. La visibilitat **Unlisted** permet que qualsevol usuari amb l'enllaç pugui instal·lar-la; per això no és equivalent a autorització privada. La funció SAP a Còmput segueix limitada pel servidor a comptes amb el permís d'administrador.
 4. Superada la revisió de Chrome, copia l'ID de la fitxa (32 caràcters a–p) i configura a **Settings → Secrets and variables → Actions → Variables** del repositori la variable `SAP_BRIDGE_CHROME_WEBSTORE_ID`. No afegeixis un identificador inventat.
