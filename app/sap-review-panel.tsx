@@ -89,7 +89,6 @@ type SapReviewPanelProps={year:number;facts?:unknown};
 export default function SapReviewPanel({year,facts}:SapReviewPanelProps){
   const [auth,setAuth]=useState<"checking"|"owner"|"hidden">("checking");
   const [uid,setUid]=useState("");
-  const [testProof,setTestProof]=useState("");
   const [saved,setSaved]=useState<StoredDoc|null>(null);
   const [checked,setChecked]=useState(false);
   const [busy,setBusy]=useState(false);
@@ -115,7 +114,6 @@ export default function SapReviewPanel({year,facts}:SapReviewPanelProps){
     if(auth!=="owner"||!uid)return;
     let active=true;
     queueMicrotask(()=>{if(active)setSaved(null);});
-    void openPrivateDb().then(db=>{const tx=db.transaction("tests","readonly"),r=tx.objectStore("tests").get(uid+":2026-10");r.onsuccess=()=>{if(active&&r.result){const n=r.result.doc.valoraciones["2026-10"]?.length||0;setTestProof("Última prova de retorn: "+n+" registres d’octubre · "+dayFmt(r.result.doc.extraido));}};tx.oncomplete=()=>db.close();});
     void getSaved(uid,year).then(record=>{if(active)setSaved(record);}).catch(e=>{if(active)setNotice(e instanceof Error?e.message:"No se puede leer el historial.");});
     return()=>{active=false;};
   },[uid,auth,year,revision]);
@@ -143,12 +141,12 @@ export default function SapReviewPanel({year,facts}:SapReviewPanelProps){
   const completed=(comparison?.summary?.match||0)+(comparison?.summary?.diff||0)+(comparison?.summary?.temporal||0);
   const categories=Object.entries(toReview.reduce((acc:Record<string,number>,r)=>{acc[r.concept]=(acc[r.concept]||0)+1;return acc;},{}));
   const pendingGroups=Object.entries(pending.reduce((acc:Record<string,number>,r)=>{const group=pendingGroup(r.reason);acc[group]=(acc[group]||0)+1;return acc;},{}));
-  async function launchSap(scope:"year"|"october-test"){
+  async function launchSap(){
     setBusy(true);setNotice("");
     try{
       const session=readSharedSession();
       if(!session||await verifiedOwner()!==uid)throw Error("Cal iniciar sessió amb el compte administrador.");
-      const response=await fetch("https://hhenkvendzengggrgook.supabase.co/functions/v1/sap-admin-ticket",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+session.access_token},body:JSON.stringify({action:"issue",year,scope}),signal:AbortSignal.timeout(15000)});
+      const response=await fetch("https://hhenkvendzengggrgook.supabase.co/functions/v1/sap-admin-ticket",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+session.access_token},body:JSON.stringify({action:"issue",year,scope:"year"}),signal:AbortSignal.timeout(15000)});
       const result=await response.json();if(!response.ok)throw Error(result.error||"No s’ha autoritzat el contrast.");
       await storePending(result.grant);
       const ticket=encodeURIComponent(result.ticket);
@@ -206,9 +204,8 @@ export default function SapReviewPanel({year,facts}:SapReviewPanelProps){
       </div>
       <p className="text-xs text-white/60">Contrasta les dades de Còmput amb les valoracions laborals que TMB ha registrat. Cap diferència implica per si sola un error de TMB ni de Còmput.</p>
       <div className="space-y-2 rounded-lg border border-white/15 bg-[#0b2029] p-3">
-        <button type="button" disabled={busy} onClick={()=>void launchSap("year")} className="w-full rounded-lg border border-[#f7ca6e]/60 bg-[#f7ca6e]/10 px-3 py-3 font-semibold text-[#f7ca6e]">{busy?"Verificant accés…":"Contrastar dades amb TMB · "+year}</button>
+        <button type="button" disabled={busy} onClick={()=>void launchSap()} className="w-full rounded-lg border border-[#f7ca6e]/60 bg-[#f7ca6e]/10 px-3 py-3 font-semibold text-[#f7ca6e]">{busy?"Verificant accés…":"Contrastar dades amb TMB · "+year}</button>
         <p className="text-xs text-white/65">Android · S’obre el portal oficial. Autentica’t si TMB ho demana; les valoracions tornen directament a Còmput, sense fitxers ni contrasenyes compartides.</p>
-        {year===2026&&<button type="button" disabled={busy} onClick={()=>void launchSap("october-test")} className="w-full rounded border border-white/20 px-3 py-2 text-xs">Comprovar retorn · Octubre 2026</button>}
       </div>
       <details><summary className="cursor-pointer text-xs text-white/60">Importació manual existent</summary>
       <p className="text-sm font-semibold text-[#f7ca6e]">2 · Importar i contrastar les dades</p>
@@ -222,7 +219,6 @@ export default function SapReviewPanel({year,facts}:SapReviewPanelProps){
         <input className="sr-only" type="file" accept=".json,application/json" disabled={!checked||busy} onChange={e=>{const f=e.currentTarget.files?.[0];if(f)void importFile(f);e.currentTarget.value="";}} />
       </label>
       </details>
-      {testProof&&<p className="text-xs text-emerald-200">{testProof}</p>}
       {notice&&<p role="status" className="text-xs text-amber-200">{notice}</p>}
       {saved&&<>
         <div className="rounded-lg border border-white/10 bg-[#0b2029] p-3 text-xs">
@@ -234,7 +230,7 @@ export default function SapReviewPanel({year,facts}:SapReviewPanelProps){
           <div className="rounded-lg border border-emerald-400/20 bg-[#0b2029] p-3">
             <p className="font-semibold text-emerald-200">La majoria de les dades coincideixen</p>
             <p className="mt-1 text-xs text-white/70">
-              {comparison.summary.match} comprovacions correctes de les {completed} que s&apos;han pogut completar.
+              {comparison.summary.match} de {completed} comprovacions completades coincideixen.
               Cada comprovació correspon a un concepte laboral en un mes, no a un dia ni a una nòmina.
             </p>
           </div>
@@ -262,10 +258,10 @@ export default function SapReviewPanel({year,facts}:SapReviewPanelProps){
             Una diferència no implica necessàriament una reclamació. Pots marcar-la com a revisada sense alterar els càlculs;
             si les dades de SAP o de Còmput canvien, reapareixerà automàticament.
           </p>
-          <button type="button" className="w-full rounded border border-white/20 px-3 py-2 text-sm" onClick={()=>setExpanded(v=>!v)}>
+          {toReview.length>0&&<button type="button" className="w-full rounded border border-white/20 px-3 py-2 text-sm" onClick={()=>setExpanded(v=>!v)}>
             {expanded?"Amagar diferències":"Veure detall de les diferències"} ({toReview.length})
-          </button>
-          {expanded&&<div className="max-h-[30rem] space-y-2 overflow-y-auto">
+          </button>}
+          {expanded&&toReview.length>0&&<div className="max-h-[30rem] space-y-2 overflow-y-auto">
             {toReview.map(r=>{
               const key=comparisonReviewKey(r);
               return <details key={key} className="rounded-lg border border-amber-400/25 bg-[#0b2029] p-3">
