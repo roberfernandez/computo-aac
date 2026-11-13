@@ -14,10 +14,11 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
-      - run: npx eslint app/computo-sync.ts app/tmb-session.ts app/page.tsx
+      - run: npx eslint app/computo-sync.ts app/tmb-session.ts app/page.tsx app/sap-review-panel.tsx
       - run: node --test tests/payroll-sync.test.mjs
       - run: node --test tests/computo-compensaciones.test.mjs
       - run: node --test tests/sap-comparison.test.mjs
+      - run: node --test tests/sap-difference-reviews.test.mjs tests/worked-holiday-month-boundary.test.mjs
       - run: node --test tests/private-corrections.test.mjs tests/confirmed-corrections.test.mjs tests/sap-admin-ticket.test.mjs tests/sap-bridge-return.test.mjs experiments/sap-admin/android/tests/probe.test.mjs
       - run: npm run build
         env:
