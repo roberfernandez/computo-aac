@@ -1,14 +1,14 @@
 import {Receiver} from './protocol.mjs';
-import {OWNER,verifiedOwner,readPending,transaction} from './storage.mjs';
+import {verifiedOwner,readPending,transaction} from './storage.mjs';
 const $=id=>document.getElementById(id),id=new URLSearchParams(location.hash.slice(1)).get('request')||'';
-let port=null,queue=Promise.resolve(),grant=null,ready=false;
+let owner=null,port=null,queue=Promise.resolve(),grant=null,ready=false;
 const fail=code=>{$('state').textContent='No s’ha completat el contrast';$('detail').textContent=code+' · Es conserva la còpia anterior.';};
-const checked=(g)=>g&&g.uid===OWNER&&g.nonce===id&&g.exp>Date.now()&&g.callback===location.origin+'/computo-aac/sap-return/';
+const checked=(g)=>g&&g.uid===owner&&g.nonce===id&&g.exp>Date.now()&&g.callback===location.origin+'/computo-aac/sap-return/';
 async function save(record){
-  await verifiedOwner();
+  if(await verifiedOwner()!==owner)throw Error('session-changed');
   const doc=record.doc,annual=grant.scope==='year';
   if(doc.period!==(annual?String(grant.year):grant.year+'-10'))throw Error('wrong-period');
-  const store=annual?'exports':'tests',key=OWNER+':'+(annual?grant.year:doc.period);
+  const store=annual?'exports':'tests',key=owner+':'+(annual?grant.year:doc.period);
   await transaction(['pending',store],'readwrite',(tx,done)=>{
     const p=tx.objectStore('pending').get(id);
     p.onsuccess=()=>{
@@ -42,6 +42,6 @@ const acceptChannel=event=>{
 };
 try{
   if(!/^[a-f0-9]{32}$/.test(id))throw Error('missing-operation');
-  await verifiedOwner();grant=await readPending(id);if(!checked(grant))throw Error('expired-or-used-operation');ready=true;window.__returnAcceptChannel=acceptChannel;
+  owner=await verifiedOwner();grant=await readPending(id);if(!checked(grant))throw Error('expired-or-used-operation');ready=true;window.__returnAcceptChannel=acceptChannel;
   for(const event of window.__returnBootQueue||[])window.__returnAcceptChannel(event);window.__returnBootQueue=[];
 }catch(e){fail(e.message);}

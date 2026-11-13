@@ -171,7 +171,7 @@ public class ProbeActivity extends Activity {
                 if(connection.getResponseCode()!=200)throw new Exception();
                 String json;try(InputStream in=connection.getInputStream();ByteArrayOutputStream out=new ByteArrayOutputStream()){byte[] buffer=new byte[2048];int n;while((n=in.read(buffer))!=-1){out.write(buffer,0,n);if(out.size()>6000)throw new Exception();}json=new String(out.toByteArray(),StandardCharsets.UTF_8);}
                 JSONObject approved=new JSONObject(json).getJSONObject("grant");
-                if(!"1dd672e7-707f-4197-a393-a5f6f3a6d74e".equals(approved.getString("uid"))||approved.getLong("exp")<=System.currentTimeMillis()||!"https://roberfernandez.github.io/computo-aac/sap-return/".equals(approved.getString("callback")))throw new Exception();
+                if(approved.optString("uid", "").isEmpty()||approved.getLong("exp")<=System.currentTimeMillis()||!"https://roberfernandez.github.io/computo-aac/sap-return/".equals(approved.getString("callback")))throw new Exception();
                 runOnUiThread(()->{grant=approved;authorized=true;startButton.setEnabled(true);begin();});
             }catch(Exception e){runOnUiThread(()->status.setText("Acceso no autorizado o caducado. Vuelve a iniciar el contraste desde Còmput."));}
             finally{if(connection!=null)connection.disconnect();}

@@ -25,7 +25,7 @@ function setup(options={}){
         json:async()=>next,clone(){return this;},text:async()=>JSON.stringify(next)};
     }};
   context.window=context;
-  if(options.grant!==false)context.__computoSapGrant={uid:"1dd672e7-707f-4197-a393-a5f6f3a6d74e",year:2026,scope:options.annual?"year":"october-test",exp:Date.now()+600000};
+  if(options.grant!==false)context.__computoSapGrant={uid:"synthetic-user",year:2026,scope:options.annual?"year":"october-test",exp:Date.now()+600000};
   if(options.shell!==false)context.sap={ushell:{Container:{getUser:()=>({getId:()=>"synthetic-user"})}}};
   vm.createContext(context);
   const installed=vm.runInContext(script,context);
@@ -49,7 +49,7 @@ test("does not invent an employee or query before an official response",async()=
 test("extracts 127 actual fixture records using the exact October filter and session",async()=>{
   const p=setup();p.observe();await settle();
   assert.equal(p.state().phase,"success");assert.equal(p.state().records,127);
-  assert.equal(p.state().matchesReference,true);
+  assert.equal(p.state().matchesReference,null);
   assert.equal(p.calls[0].url.searchParams.get("$filter"),"Aaaamm eq '202610' and Pernr eq '00000001' and Screen eq 'PAN1'");
   assert.equal(p.calls[0].url.searchParams.get("sap-client"),"030");
   assert.equal(p.calls[0].init.credentials,"same-origin");
@@ -58,7 +58,7 @@ test("extracts 127 actual fixture records using the exact October filter and ses
 });
 test("reports a different valid count honestly rather than forcing 127",async()=>{
   const p=setup({responses:[{d:{results:rows(126)}}]});p.observe();await settle();
-  assert.equal(p.state().phase,"success");assert.equal(p.state().records,126);assert.equal(p.state().matchesReference,false);
+  assert.equal(p.state().phase,"success");assert.equal(p.state().records,126);assert.equal(p.state().matchesReference,null);
 });
 test("rejects mixed identities before querying",async()=>{
   const p=setup();p.observe({d:{results:[{Pernr:EMP},{Pernr:"00000002"}]}});await settle();

@@ -17,17 +17,15 @@ Còmput es manté com a PWA. L’auxiliar Android només gestiona la sessió cor
 | Alternativa | Estat | Experiència |
 | --- | --- | --- |
 | PWA sola | No s’ha demostrat lectura automàtica de SAP des d’un altre origen | La política del navegador limita lectures entre dominis; l’autenticació a SAP no atorga aquest accés a Còmput |
-| PWA + pont Android | Retorn real de 127 registres i extracció anual provats en Samsung SM-T510 | Una instal·lació inicial; després botó de Còmput i només autenticació TMB quan calgui |
+| PWA + pont Android | Retorn i extracció anual validats durant la prova privada | Una instal·lació inicial; després botó de Còmput i només autenticació TMB quan calgui |
 | APK completa | Innecessària per aquest flux | Duplicaria manteniment i distribució de la PWA |
 | iPhone | Pont no validat | El canal Android Custom Tabs no és una solució iOS; no s’anuncia suport automàtic iPhone |
 
 Documentació: https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/CORS ; https://developer.android.com/reference/androidx/browser/customtabs/CustomTabsSession .
 
-## Correccions confirmades
+## Correccions privades
 
-Intervals mèdics resten només d’hores ordinàries treballades; l’arrodoniment diürn/nocturn és una magnitud separada per al contrast SAP. Permís familiar complet identificat expressament, preservació de DCOM/FEST original, variants Festivo Oficial proporcional/E separades i motor existent de Festivo Trabajado E compartit amb Nòmina. La Hora Nona no canvia de regla.
-
-Els ajustos dels casos individuals de 2026 s’apliquen únicament al compte pilot, després de validar-lo i crear una còpia prèvia a IndexedDB computo-confirmed-migrations-v1 / backups. No s’altera plan.original. Es respecten intervals i modalitats que l’usuari ja hagi indicat explícitament.
+Les correccions individuals es consulten amb autenticació a l’emmagatzematge privat amb RLS. El codi distribuït conté únicament un motor genèric de regles. Es mantenen els identificadors de migració i les còpies prèvies a IndexedDB per evitar reaplicacions i preservar la restauració. Les autoritzacions SAP es validen amb metadades administrades al servidor, no amb identificadors fixos en el client.
 
 ## Validació i restauració
 

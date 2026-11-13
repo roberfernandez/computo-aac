@@ -1,14 +1,13 @@
 "use client";
 
 import {useEffect,useState} from "react";
-import {storePending} from "../public/sap-return/storage.mjs";
-import {authenticatedUserId,readSharedSession} from "./tmb-session";
+import {storePending,verifiedOwner} from "../public/sap-return/storage.mjs";
+import {readSharedSession} from "./tmb-session";
 import {compareSapToComputo,sapChangeCount,validateSapExport} from "@/lib/sap-comparison";
 
 type ValueRow = {Date:string;LongText:string;Number:string;Wagetype?:string};
 type ExportDoc = {ano:number;extraido:string;valoraciones:Record<string,ValueRow[]>};
 type StoredDoc = {key:string;doc:ExportDoc;history:{extraido:string;cambios:number}[]};
-const OWNER_USER_ID="1dd672e7-707f-4197-a393-a5f6f3a6d74e";
 const DB_NAME="computo-sap-private-v1",STORE="exports";
 const dayFmt=(date:string)=>new Date(date).toLocaleString("es-ES",{dateStyle:"medium",timeStyle:"short"});
 function openPrivateDb():Promise<IDBDatabase>{
@@ -72,10 +71,10 @@ export default function SapReviewPanel({year,facts}:SapReviewPanelProps){
   useEffect(()=>{
     let active=true;
     const s=readSharedSession();
-    if(!s){setAuth("hidden");return;}
-    void authenticatedUserId(s).then(id=>{
+    if(!s){queueMicrotask(()=>{if(active)setAuth("hidden");});return()=>{active=false;};}
+    void verifiedOwner().then(id=>{
       if(!active)return;
-      if(id===OWNER_USER_ID){setUid(id);setAuth("owner");}
+      if(id){setUid(id);setAuth("owner");}
       else setAuth("hidden");
     }).catch(()=>{if(active)setAuth("hidden");});
     return()=>{active=false;};
@@ -83,7 +82,7 @@ export default function SapReviewPanel({year,facts}:SapReviewPanelProps){
   useEffect(()=>{
     if(auth!=="owner"||!uid)return;
     let active=true;
-    setSaved(null);
+    queueMicrotask(()=>{if(active)setSaved(null);});
     void openPrivateDb().then(db=>{const tx=db.transaction("tests","readonly"),r=tx.objectStore("tests").get(uid+":2026-10");r.onsuccess=()=>{if(active&&r.result){const n=r.result.doc.valoraciones["2026-10"]?.length||0;setTestProof("Última prova de retorn: "+n+" registres d’octubre · "+dayFmt(r.result.doc.extraido));}};tx.oncomplete=()=>db.close();});
     void getSaved(uid,year).then(record=>{if(active)setSaved(record);}).catch(e=>{if(active)setNotice(e instanceof Error?e.message:"No se puede leer el historial.");});
     return()=>{active=false;};
@@ -97,7 +96,7 @@ export default function SapReviewPanel({year,facts}:SapReviewPanelProps){
     setBusy(true);setNotice("");
     try{
       const session=readSharedSession();
-      if(!session||await authenticatedUserId(session)!==OWNER_USER_ID)throw Error("Cal iniciar sessió amb el compte administrador.");
+      if(!session||await verifiedOwner()!==uid)throw Error("Cal iniciar sessió amb el compte administrador.");
       const response=await fetch("https://hhenkvendzengggrgook.supabase.co/functions/v1/sap-admin-ticket",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+session.access_token},body:JSON.stringify({action:"issue",year,scope}),signal:AbortSignal.timeout(15000)});
       const result=await response.json();if(!response.ok)throw Error(result.error||"No s’ha autoritzat el contrast.");
       await storePending(result.grant);
@@ -142,7 +141,7 @@ export default function SapReviewPanel({year,facts}:SapReviewPanelProps){
       <div className="space-y-2 rounded-lg border border-white/15 bg-[#0b2029] p-3">
         <button type="button" disabled={busy} onClick={()=>void launchSap("year")} className="w-full rounded-lg border border-[#f7ca6e]/60 bg-[#f7ca6e]/10 px-3 py-3 font-semibold text-[#f7ca6e]">{busy?"Verificant accés…":"Contrastar dades amb TMB · "+year}</button>
         <p className="text-xs text-white/65">Android · S’obre el portal oficial. Autentica’t si TMB ho demana; les valoracions tornen directament a Còmput, sense fitxers ni contrasenyes compartides.</p>
-        {year===2026&&<button type="button" disabled={busy} onClick={()=>void launchSap("october-test")} className="w-full rounded border border-white/20 px-3 py-2 text-xs">Comprovar retorn · Octubre 2026 (referència: 127 registres)</button>}
+        {year===2026&&<button type="button" disabled={busy} onClick={()=>void launchSap("october-test")} className="w-full rounded border border-white/20 px-3 py-2 text-xs">Comprovar retorn · Octubre 2026</button>}
       </div>
       <details><summary className="cursor-pointer text-xs text-white/60">Importació manual existent</summary>
       <p className="text-sm font-semibold text-[#f7ca6e]">2 · Importar i contrastar les dades</p>

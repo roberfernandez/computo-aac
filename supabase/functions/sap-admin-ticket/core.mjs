@@ -1,4 +1,3 @@
-export const OWNER='1dd672e7-707f-4197-a393-a5f6f3a6d74e';
 export const WEB='https://roberfernandez.github.io';
 const enc=new TextEncoder();
 const b64=bytes=>btoa(String.fromCharCode(...bytes)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
@@ -20,9 +19,9 @@ export function ticketHandler({secret,authenticate,now=Date.now}){
         if(!/^Bearer [^\s]+$/.test(auth))return reply(401,{error:'authentication-required'});
         const user=await authenticate(auth);
         if(!user)return reply(401,{error:'invalid-session'});
-        if(user.id!==OWNER)return reply(403,{error:'admin-only'});
+        if(user.app_metadata?.computo_sap_admin!==true)return reply(403,{error:'admin-only'});
         if(!Number.isInteger(body.year)||body.year<2024||body.year>new Date(now()).getUTCFullYear()||!['year','october-test'].includes(body.scope)||body.scope==='october-test'&&body.year!==2026)return reply(400,{error:'invalid-period'});
-        const grant={v:1,uid:OWNER,year:body.year,scope:body.scope,nonce:crypto.randomUUID().replace(/-/g,''),exp:now()+15*60*1000,callback:WEB+'/computo-aac/sap-return/'};
+        const grant={v:1,uid:user.id,year:body.year,scope:body.scope,nonce:crypto.randomUUID().replace(/-/g,''),exp:now()+15*60*1000,callback:WEB+'/computo-aac/sap-return/'};
         const payload=b64(enc.encode(JSON.stringify(grant)));
         const sig=b64(new Uint8Array(await crypto.subtle.sign('HMAC',key,enc.encode('computo-sap-ticket-v1.'+payload))));
         return reply(200,{ticket:payload+'.'+sig,grant});
@@ -32,7 +31,7 @@ export function ticketHandler({secret,authenticate,now=Date.now}){
         const [payload,sig]=body.ticket.split('.');
         if(!await crypto.subtle.verify('HMAC',key,un64(sig),enc.encode('computo-sap-ticket-v1.'+payload)))return reply(403,{error:'invalid-ticket'});
         const grant=JSON.parse(new TextDecoder().decode(un64(payload)));
-        if(grant.v!==1||grant.uid!==OWNER||grant.exp<=now()||grant.exp>now()+15*60*1000||grant.callback!==WEB+'/computo-aac/sap-return/')return reply(403,{error:'expired-ticket'});
+        if(grant.v!==1||typeof grant.uid!=='string'||!grant.uid||grant.exp<=now()||grant.exp>now()+15*60*1000||grant.callback!==WEB+'/computo-aac/sap-return/')return reply(403,{error:'expired-ticket'});
         return reply(200,{grant});
       }
       return reply(400,{error:'invalid-action'});

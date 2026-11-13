@@ -18,7 +18,7 @@ jobs:
       - run: node --test tests/payroll-sync.test.mjs
       - run: node --test tests/computo-compensaciones.test.mjs
       - run: node --test tests/sap-comparison.test.mjs
-      - run: node --test tests/confirmed-corrections.test.mjs tests/sap-admin-ticket.test.mjs tests/sap-bridge-return.test.mjs experiments/sap-admin/android/tests/probe.test.mjs
+      - run: node --test tests/private-corrections.test.mjs tests/confirmed-corrections.test.mjs tests/sap-admin-ticket.test.mjs tests/sap-bridge-return.test.mjs experiments/sap-admin/android/tests/probe.test.mjs
       - run: npm run build
         env:
           NEXT_PUBLIC_GIT_SHA: ${{ github.event.pull_request.head.sha }}

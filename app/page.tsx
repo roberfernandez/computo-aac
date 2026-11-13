@@ -47,7 +47,7 @@ import { deleteStorageKeys, markStorageKeyPending, pushPayrollSnapshot, pushStor
 import { loadAnnualCalendarImage, saveAnnualCalendarImage, removeAnnualCalendarImage } from "./annual-calendar-cloud";
 import SapReviewPanel from "./sap-review-panel";
 import {authenticatedUserId,readSharedSession} from "./tmb-session";
-import {migrateConfirmedPilot} from "@/lib/confirmed-pilot";
+import {applyAccountCorrections} from "./private-corrections";
 import {
   Table,
   TableBody,
@@ -5390,7 +5390,7 @@ export default function Home() {
       await syncComputoStorage(setSyncState);
       try{
         const session=readSharedSession(),uid=session?await authenticatedUserId(session):null;
-        if(uid){const corrected=await migrateConfirmedPilot(uid,localStorage);if(corrected.changed){markStorageKeyPending("metro-year-2026");await pushStorageKey("metro-year-2026");}}
+        if(uid&&session)await applyAccountCorrections(uid,session);
       }catch{setMessage("No se han aplicado las correcciones privadas: se conserva la planificación anterior.");}
       loadYear(INITIAL_YEAR);
       try {

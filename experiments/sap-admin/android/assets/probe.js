@@ -5,7 +5,7 @@
   var BASE = "/sap/opu/odata/sap/ZHR_CBE_ODATA_SRV/";
   var ENTITY = BASE + "ValorActividadSet";
   var grant=window.__computoSapGrant;
-  if(!grant||grant.uid!=="1dd672e7-707f-4197-a393-a5f6f3a6d74e"||grant.exp<=Date.now()||!Number.isInteger(grant.year))return "unauthorized";
+  if(!grant||typeof grant.uid!=="string"||!grant.uid||grant.exp<=Date.now()||!Number.isInteger(grant.year))return "unauthorized";
   var PERIOD=String(grant.year),targetPeriod=grant.scope==="october-test"?PERIOD+"-10":PERIOD;
   var calendar=[],completedPeriods=[];
   var originalFetch = window.fetch.bind(window);
@@ -14,7 +14,7 @@
   var urls = new WeakMap();
   var identity = null, opened = false, running = false, done = false, disabled = false;
   var values = [], controller = null, generation = 0;
-  var state = {version: "0.1.1", phase: "waiting-shell", period: "2026-10", http: null, records: null, pages: 0, expected: 127};
+  var state = {version: "0.1.1", phase: "waiting-shell", period: "2026-10", http: null, records: null, pages: 0, expected: null};
   function set(phase, extra) { state = Object.assign({}, state, extra || {}, {phase: phase}); }
   function serviceUrl(value) {
     try {
@@ -111,7 +111,7 @@
         all=all.concat(part);completedPeriods.push(period);
       }
       values=all;done=true;var dates=all.map(function(r){return dateOf(r.Date);}).sort();
-      set("success",{http:200,records:all.length,pages:pages,period:targetPeriod,matchesReference:grant.scope==="october-test"?all.length===127:null,firstDate:dates[0]||null,lastDate:dates[dates.length-1]||null,elapsedMs:Date.now()-started,capturedAt:new Date().toISOString()});
+      set("success",{http:200,records:all.length,pages:pages,period:targetPeriod,matchesReference:null,firstDate:dates[0]||null,lastDate:dates[dates.length-1]||null,elapsedMs:Date.now()-started,capturedAt:new Date().toISOString()});
     }catch(e){if(currentGeneration===generation)set("error",{error:e&&e.name==="AbortError"?"timeout":String(e&&e.message||"network-error").slice(0,70)});}
     finally{clearTimeout(timeout);if(currentGeneration===generation){running=false;controller=null;}}
   }

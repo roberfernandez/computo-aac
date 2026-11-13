@@ -130,7 +130,7 @@ export async function syncComputoStorage(onState?:(s:SyncState)=>void){
     }
     // Los cambios hechos sin conexión se suben antes de descargar la nube.
     for(const key of pendingKeys()) if(isComputoStorageKey(key)) await pushStorageKey(key);
-    const response=await fetch(`${SUPABASE_URL}/rest/v1/computo_sync?select=storage_key,payload,updated_at&user_id=eq.${encodeURIComponent(userId)}`,{headers:headers(session.access_token),cache:"no-store"});
+    const response=await fetch(`${SUPABASE_URL}/rest/v1/computo_sync?select=storage_key,payload,updated_at&storage_key=not.like.private-*&user_id=eq.${encodeURIComponent(userId)}`,{headers:headers(session.access_token),cache:"no-store"});
     if(!response.ok) throw new Error(`sync pull ${response.status}`);
     const remote=await response.json() as Array<{storage_key:string,payload:unknown}>;
     // Conservative first migration: remote wins for keys already in cloud; otherwise upload local keys.
