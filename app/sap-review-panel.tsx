@@ -369,8 +369,12 @@ export default function SapReviewPanel({year,facts}:SapReviewPanelProps){
           <p className="text-xs text-emerald-200">Pont de Chrome detectat. Ja pots contrastar les dades amb TMB des d&apos;aquest ordinador.</p>}
         {bridgePlatform==="desktop"&&!desktopBridge&&
           <div className="space-y-3 rounded-lg border border-amber-400/35 bg-[#091b23] p-3">
-            <p className="text-sm font-semibold text-amber-200">Instal·la el pont SAP per a Chrome</p>
-            <p className="text-xs text-white/70">Còmput no detecta l&apos;extensió en aquesta pestanya. Només cal instal·lar-la una vegada a Chrome (prova privada per a Windows).</p>
+            <p className="text-sm font-semibold text-amber-200">{saved?"Pots consultar el contrast SAP en aquest ordinador":"Encara no hi ha dades SAP per consultar"}</p>
+            <p className="text-xs text-white/70">{saved?"Les valoracions s&apos;han recuperat del teu compte privat. No necessites instal·lar cap extensió per consultar-les.":"Pots importar els registres des de l&apos;Android i es recuperaran automàticament aquí amb el mateix compte de Còmput."}</p>
+            <details className="rounded border border-white/20 p-2">
+              <summary className="cursor-pointer text-xs text-white/70">Opció avançada: extreure dades noves des de Windows (prova)</summary>
+              <div className="mt-3 space-y-3">
+                <p className="text-xs text-white/70">La instal·lació provisional del pont de Chrome requereix passos manuals. No és necessària per consultar les dades sincronitzades.</p>
             {SAP_BRIDGE_CHROME_WEBSTORE_URL?<>
               <a href={SAP_BRIDGE_CHROME_WEBSTORE_URL} target="_blank" rel="noopener noreferrer"
                 className="block rounded-lg bg-[#f7ca6e] px-3 py-2.5 text-center text-sm font-semibold text-[#10212a]">
@@ -394,6 +398,8 @@ export default function SapReviewPanel({year,facts}:SapReviewPanelProps){
             <button type="button" className="w-full rounded border border-white/30 px-3 py-2 text-xs font-medium"
               onClick={()=>window.location.reload()}>Comprovar instal·lació · Recarregar Còmput</button>
             <p className="text-[11px] text-white/55">Pilot limitat a comptes autoritzats. Utilitza només el teu perfil de Chrome i la teva sessió corporativa.</p>
+              </div>
+            </details>
           </div>}
         {bridgePlatform==="android"&&
           <div className="space-y-2">
