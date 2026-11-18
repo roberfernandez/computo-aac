@@ -1,6 +1,7 @@
 "use client";
 
 import {useEffect,useState} from "react";
+import RoundingImpactPanel, {type RoundingInput} from "./rounding-impact-panel";
 import {storePending,verifiedOwner} from "../public/sap-return/storage.mjs";
 import {readSharedSession,SUPABASE_PUBLIC_KEY,SUPABASE_URL} from "./tmb-session";
 import {comparisonReviewKey,comparisonFingerprint,isAcceptedReview,pendingGroup} from "@/lib/sap-difference-reviews";
@@ -174,8 +175,8 @@ async function savePrivateReviews(uid:string,year:number,reviews:ReviewMap){
  });
  if(!response.ok)throw Error("No s'ha pogut desar la revisió privada ("+response.status+").");
 }
-type SapReviewPanelProps={year:number;facts?:unknown};
-export default function SapReviewPanel({year,facts}:SapReviewPanelProps){
+type SapReviewPanelProps={year:number;facts?:unknown;rounding?:RoundingInput|null};
+export default function SapReviewPanel({year,facts,rounding=null}:SapReviewPanelProps){
   const [auth,setAuth]=useState<"checking"|"owner"|"hidden">("checking");
   const [uid,setUid]=useState("");
   const [desktopBridge,setDesktopBridge]=useState(false);
@@ -353,6 +354,8 @@ export default function SapReviewPanel({year,facts}:SapReviewPanelProps){
     finally{setReviewSaving("");}
   }
   return (
+    <>
+    <RoundingImpactPanel key={year} input={rounding} sapDoc={saved?.doc||null}/>
     <section className="panel !p-0 overflow-hidden" aria-label="Contrast experimental amb TMB">
       <details className="group">
         <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 [&::-webkit-details-marker]:hidden">
@@ -556,5 +559,7 @@ export default function SapReviewPanel({year,facts}:SapReviewPanelProps){
         </div>
       </details>
     </section>
+    </>
   );
 }
+
