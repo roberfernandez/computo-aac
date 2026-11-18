@@ -1,24 +1,11 @@
 "use client";
 
-import {useState} from "react";
-import {roundingPilotAvailable,roundingReport,signedRoundingTime,type RoundingInput} from "@/lib/rounding-impact";
+import {useEffect,useState} from "react";
+import {dateInMadrid,roundingPeriodEnd,roundingPilotAvailable,roundingReport,signedRoundingTime,type RoundingInput} from "@/lib/rounding-impact";
 export type {RoundingInput,RoundingDay} from "@/lib/rounding-impact";
 
-type SapDoc={ano:number;extraido:string;valoraciones:Record<string,{LongText:string;Number:string}[]>};
 type Total={count:number;excluded:number;exact:number|null;company:number|null;seconds:number|null};
 const hours=(value:number|null,digits=2)=>value===null?"Pendent":value.toLocaleString("ca-ES",{minimumFractionDigits:digits,maximumFractionDigits:digits})+" h";
-const months=["Gener","Febrer","Març","Abril","Maig","Juny","Juliol","Agost","Setembre","Octubre","Novembre","Desembre"];
-function todayMadrid(){
-  const parts=new Intl.DateTimeFormat("en-CA",{timeZone:"Europe/Madrid",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(new Date());
-  const part=(type:string)=>parts.find(value=>value.type===type)?.value;
-  return `${part("year")}-${part("month")}-${part("day")}`;
-}
-function defaultEnd(year:number,today:string){
-  if(year<Number(today.slice(0,4)))return `${year}-12-31`;
-  if(year>Number(today.slice(0,4))||today.slice(5,7)==="01")return `${year}-01-01`;
-  const previous=new Date(Date.UTC(year,Number(today.slice(5,7))-1,0));
-  return previous.toISOString().slice(0,10);
-}
 function Result({title,value}: {title:string;value:Total}){
   return <div className="min-w-0 rounded-lg border border-white/10 bg-[#0b2029] p-3">
     <h4 className="text-xs font-semibold text-white/85">{title}</h4>
@@ -31,12 +18,21 @@ function Result({title,value}: {title:string;value:Total}){
 
 // Parent renders this component only after verifiedOwner() has authenticated the
 // existing private administrator claim. No bypass, user ID or personal facts here.
-export default function RoundingImpactPanel({input,sapDoc}:{input:RoundingInput|null;sapDoc:SapDoc|null}){
-  const [today]=useState(todayMadrid);
+export default function RoundingImpactPanel({input}:{input:RoundingInput|null}){
+  const [today,setToday]=useState(dateInMadrid);
   const [from,setFrom]=useState(()=>`${input?.year||2026}-01-01`);
-  const [to,setTo]=useState(()=>defaultEnd(input?.year||2026,today));
+  const [customEnd,setCustomEnd]=useState<string|null>(null);
+  useEffect(()=>{
+    const refresh=()=>{if(!document.hidden)setToday(dateInMadrid());};
+    const clock=window.setInterval(refresh,60000);
+    window.addEventListener("focus",refresh);
+    document.addEventListener("visibilitychange",refresh);
+    return()=>{window.clearInterval(clock);window.removeEventListener("focus",refresh);document.removeEventListener("visibilitychange",refresh);};
+  },[]);
   if(!roundingPilotAvailable(input))return null;
-  const report=roundingReport(input,{from,to,asOf:today},sapDoc);
+  const to=customEnd??roundingPeriodEnd(input!.year,today);
+  const report=roundingReport(input,{from,to,asOf:today});
+  const annual=roundingReport(input,{from:`${input!.year}-01-01`,to:`${input!.year}-12-31`,asOf:today});
   return <section className="panel !p-0 overflow-hidden" aria-label="Arrodoniment del meu contracte">
     <details>
       <summary className="flex min-h-11 cursor-pointer items-center justify-between gap-2 px-3 py-3">
@@ -45,7 +41,7 @@ export default function RoundingImpactPanel({input,sapDoc}:{input:RoundingInput|
       </summary>
       <div className="space-y-4 border-t border-white/15 p-3 sm:p-4">
         <p className="text-sm font-semibold">El teu cas · T8 · 85,81 % · {input!.year}</p>
-        <p className="text-xs leading-relaxed text-white/75">La conversió diària a centèsimes d&apos;hora pot sumar o restar segons la jornada. <b>0,01 h són 36 segons.</b> Comparem per separat el còmput horari i la nocturnitat variable. El signe + suma temps; el signe − en resta.</p>
+        <p className="text-xs leading-relaxed text-white/75">La conversió diària a centèsimes d&apos;hora pot sumar o restar segons la jornada. <b>0,01 h són 36 segons.</b> Comparem el càlcul amb la pauta de l&apos;empresa que ja aplica Còmput amb el càlcul exacte, per separat en còmput horari i nocturnitat variable. El signe + suma temps; el signe − en resta.</p>
         <details className="rounded-lg border border-white/15 p-3" open>
           <summary className="cursor-pointer text-sm font-semibold">1 · Què fa l&apos;empresa i com t&apos;afecta en teoria</summary>
           {report.ready&&<div className="mt-3 space-y-3 text-xs leading-relaxed">
@@ -61,21 +57,22 @@ export default function RoundingImpactPanel({input,sapDoc}:{input:RoundingInput|
         </details>
         <div><h3 className="mb-2 text-sm font-semibold">2 · El teu període</h3>
           <div className="grid grid-cols-2 gap-2"><label className="min-w-0 text-xs">Des de<input aria-label="Arrodoniment des de" type="date" min={`${input!.year}-01-01`} max={`${input!.year}-12-31`} value={from} onChange={event=>setFrom(event.target.value)} className="mt-1 block w-full min-w-0 rounded border border-white/25 bg-[#0b2029] px-2 py-2 text-xs"/></label>
-          <label className="min-w-0 text-xs">Fins a<input aria-label="Arrodoniment fins a" type="date" min={`${input!.year}-01-01`} max={`${input!.year}-12-31`} value={to} onChange={event=>setTo(event.target.value)} className="mt-1 block w-full min-w-0 rounded border border-white/25 bg-[#0b2029] px-2 py-2 text-xs"/></label></div>
+          <label className="min-w-0 text-xs">Fins a<input aria-label="Arrodoniment fins a" type="date" min={`${input!.year}-01-01`} max={`${input!.year}-12-31`} value={to} onChange={event=>setCustomEnd(event.target.value)} className="mt-1 block w-full min-w-0 rounded border border-white/25 bg-[#0b2029] px-2 py-2 text-xs"/></label></div>
+          <button type="button" aria-pressed={customEnd===null} onClick={()=>setCustomEnd(null)} className="mt-2 rounded border border-[#71d7cc]/40 px-3 py-2 text-xs text-[#71d7cc]">Fins avui · automàtic</button>
+          <p className="mt-2 text-[11px] text-white/60">{customEnd===null?"La data final avança automàticament cada dia, també si deixes l’app oberta.":"Període personalitzat. Prem «Fins avui» per recuperar l’actualització diària."}</p>
         </div>
         {!report.ready?<p role="status" className="text-xs text-amber-200">{report.reason}</p>:<>
-          <details className="rounded border border-white/15 p-3"><summary className="cursor-pointer text-xs font-semibold">Previsió teòrica segons el calendari del període</summary><p className="my-2 text-[11px] text-white/60">Inclou les jornades previstes, encara que siguin futures o no confirmades.</p><div className="space-y-2"><Result title="Còmput horari previst" value={report.forecast.balance}/><Result title="Nocturnitat variable prevista" value={report.forecast.night}/></div></details>
-          <div className="space-y-2"><h3 className="text-sm font-semibold">3 · Com t&apos;ha afectat a la pràctica</h3>
-            <p className="text-xs text-white/65">Calculat amb les jornades passades dels mesos que has confirmat. Les dates d&apos;avui i futures no compten com a realitzades.</p>
+          <div className="space-y-2"><h3 className="text-sm font-semibold">3 · Acumulat del període fins avui</h3>
+            <p className="text-xs text-white/65">Segons el teu calendari fins a la data final escollida o fins avui si és anterior. Inclou la jornada prevista d&apos;avui; les dates futures queden fora de l&apos;acumulat. No cal esperar a confirmar tot el mes.</p>
             <Result title="Efecte en el còmput horari" value={report.actual.balance}/><Result title="Efecte en la nocturnitat variable" value={report.actual.night}/>
-            {(report.missing>0||report.unknownDays>0||report.excludedWork>0)&&<p className="text-xs text-amber-200">Cobertura parcial: {report.missing} dates sense calendari, {report.unknownDays} dies per revisar i {report.excludedWork} jornades futures o no confirmades. Els dies sense dades no es compten com a zero.</p>}
+            {report.provisionalWork>0&&<p className="text-[11px] text-white/60">Inclou {report.provisionalWork} jornades de mesos encara no confirmats. El resultat s&apos;actualitzarà si corregeixes el calendari.</p>}
+            {(report.missingActual>0||report.unknownActual>0)&&<p className="text-xs text-amber-200">Cobertura parcial: {report.missingActual} dates sense calendari i {report.unknownActual} dies per revisar. Els dies sense dades no es compten com a zero.</p>}
           </div>
-          <details className="rounded border border-white/15 p-3"><summary className="cursor-pointer text-xs font-semibold">Contrast amb SAP</summary>
-            <div className="mt-2 space-y-2 text-xs text-white/75"><p><b>Còmput:</b> calculat amb el teu calendari i la pauta de saldos observada. El pont actual no aporta el saldo diari de còmput; aquest total no es presenta com a contrastat amb SAP.</p>
-              <p><b>Nocturnitat:</b> {sapDoc?"contrast dels mesos complets del període amb les valoracions disponibles.":"sense còpia SAP disponible; resultat calculat amb el calendari."}</p>
-              {report.sapNight.map((row:{period:string;status:string;residualSeconds?:number})=><p key={row.period}><b>{months[Number(row.period.slice(5))-1]}:</b> {row.status==="match"?"la pauta de centèsimes coincideix amb el total SAP.":row.status==="different"?`diferència addicional de ${signedRoundingTime(row.residualSeconds)} entre SAP i la pauta; pendent de conciliar, fora de l’efecte d’arrodoniment.`:"sense contrast complet disponible."}</p>)}
-            </div>
-          </details>
+          {annual.ready&&<div className="space-y-2 rounded-lg border border-[#71d7cc]/25 p-3"><h3 className="text-sm font-semibold text-[#71d7cc]">4 · Previsió de tot l&apos;any {input!.year}</h3>
+            <p className="text-xs text-white/65">De l&apos;1 de gener al 31 de desembre, independentment del període escollit. Inclou totes les jornades del calendari, encara que no hagin arribat. Es recalcula quan canvies un dia.</p>
+            <Result title="Efecte anual previst en el còmput" value={annual.forecast.balance}/><Result title="Efecte anual previst en la nocturnitat" value={annual.forecast.night}/>
+            {(annual.missing>0||annual.unknownDays>0)&&<p className="text-xs text-amber-200">Previsió parcial: {annual.missing} dates sense calendari i {annual.unknownDays} dies per revisar.</p>}
+          </div>}
           <details className="rounded border border-white/15 p-3"><summary className="cursor-pointer text-xs font-semibold">Detall per dies ({report.days.length})</summary>
             <div className="mt-3 max-h-80 overflow-auto"><table className="w-full text-left text-[11px]"><thead><tr><th className="pb-2">Dia / horari</th><th className="px-1 pb-2">Còmput</th><th className="pl-1 pb-2">Nocturnitat</th></tr></thead><tbody>{report.days.map((row:{date:string;schedule:string;balance:{seconds:number}|null;night:{seconds:number}|null;balanceReason:string;nightReason:string})=><tr key={row.date} className="border-t border-white/10 align-top"><th className="py-2 pr-1 font-normal">{row.date.slice(8)}/{row.date.slice(5,7)}<span className="block text-white/50">{row.schedule}</span></th><td className="px-1 py-2" title={row.balanceReason}>{row.balance?signedRoundingTime(row.balance.seconds):"Fora de l’anàlisi"}</td><td className="py-2 pl-1" title={row.nightReason}>{row.night?signedRoundingTime(row.night.seconds):"Per conciliar"}</td></tr>)}</tbody></table></div>
           </details>

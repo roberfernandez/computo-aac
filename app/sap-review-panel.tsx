@@ -355,7 +355,7 @@ export default function SapReviewPanel({year,facts,rounding=null}:SapReviewPanel
   }
   return (
     <>
-    <RoundingImpactPanel key={year} input={rounding} sapDoc={saved?.doc||null}/>
+    <RoundingImpactPanel key={year} input={rounding}/>
     <section className="panel !p-0 overflow-hidden" aria-label="Contrast experimental amb TMB">
       <details className="group">
         <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 [&::-webkit-details-marker]:hidden">

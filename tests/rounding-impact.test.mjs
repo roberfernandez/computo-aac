@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
 import {calendarContext} from './helpers/calendar-context.mjs';
-import {roundingDay,roundingPilotAvailable,roundingReport,signedRoundingTime} from '../lib/rounding-impact.js';
+import {dateInMadrid,roundingPeriodEnd,roundingDay,roundingPilotAvailable,roundingReport,signedRoundingTime} from '../lib/rounding-impact.js';
 
 const normal={date:'2026-01-05',schedule:'18:46–00:50',confirmed:true,working:true,balanceEligible:true,balanceHours:-0.64,workedMinutes:364,nightEligible:true,nightMinutes:170,nightHours:2.83};
 const friday={...normal,date:'2026-01-09',schedule:'18:46–02:50',balanceHours:1.36,workedMinutes:484,nightMinutes:484,nightHours:8.07};
@@ -28,17 +28,19 @@ test('accumulates exact differences, never rounded display values',()=>{
  near(report.actual.balance.seconds,10.8436363636);near(report.actual.night.seconds,0);
  assert.equal(report.actual.balance.count,3);assert.equal(report.missing,0);
 });
-test('current/future and unconfirmed shifts remain forecast only',()=>{
+test('includes today and unconfirmed past shifts, while future shifts remain forecast only',()=>{
  const data=input();data.days=data.days.map(row=>row.date==='2026-01-05'?{...row,confirmed:false}:row);
  const report=roundingReport(data,{...period,asOf:'2026-01-10'});
- assert.equal(report.forecast.balance.count,3);assert.equal(report.actual.balance.count,1);assert.equal(report.excludedWork,2);
- assert.equal(report.days[0].date,'2026-01-09');
+ assert.equal(report.forecast.balance.count,3);assert.equal(report.actual.balance.count,3);assert.equal(report.excludedWork,0);
+ assert.equal(report.provisionalWork,1);assert.equal(report.days[0].date,'2026-01-05');
+ const earlier=roundingReport(data,{...period,asOf:'2026-01-09'});
+ assert.equal(earlier.actual.balance.count,2);assert.equal(earlier.forecast.balance.count,3);assert.equal(earlier.excludedWork,1);
 });
 test('missing and exceptional days are not silently counted as zero',()=>{
  const data=input();data.days=data.days.filter(row=>row.date!=='2026-01-01');
  data.days=data.days.map(row=>row.date===normal.date?{...row,balanceEligible:false,nightEligible:false}:row);
  const report=roundingReport(data,period);
- assert.equal(report.missing,1);assert.equal(report.actual.balance.excluded,1);assert.equal(report.sapNight[0].status,'unavailable');
+ assert.equal(report.missing,1);assert.equal(report.actual.balance.excluded,1);assert.equal(report.missingActual,1);
  const empty=roundingReport({...data,days:[]},period);assert.equal(empty.actual.balance.seconds,null);assert.equal(empty.actual.night.seconds,null);
 });
 test('only this contract/year is enabled; malformed ranges and duplicate dates fail closed',()=>{
@@ -52,15 +54,26 @@ test('a confirmed complete period without work has zero effect, while missing da
  const report=roundingReport(data,period);assert.equal(report.actual.balance.seconds,0);assert.equal(report.actual.night.seconds,0);
  assert.equal(roundingReport({...data,days:[]},period).actual.night.seconds,null);
 });
-test('monthly SAP corroboration is separate from additional unexplained differences',()=>{
- const doc={ano:2026,extraido:'2026-11-13T18:40:00Z',valoraciones:{'2026-01':[normal,friday,saturday].map(row=>({Date:row.date,LongText:'Nocturnidad Variable',Number:String(row.nightHours)}))}};
- const report=roundingReport(input(),period,doc);assert.equal(report.sapNight[0].status,'match');
- doc.valoraciones['2026-01'][0].Number='2.84';
- const different=roundingReport(input(),period,doc);assert.equal(different.sapNight[0].status,'different');near(different.sapNight[0].residualSeconds,36);
- near(different.actual.night.seconds,report.actual.night.seconds);
- const partial=roundingReport(input(),{...period,from:'2026-01-05'},doc);assert.equal(partial.sapNight.length,0);
+test('Madrid day advances over midnight and default end follows today within the selected year',()=>{
+ assert.equal(dateInMadrid(new Date('2026-11-17T23:01:00Z')),'2026-11-18');
+ assert.equal(roundingPeriodEnd(2026,'2026-11-18'),'2026-11-18');
+ assert.equal(roundingPeriodEnd(2026,'2026-11-19'),'2026-11-19');
+ assert.equal(roundingPeriodEnd(2026,'2027-01-01'),'2026-12-31');
+ assert.equal(roundingPeriodEnd(2026,'2025-12-31'),'2026-01-01');
 });
-test('input and SAP snapshots remain unchanged and presentation retains seconds and signs',()=>{
+test('full-year forecast includes future work and changes when future calendar work changes',()=>{
+ const data=input();data.days.push({...friday,date:'2026-12-18',confirmed:false});
+ const annual={from:'2026-01-01',to:'2026-12-31',asOf:'2026-01-10'};
+ const before=roundingReport(data,annual);assert.equal(before.forecast.balance.count,4);assert.equal(before.actual.balance.count,3);
+ data.days[data.days.length-1]={...saturday,date:'2026-12-18',confirmed:false};
+ const after=roundingReport(data,annual);near(after.forecast.balance.seconds-before.forecast.balance.seconds,-12);
+ near(after.actual.balance.seconds,before.actual.balance.seconds);
+});
+test('a future-only custom period has no elapsed-day gaps or invented actual totals',()=>{
+ const report=roundingReport(input(),{from:'2026-01-09',to:'2026-01-31',asOf:'2026-01-01'});
+ assert.equal(report.missingActual,0);assert.equal(report.actual.balance.seconds,null);assert.equal(report.forecast.balance.count,2);
+});
+test('input remains unchanged and presentation retains seconds and signs',()=>{
  const data=input(),before=JSON.stringify(data);roundingReport(data,period);assert.equal(JSON.stringify(data),before);
  assert.equal(signedRoundingTime(-112.363636),'−1 min 52,4 s');assert.equal(signedRoundingTime(7.6145),'+7,6 s');
  assert.equal(signedRoundingTime(0),'0 s');assert.equal(signedRoundingTime(null),'Pendent');
@@ -88,6 +101,10 @@ test('feature is mounted only after the existing server-verified administrator g
  const panel=readFileSync(new URL('../app/sap-review-panel.tsx',import.meta.url),'utf8');
  assert.ok(panel.indexOf('if(auth!=="owner")return null;')<panel.indexOf('<RoundingImpactPanel'));
  assert.match(panel,/void verifiedOwner\(\)/);
+ const view=readFileSync(new URL('../app/rounding-impact-panel.tsx',import.meta.url),'utf8');
+ assert.doesNotMatch(view,/Contrast amb SAP|sapDoc|sapNight/);
+ assert.match(view,/setInterval\(refresh,60000\)/);assert.match(view,/visibilitychange/);
+ assert.match(view,/Fins avui · automàtic/);assert.match(view,/Previsió de tot l/);
  for(const path of ['../lib/rounding-impact.js','../app/rounding-impact-panel.tsx']){
    const code=readFileSync(new URL(path,import.meta.url),'utf8');
    assert.doesNotMatch(code,/\bfetch\s*\(|localStorage\.(setItem|removeItem)|indexedDB|user_id|employeeNumber|medicalStart|medicalEnd/);
