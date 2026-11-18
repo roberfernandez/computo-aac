@@ -46,7 +46,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { deleteStorageKeys, markStorageKeyPending, pushPayrollSnapshot, pushStorageKey, syncComputoStorage, type SyncState } from "./computo-sync";
 import { loadAnnualCalendarImage, saveAnnualCalendarImage, removeAnnualCalendarImage } from "./annual-calendar-cloud";
 import SapReviewPanel from "./sap-review-panel";
-import type {RoundingDay, RoundingInput} from "./rounding-impact-panel";
+import RoundingImpactPanel, {type RoundingDay, type RoundingInput} from "./rounding-impact-panel";
 import {authenticatedUserId,readSharedSession} from "./tmb-session";
 import {applyAccountCorrections} from "./private-corrections";
 import {
@@ -1299,16 +1299,28 @@ function retributiveSummaryFor(plan: YearPlan, year: number, profile: UserProfil
   return concepts;
 }
 
-// Private read-only presentation input. Does not enter any persisted export or
+// Read-only presentation input. Does not enter any persisted export or
 // change calcDay(), the contract tables, payroll facts or synchronized balances.
 function roundingFactsFor(plan: YearPlan, year: number, profile: UserProfile): RoundingInput | null {
-  if (year !== 2026 || profileTurn(profile) !== "T8" || profile.contract !== "85.81") return null;
-  const examples = ([ ["NORMAL", "Jornada normal", 1], ["FRIDAY_EVE", "Divendres / vigília", 4], ["SATURDAY", "Dissabte ordinari", 5] ] as const).map(([kind, label, weekday]) => {
-    const definition = shiftFor(profile, kind, weekday, year, 1);
-    const nightMinutes = nightMinutesForShift(definition.start, definition.end, definition.minutes);
-    return {date: "", label, schedule: `${definition.start}–${definition.end}`, confirmed: false, working: true,
-      balanceEligible: true, balanceHours: definition.value, workedMinutes: definition.minutes, balanceReason: "",
-      nightEligible: true, nightMinutes, nightHours: decimalHoursFromMinutes(nightMinutes), nightReason: ""};
+  const turn = profileTurn(profile), summer = isSummer(profile);
+  const percent = summer ? Number(summerContractFor(profile,year).percentage) : Number(profile.contract);
+  if (!FULL_TIME_HOURS[year] || !ANNUAL_WORKDAYS[year] ||
+      !(turn === "T8" && [75,78.14,78.91,85,85.81].includes(percent) || summer && percent === 75)) return null;
+  if (turn === "T8" && percent === 75 && profile.subturn && !SUBTURNS.includes(profile.subturn)) return null;
+  const contexts = summer
+    ? summerContractFor(profile,year).assignments.filter(assignment=>Number.isInteger(assignment.month)&&assignment.month>=1&&assignment.month<=12).filter((assignment,index,list)=>list.findIndex(other=>(other.shift||"AT86")===(assignment.shift||"AT86"))===index).map(assignment=>({month:assignment.month,prefix:`${assignment.shift||"AT86"} · `}))
+    : [{month:1,prefix:""}];
+  const examples = contexts.flatMap(({month,prefix})=>{
+    const kinds: [ShiftKind,string,number][] = [["NORMAL","Jornada normal",1],["FRIDAY_EVE","Divendres / vigília",4],["SATURDAY","Dissabte ordinari",5]];
+    const normal = shiftFor(profile,"NORMAL",1,year,month), sunday = shiftFor(profile,"NORMAL",6,year,month);
+    if (normal.start !== sunday.start || normal.end !== sunday.end) {kinds[0][1]="Dilluns–dijous";kinds.splice(1,0,["NORMAL","Diumenge ordinari",6]);}
+    return kinds.map(([kind,label,weekday])=>{
+      const definition = shiftFor(profile,kind,weekday,year,month);
+      const nightMinutes = nightMinutesForShift(definition.start,definition.end,definition.minutes);
+      return {date:"",label:prefix+label,schedule:`${definition.start}–${definition.end}`,confirmed:false,working:true,
+        balanceEligible:Number.isFinite(definition.minutes),balanceHours:summer?decimalHoursFromMinutes(definition.minutes):definition.value,workedMinutes:definition.minutes,balanceReason:"",
+        nightEligible:Number.isFinite(nightMinutes),nightMinutes,nightHours:decimalHoursFromMinutes(nightMinutes),nightReason:""};
+    });
   });
   const days: RoundingDay[] = Object.entries(plan).flatMap(([key, stored]) => {
     const month = Number(key);
@@ -1331,7 +1343,9 @@ function roundingFactsFor(plan: YearPlan, year: number, profile: UserProfile): R
         nightReason: nightEligible ? "" : "Nocturnitat pendent de conciliar."};
     });
   });
-  return {year, profile: {turn: "T8", percent: Number(profile.contract)}, fullTimeHours: FULL_TIME_HOURS[year], workdays: ANNUAL_WORKDAYS[year], examples, days};
+  const bases = [...new Set(examples.map(row=>Number((decimalHoursFromMinutes(row.workedMinutes)-row.balanceHours).toFixed(2))))];
+  return {year,profile:{turn,percent,subturn:turn==="T8"&&percent===75?profile.subturn||"T8.1":null},balanceMode:summer?"recognized-hours":"daily-balance",
+    companyBasisHours:!summer&&bases.length===1?bases[0]:undefined,fullTimeHours:FULL_TIME_HOURS[year],workdays:ANNUAL_WORKDAYS[year],examples,days};
 }
 
 function copyRecognizedDays(input: DayData[]) {
@@ -6655,7 +6669,8 @@ export default function Home() {
               <span>{message}</span>
             </div>
           </section>
-          <SapReviewPanel year={year} facts={payrollFactsFor(plan,year,profile)} rounding={roundingFactsFor(plan,year,profile)} />
+          <RoundingImpactPanel key={year+":"+profileTurn(profile)+":"+profile.contract+":"+(profile.subturn||"")} input={roundingFactsFor(plan,year,profile)} />
+          <SapReviewPanel year={year} facts={payrollFactsFor(plan,year,profile)} />
           <section className="panel p-5">
             <div className="mb-4 flex items-center gap-2">
               <CalendarRange className="text-[#71d7cc]" size={19} />
@@ -8425,4 +8440,5 @@ function Rule({ n, title, text }: { n: string; title: string; text: string }) {
     </div>
   );
 }
+
 
