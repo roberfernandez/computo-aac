@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import {createRequire} from 'node:module';
+import * as roundingModule from '../lib/rounding-impact.js';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
@@ -109,4 +111,49 @@ test('feature is mounted only after the existing server-verified administrator g
    const code=readFileSync(new URL(path,import.meta.url),'utf8');
    assert.doesNotMatch(code,/\bfetch\s*\(|localStorage\.(setItem|removeItem)|indexedDB|user_id|employeeNumber|medicalStart|medicalEnd/);
  }
+});
+
+
+// Render the real component with controlled hook state to exercise each result
+// scope. Calendar/SAP records and the authorization wrapper are not mocked open.
+const componentSource=readFileSync(new URL('../app/rounding-impact-panel.tsx',import.meta.url),'utf8');
+const componentJs=ts.transpileModule(componentSource,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX}}).outputText;
+const componentRequire=createRequire(import.meta.url);
+const componentReact=componentRequire('react');
+const {renderToStaticMarkup}=componentRequire('react-dom/server');
+function renderRoundingRange(from,to,data=input()){
+ let cursor=0;
+ const state=['2026-01-10',from,to];
+ const mockReact={...componentReact,useState:()=>[state[cursor++],()=>{}],useEffect:()=>{}};
+ const out={};
+ new Function('require','exports',componentJs)(name=>name==='react'?mockReact:name==='@/lib/rounding-impact'?roundingModule:componentRequire(name),out);
+ return renderToStaticMarkup(out.default({input:data}));
+}
+function resultSection(html,label){
+ const start=html.indexOf('aria-label="'+label+'"');
+ assert.ok(start>=0,'Missing result group: '+label);
+ return html.slice(start,html.indexOf('</section>',start));
+}
+test('selected period dates, results and daily detail belong together in section 2',()=>{
+ const january=renderRoundingRange('2026-01-05','2026-01-05');
+ const friday=renderRoundingRange('2026-01-09','2026-01-09');
+ const first=resultSection(january,'Càlcul del període escollit'),second=resultSection(friday,'Càlcul del període escollit');
+ assert.match(first,/2 · El teu període/);assert.match(first,/Arrodoniment des de/);
+ assert.match(first,/Còmput horari del període/);assert.match(first,/Nocturnitat variable del període/);
+ assert.match(first,/Detall del període per dies/);assert.match(first,/−12 s/);assert.match(second,/\+12 s/);
+ assert.equal(resultSection(january,'Acumulat fins avui'),resultSection(friday,'Acumulat fins avui'));
+ assert.equal(resultSection(january,'Previsió anual de l’arrodoniment'),resultSection(friday,'Previsió anual de l’arrodoniment'));
+});
+test('invalid or future custom periods do not hide or change independent accumulated/year results',()=>{
+ const baseline=renderRoundingRange('2026-01-05','2026-01-05');
+ const invalid=renderRoundingRange('2026-01-31','2026-01-01');
+ assert.match(resultSection(invalid,'Càlcul del període escollit'),/Selecciona un període vàlid/);
+ assert.equal(resultSection(invalid,'Acumulat fins avui'),resultSection(baseline,'Acumulat fins avui'));
+ assert.equal(resultSection(invalid,'Previsió anual de l’arrodoniment'),resultSection(baseline,'Previsió anual de l’arrodoniment'));
+ const data=input();data.days.push({...friday,date:'2026-12-18',confirmed:false});
+ const future=renderRoundingRange('2026-12-18','2026-12-18',data);
+ assert.match(resultSection(future,'Càlcul del període escollit'),/\+12 s/);
+ assert.match(resultSection(future,'Càlcul del període escollit'),/1 jornades analitzades/);
+ const report=roundingReport(data,{from:'2026-12-18',to:'2026-12-18',asOf:'2026-01-10'});
+ assert.equal(report.forecastDays[0].date,'2026-12-18');assert.equal(report.days.length,0);
 });

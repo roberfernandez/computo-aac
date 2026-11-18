@@ -59,3 +59,11 @@ date coverage, exceptional cases, administrator gating, missing data, forecast
 separation, daily rollover, annual projections and lack of mutations/network/storage operations.
 Existing payroll and SAP regression tests accompany the pilot and the static
 production build.
+
+## Separate result scopes
+
+Section 2 contains the selected dates, their complete period result and daily
+detail (including forecast dates when chosen). Section 3 always shows the
+January-to-today accumulation from the annual report. Section 4 always shows the
+full-year projection. Changing or invalidating the selected period affects only
+section 2; it cannot change or hide the independent accumulated or annual views.
