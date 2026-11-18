@@ -1,0 +1,21 @@
+export type RoundingDay = {
+  date:string; schedule:string; confirmed:boolean; working:boolean|null;
+  balanceEligible:boolean; balanceHours:number; workedMinutes:number; balanceReason?:string;
+  nightEligible:boolean; nightMinutes:number; nightHours:number; nightReason?:string;
+};
+export type RoundingInput = {
+  year:number; profile:{turn:string;percent:number}; fullTimeHours:number; workdays:number;
+  examples:(RoundingDay & {label:string})[]; days:RoundingDay[];
+};
+export type RoundedMetric={exact:number;company:number;seconds:number};
+export type RoundedDay={date:string;schedule:string;balance:RoundedMetric|null;night:RoundedMetric|null;balanceReason:string;nightReason:string};
+export type RoundingTotal={count:number;excluded:number;exact:number|null;company:number|null;seconds:number|null};
+export type SapNightCheck={period:string;status:"unavailable"|"match"|"different";sap?:number;expected?:number;residualSeconds?:number};
+export type RoundingReport={ready:false;reason:string}|{ready:true;annualHours:number;meanHours:number;workdays:number;
+  examples:(RoundedDay & {label:string})[];missing:number;excludedWork:number;unknownDays:number;
+  forecast:{balance:RoundingTotal;night:RoundingTotal};actual:{balance:RoundingTotal;night:RoundingTotal};days:RoundedDay[];sapNight:SapNightCheck[]};
+export type RoundingSapDoc={ano:number;extraido:string;valoraciones:Record<string,{LongText:string;Number:string|number}[]>};
+export function roundingPilotAvailable(input:RoundingInput|null|undefined):boolean;
+export function roundingDay(row:RoundingDay,meanHours:number):RoundedDay;
+export function roundingReport(input:RoundingInput|null,{from,to,asOf}:{from:string;to:string;asOf:string},sapDoc?:RoundingSapDoc|null):RoundingReport;
+export function signedRoundingTime(seconds:number|null|undefined):string;

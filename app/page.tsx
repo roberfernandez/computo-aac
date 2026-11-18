@@ -46,6 +46,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { deleteStorageKeys, markStorageKeyPending, pushPayrollSnapshot, pushStorageKey, syncComputoStorage, type SyncState } from "./computo-sync";
 import { loadAnnualCalendarImage, saveAnnualCalendarImage, removeAnnualCalendarImage } from "./annual-calendar-cloud";
 import SapReviewPanel from "./sap-review-panel";
+import type {RoundingDay, RoundingInput} from "./rounding-impact-panel";
 import {authenticatedUserId,readSharedSession} from "./tmb-session";
 import {applyAccountCorrections} from "./private-corrections";
 import {
@@ -1296,6 +1297,41 @@ function retributiveSummaryFor(plan: YearPlan, year: number, profile: UserProfil
   const uncertainVacation = !facts || facts.days.length !== daysInMonth(year, month) || facts.days.some(d => d.activity.vacation === null);
   concepts.push({ id: "vacation-premiums", name: "Primas en Vacaciones", value: uncertainVacation ? null : vacationDays, reason: "Días de vacaciones; Nòmina aplica la media económica individual." });
   return concepts;
+}
+
+// Private read-only presentation input. Does not enter any persisted export or
+// change calcDay(), the contract tables, payroll facts or synchronized balances.
+function roundingFactsFor(plan: YearPlan, year: number, profile: UserProfile): RoundingInput | null {
+  if (year !== 2026 || profileTurn(profile) !== "T8" || profile.contract !== "85.81") return null;
+  const examples = ([ ["NORMAL", "Jornada normal", 1], ["FRIDAY_EVE", "Divendres / vigília", 4], ["SATURDAY", "Dissabte ordinari", 5] ] as const).map(([kind, label, weekday]) => {
+    const definition = shiftFor(profile, kind, weekday, year, 1);
+    const nightMinutes = nightMinutesForShift(definition.start, definition.end, definition.minutes);
+    return {date: "", label, schedule: `${definition.start}–${definition.end}`, confirmed: false, working: true,
+      balanceEligible: true, balanceHours: definition.value, workedMinutes: definition.minutes, balanceReason: "",
+      nightEligible: true, nightMinutes, nightHours: decimalHoursFromMinutes(nightMinutes), nightReason: ""};
+  });
+  const days: RoundingDay[] = Object.entries(plan).flatMap(([key, stored]) => {
+    const month = Number(key);
+    return stored.days.map(d => {
+      const c = calcDay(d, stored.days, year, month, profile);
+      const known = !needsReview(d.status) && !c.scheduleReview;
+      const working = known ? isWorking(d.status) : null;
+      const code = calendarCategory(year, month, d.day).code;
+      const standardBalance = ["AGCG", "VISPERA_FESTIVO"].includes(d.status) &&
+        !d.paidExtensionMinutes && d.modificationAccount !== "ANTERIOR" &&
+        d.special !== "NON_STOP_EXTRA" && !code?.includes("CANVI_HORA") &&
+        !code?.endsWith("_FINS_23H");
+      const balanceEligible = known && working === true && standardBalance && Number.isFinite(c.value) && Number.isFinite(c.workedMinutes);
+      const nightEligible = known && working === true && !c.nightReason && Number.isFinite(c.nightPayableMinutes) && Number.isFinite(c.nightHours);
+      return {date: `${year}-${String(month).padStart(2,"0")}-${String(d.day).padStart(2,"0")}`,
+        schedule: c.shift, confirmed: stored.confirmed === true, working,
+        balanceEligible, balanceHours: c.value, workedMinutes: c.workedMinutes,
+        balanceReason: balanceEligible ? "" : "Jornada amb incidència o imputació diferenciada: fora de l'anàlisi del saldo ordinari.",
+        nightEligible, nightMinutes: c.nightPayableMinutes ?? NaN, nightHours: c.nightHours,
+        nightReason: nightEligible ? "" : "Nocturnitat pendent de conciliar."};
+    });
+  });
+  return {year, profile: {turn: "T8", percent: Number(profile.contract)}, fullTimeHours: FULL_TIME_HOURS[year], workdays: ANNUAL_WORKDAYS[year], examples, days};
 }
 
 function copyRecognizedDays(input: DayData[]) {
@@ -6619,7 +6655,7 @@ export default function Home() {
               <span>{message}</span>
             </div>
           </section>
-          <SapReviewPanel year={year} facts={payrollFactsFor(plan,year,profile)} />
+          <SapReviewPanel year={year} facts={payrollFactsFor(plan,year,profile)} rounding={roundingFactsFor(plan,year,profile)} />
           <section className="panel p-5">
             <div className="mb-4 flex items-center gap-2">
               <CalendarRange className="text-[#71d7cc]" size={19} />
@@ -8389,3 +8425,4 @@ function Rule({ n, title, text }: { n: string; title: string; text: string }) {
     </div>
   );
 }
+

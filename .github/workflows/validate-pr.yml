@@ -14,10 +14,11 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
-      - run: npx eslint app/computo-sync.ts app/tmb-session.ts app/page.tsx app/sap-review-panel.tsx
+      - run: npx eslint app/computo-sync.ts app/tmb-session.ts app/page.tsx app/sap-review-panel.tsx app/rounding-impact-panel.tsx lib/rounding-impact.js
       - run: node --test tests/payroll-sync.test.mjs
       - run: node --test tests/computo-compensaciones.test.mjs
       - run: node --test tests/sap-comparison.test.mjs
+      - run: node --test tests/rounding-impact.test.mjs
       - run: node --test tests/monthly-pay-concepts.test.mjs
       - run: node --test tests/sap-cloud-sync.test.mjs
       - run: node --check experiments/sap-windows-extension/background.mjs && node --check experiments/sap-windows-extension/computo-bridge.js && node --check experiments/sap-windows-extension/portal-monitor.js
@@ -46,3 +47,4 @@ jobs:
           name: sap-chrome-webstore-preview
           path: sap-chrome-webstore-preview.zip
           retention-days: 14
+
